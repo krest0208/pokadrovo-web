@@ -2,6 +2,8 @@ import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, 
 import { download, inspectFile, persistAsset, restoreAsset, saveProject } from './assets';
 import { PlaybackEngine, exportFormats, exportProject } from './engine';
 import { t } from './copy';
+import { EditorTools } from './tools';
+import type { AiProvider } from './ai';
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const paths:Record<string,string>={
  home:'m3 10 9-7 9 7v11h-6v-7H9v7H3Z',video:'M3 5h13v14H3Zm13 5 5-4v12l-5-4',audio:'M9 18V4l12-2v14M9 8l12-2M9 18a3 3 0 1 1-3-3h3M21 16a3 3 0 1 1-3-3h3',text:'M4 4h16M12 4v16M8 20h8',
@@ -14,15 +16,16 @@ const paths:Record<string,string>={
 export const icon=(name:string,size=17)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.video}"/></svg>`;
 export const brand=()=>'<svg width="33" height="33" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#245CE0"/><path d="M23 18H19A3 3 0 0 0 16 21V43A3 3 0 0 0 19 46H23M41 18H45A3 3 0 0 1 48 21V43A3 3 0 0 1 45 46H41" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/><path d="M27 23 42 32 27 41Z" fill="white"/></svg>';
 const button=(action:string,label:string,glyph='',cls='',extra='')=>`<button type="button" data-action="${action}" class="${cls}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" ${extra}>${glyph?icon(glyph):''}${cls.includes('square')?'':`<span>${escapeHtml(label)}</span>`}</button>`;
-export interface EditorOptions { project:Project; assets:Map<string,Asset>; theme:'light'|'dark'; onHome:(project:Project)=>void; onSave:(project:Project)=>void; onTheme:()=>void; }
+export interface EditorOptions { aiProvider?:AiProvider; project:Project; assets:Map<string,Asset>; theme:'light'|'dark'; onHome:(project:Project)=>void; onSave:(project:Project)=>void; onTheme:()=>void; }
 export class Editor {
  public history:History;public selected:Selection|null=null;public cursor=0;public tab:'media'|'audio'|'text'='media';
+ private tools:EditorTools;
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
  constructor(private root:HTMLElement,private opts:EditorOptions){
   this.history=new History(normalizeProject(opts.project));this.root.className='pe';this.root.dataset.theme=opts.theme;this.root.dataset.mobile='player';
-  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand">${button('home',t.home,'home','square')}${brand()}<b>${t.brand}<small>STUDIO / 0.5</small></b><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
+  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand">${button('home',t.home,'home','square')}${brand()}<b>${t.brand}<small>STUDIO / 0.6</small></b><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
   <div class="pe-brief" hidden></div>
   <nav class="pe-mobile-nav">${['library','player','inspector','timeline'].map((v,i)=>button('mobile-'+v,[t.files,t.preview,t.settings,t.timeline][i],['video','play','settings','layers'][i])).join('')}</nav>
   <div class="pe-layout">
@@ -36,6 +39,19 @@ export class Editor {
   <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".json,application/json" hidden/>
   <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
   this.engine=new PlaybackEngine(this.$('canvas'),opts.assets,(time,playing)=>this.updateCursor(time,playing),e=>this.fail(e));
+  this.tools=new EditorTools({
+    root:this.root,canvas:this.engine.canvas,assets:this.opts.assets,provider:this.opts.aiProvider,
+    project:()=>this.project,selected:()=>this.selected,cursor:()=>this.cursor,
+    busy:()=>this.loading||this.exporting,playing:()=>this.engine.playing,pause:()=>this.engine.pause(),
+    select:(selected,time)=>{
+      this.engine.pause();this.selected=selected;
+      this.cursor=time??this.selectedAt();this.renderInspector();this.renderTimeline();
+      void this.seek(this.cursor);this.tools?.sync();
+    },
+    seek:time=>{void this.seek(time);},commit:(p,message)=>this.commit(p,message),
+    preview:p=>this.engine.preview(p),run:action=>this.runAction(action),
+    status:message=>this.status(message),refresh:()=>this.render()
+  });
   this.listen(this.root,'click',e=>this.click(e));this.listen(this.root,'change',e=>this.change(e));this.listen(this.root,'input',e=>this.input(e));
   this.listen(this.root,'pointerdown',e=>this.pointer(e as PointerEvent));this.listen(this.root,'dragstart',e=>this.dragStart(e as DragEvent));
   this.listen(this.root,'dragover',e=>{if((e.target as Element).closest('.pe-library,.pe-timeline'))e.preventDefault();});this.listen(this.root,'drop',e=>this.drop(e as DragEvent));
@@ -65,7 +81,7 @@ export class Editor {
  }
  private async prepare(){const rev=++this.prep;this.loading=true;
   try{const [w,h]=dimensions(this.project.ratio);this.engine.canvas.width=w;this.engine.canvas.height=h;await this.engine.prepare(this.project);if(rev===this.prep&&!this.disposed)this.fitCanvas();}
-  catch(e){if(!this.disposed&&rev===this.prep)this.fail(e);}finally{if(rev===this.prep)this.loading=false;}
+  catch(e){if(!this.disposed&&rev===this.prep)this.fail(e);}finally{if(rev===this.prep){this.loading=false;this.tools?.sync();}}
  }
  private commit(p:Project,message=t.ready){this.engine.pause();this.history.commit(p);this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
  private save(notify=true){try{saveProject(this.project);this.opts.onSave(clone(this.project));if(notify)this.status(t.saved);}catch{this.status(t.storageError);}}
@@ -73,9 +89,10 @@ export class Editor {
   this.cursor=time;if(this.disposed)return;
   this.$('.pe-time').textContent=clock(time);this.$('.pe-duration').textContent=clock(totalLength(this.project));const head=this.root.querySelector<HTMLElement>('.pe-head');if(head)head.style.left=(time*this.pixels())+'px';
   const b=this.$<HTMLButtonElement>('[data-action="play"]');b.innerHTML=icon(playing?'pause':'play',18);b.title=b.ariaLabel=playing?t.pause:t.play;
+  this.tools?.sync();
  }
  private fitCanvas(){if(this.disposed)return;const viewport=this.$('.pe-viewport'),screen=this.$('.pe-screen');const rect=viewport.getBoundingClientRect(),[x,y]=this.project.ratio.split(':').map(Number),ratio=x/y;
-  const w=Math.max(1,Math.min(rect.width-32,(rect.height-24)*ratio));screen.style.width=w+'px';screen.style.height=(w/ratio)+'px';
+  const w=Math.max(1,Math.min(rect.width-32,(rect.height-24)*ratio));screen.style.width=w+'px';screen.style.height=(w/ratio)+'px';this.tools?.sync();
  }
  private selectedItem():Clip|Caption|undefined{if(!this.selected)return;return this.selected.track==='text'?this.project.texts.find(c=>c.id===this.selected!.id):(this.selected.track==='video'?this.project.clips:this.project.audio).find(c=>c.id===this.selected!.id);}
  private selectedAt():number{const s=this.selected;if(!s)return 0;if(s.track==='video')return positions(this.project).find(c=>c.clip.id===s.id)?.at||0;if(s.track==='audio')return this.project.audio.find(c=>c.id===s.id)?.at||0;return this.project.texts.find(c=>c.id===s.id)?.from||0;}
@@ -129,7 +146,7 @@ export class Editor {
   }
   if(item)html+=button('delete',t.remove,'trash','pe-full pe-danger');
   html+=`<h4>${t.master}</h4><label class="pe-field pe-slider">${t.volume}<output>${Math.round(this.project.master*100)}%</output><input type="range" data-project="master" min="0" max="1" step=".01" value="${this.project.master}" aria-label="${t.master}"/></label>`;
-  this.$('.pe-inspector-body').innerHTML=html;
+  this.$('.pe-inspector-body').innerHTML=html;this.tools?.enhanceInspector();
  }
  private pixels(){return 62*this.zoom;}
  private renderTimeline(){
@@ -150,7 +167,11 @@ export class Editor {
   const asset=target.closest<HTMLElement>('[data-asset]');if(asset){const a=this.opts.assets.get(asset.dataset.asset!);if(!a)return;const p=clone(this.project),c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;p.audio.push(c);}else p.clips.push(c);this.selected={track:a.kind==='audio'?'audio':'video',id:c.id};this.commit(p);return;}
   const speed=target.closest<HTMLElement>('[data-speed]');if(speed){this.changeSelected({speed:Number(speed.dataset.speed)});return;}
   const action=target.closest<HTMLElement>('[data-action]')?.dataset.action;if(!action)return;
+  this.runAction(action);
+ }
+ private runAction(action:string){
   if(this.exporting&&action!=='cancel-export')return;
+  this.tools?.beforeAction(action);
   if(action==='home'){this.engine.pause();this.save(false);this.opts.onHome(clone(this.project));return;}
   if(action==='theme'){this.opts.onTheme();return;}
   if(action==='save'){this.save();return;}
@@ -199,7 +220,7 @@ export class Editor {
    if(c&&this.selected?.track!=='text'&&field==='end'&&(c as Clip).kind==='image')patch.duration=Math.max((c as Clip).duration,Number(value));this.changeSelected(patch);
   }
  }
- private pointer(e:PointerEvent){if(this.exporting)return;const target=e.target as Element,panel=target.closest<HTMLElement>('[data-panel]');if(panel){this.root.querySelectorAll('.pe-panel.front').forEach(n=>n.classList.remove('front'));panel.classList.add('front');}
+ private pointer(e:PointerEvent){if(this.exporting||e.button!==0)return;const target=e.target as Element,panel=target.closest<HTMLElement>('[data-panel]');if(panel){this.root.querySelectorAll('.pe-panel.front').forEach(n=>n.classList.remove('front'));panel.classList.add('front');}
   if(target.closest('[data-seek],.pe-time-row')&&!target.closest('button')&&!this.loading){const rect=this.$('.pe-track-content').getBoundingClientRect();void this.seek((e.clientX-rect.left)/this.pixels());}
   const handle=target.closest<HTMLElement>('[data-resize]'),clip=handle?.closest<HTMLElement>('[data-clip]');if(!handle||!clip)return;
   e.preventDefault();e.stopPropagation();const [track,id]=clip.dataset.select!.split(':');this.selected={track:track as Selection['track'],id};const item=clone(this.selectedItem());if(!item)return;const startX=e.clientX;this.engine.pause();
@@ -225,7 +246,7 @@ export class Editor {
   if(e.key==='Escape'){if(this.exporting){this.abort?.abort();return;}if(this.expanded)this.expand(this.expanded);else this.closeExport();return;}
   if(e.key==='Tab'&&(this.expanded||!this.$('.pe-modal').hidden)){const host=this.expanded?this.$(`[data-panel="${this.expanded}"]`):this.$('.pe-modal');const els=[...host.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select,textarea')].filter(n=>n.getClientRects().length);if(els.length){const first=els[0],last=els[els.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}return;}
   if(this.exporting||!this.$('.pe-modal').hidden)return;const input=(e.target as Element)?.closest('input,textarea,select,[contenteditable=true]');
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();this.save();return;}if(input)return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();this.tools?.beforeAction('save');this.save();return;}if(input)return;
   const actions:Record<string,string>={' ':'play',s:'split',Delete:'delete',Backspace:'delete',i:'mark-in',o:'mark-out'};
   let action=actions[e.key];if(e.ctrlKey||e.metaKey){if(e.key.toLowerCase()==='z')action=e.shiftKey?'redo':'undo';if(e.key.toLowerCase()==='y')action='redo';if(e.key.toLowerCase()==='d')action='duplicate';}
   if(action){e.preventDefault();this.root.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)?.click();}
@@ -242,5 +263,5 @@ export class Editor {
   }catch(e){this.$('.pe-export-message').textContent=e instanceof DOMException&&e.name==='AbortError'?t.cancel:t.error+': '+(e instanceof Error?e.message:String(e));}
   finally{this.exporting=false;cancel.hidden=true;modal.querySelectorAll<HTMLInputElement>('select,button').forEach(n=>n.disabled=false);}
  }
- dispose(){this.disposed=true;this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
+ dispose(){this.disposed=true;this.tools.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
 }

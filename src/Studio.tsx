@@ -6,6 +6,7 @@ import { Asset, Mode, Project, Ratio, newProject } from './editor/model';
 import { loadProjects } from './editor/assets';
 import { t } from './editor/copy';
 import './editor/editor.css';
+import './editor/tools.css';
 import './home-formats.css';
 
 type State={screen:'home'|'editor';theme:'light'|'dark';mode:Mode;ratio:Ratio;project:Project|null;projects:Project[];error:string};

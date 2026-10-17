@@ -1,5 +1,7 @@
 import { Asset, Caption, Clip, Project, currentClip, dimensions, fadeGain, length, totalLength } from './model';
 import { mediaReady } from './assets';
+import { mediaBox, clipPath } from './geometry';
+import { ensureFonts, fontStyle } from './fonts';
 interface Resource { id:string; assetId:string; element:HTMLImageElement|HTMLMediaElement; ready:Promise<void>; node?:MediaElementAudioSourceNode; gain?:GainNode; }
 /** Preview and export use the same time mapping, canvas compositor and Web Audio mixer. */
 export class PlaybackEngine {
@@ -25,7 +27,7 @@ export class PlaybackEngine {
    }
   }
   for(const [id,r] of this.resources){if(!ids.has(id)){this.release(r);this.resources.delete(id);}}
-  await Promise.all(Array.from(this.resources.values(),r=>r.ready));if(this.disposed||g!==this.generation)return;
+  await Promise.all([ensureFonts(p.texts),...Array.from(this.resources.values(),r=>r.ready)]);if(this.disposed||g!==this.generation)return;
   if(this.context)for(const r of this.resources.values())this.connect(r);
   await this.seek(Math.min(this.time,totalLength(p)));return;
  }
@@ -51,7 +53,7 @@ export class PlaybackEngine {
   if(this.context.state==='suspended')await this.context.resume();return this.destination!;
  }
  async seek(time:number){
-  if(!this.project||this.disposed)return;this.pause();this.time=Math.max(0,Math.min(totalLength(this.project),time));
+  if(!this.project||this.disposed)return;this.pause();this.time=Math.max(0,Math.min(totalLength(this.project),time));this.tick(this.time,false);
   const c=currentClip(this.project,Math.min(this.time,Math.max(0,totalLength(this.project)-.001)));
   if(c){const r=this.resources.get(c.clip.id);if(r){await r.ready;if(r.element instanceof HTMLMediaElement)await this.seekMedia(r.element,c.clip.start+(this.time-c.at)*c.clip.speed);}}
   if(!this.disposed){this.draw();this.tick(this.time,false);}
@@ -92,21 +94,23 @@ export class PlaybackEngine {
    if(sw&&sh){
     const off=this.time-active.at,d=length(c),fade=Math.max(0,Math.min(1,c.visualIn?off/c.visualIn:1,c.visualOut?(d-off)/c.visualOut:1));
     ctx.save();ctx.globalAlpha=c.opacity*fade;ctx.filter=`brightness(${c.brightness}) contrast(${c.contrast}) saturate(${c.saturation})`;
-    ctx.translate(w/2+w*c.x/100,h/2+h*c.y/100);ctx.rotate(c.rotation*Math.PI/180);
-    const turn=Math.abs(Math.sin(c.rotation*Math.PI/180))>.999;const rw=turn?sh:sw,rh=turn?sw:sh;
-    const scale=(c.fit==='cover'?Math.max(w/rw,h/rh):Math.min(w/rw,h/rh))*c.zoom;ctx.scale(c.flip?-scale:scale,scale);
-    ctx.drawImage(el as CanvasImageSource,-sw/2,-sh/2,sw,sh);ctx.restore();
+    const box=mediaBox(c,{width:sw,height:sh},w,h);
+    ctx.translate(box.cx,box.cy);ctx.rotate(c.rotation*Math.PI/180);
+    clipPath(ctx,c,box.width,box.height);ctx.scale(c.flip?-1:1,1);
+    ctx.drawImage(el as CanvasImageSource,box.sx,box.sy,box.sw,box.sh,-box.width/2,-box.height/2,box.width,box.height);ctx.restore();
    }
   }}
   for(const t of p.texts){if(this.time>=t.from&&this.time<t.to)this.caption(ctx,t,w,h);}
   ctx.restore();
  }
+ /** Transient drag preview: does not write history or recreate media resources. */
+ preview(project:Project){this.project=project;this.draw();}
  private caption(ctx:CanvasRenderingContext2D,t:Caption,w:number,h:number){
-  if(!t.text)return;const size=Math.max(8,Math.min(w,h)*t.size),max=w*.85;ctx.save();ctx.font=`600 ${size}px system-ui, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+  if(!t.text)return;const size=Math.max(8,Math.min(w,h)*t.size),max=w*.85;ctx.save();ctx.font=fontStyle(t,size);ctx.textAlign=t.align;ctx.textBaseline='middle';
   const lines:string[]=[];for(const paragraph of t.text.split('\n')){let line='';for(const word of paragraph.split(/\s+/)){const v=line?line+' '+word:word;if(ctx.measureText(v).width>max&&line){lines.push(line);line=word;}else line=v;}lines.push(line);}
   const visible=lines.slice(0,8),lh=size*1.25,cy=h*t.y;for(let i=0;i<visible.length;i++){
    const line=visible[i],tw=Math.min(max,ctx.measureText(line).width),x=w*t.x,y=cy+(i-(visible.length-1)/2)*lh;
-   if(t.background){ctx.fillStyle='rgba(0,0,0,.66)';ctx.fillRect(x-tw/2-size*.25,y-lh/2,tw+size*.5,lh);}
+   if(t.background){ctx.fillStyle='rgba(0,0,0,.66)';ctx.fillRect(x-(t.align==='center'?tw/2:t.align==='right'?tw:0)-size*.25,y-lh/2,tw+size*.5,lh);}
    ctx.lineWidth=size*.045;ctx.strokeStyle='rgba(0,0,0,.65)';ctx.strokeText(line,x,y,max);ctx.fillStyle=t.color;ctx.fillText(line,x,y,max);
   }ctx.restore();
  }

@@ -3,3 +3,5 @@ dist/
 .env
 .env.*
 !.env.example
+.compiled/
+editor-validation.tgz

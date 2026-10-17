@@ -21,3 +21,5 @@ jobs:
         run: npm run build
       - name: Editor model and timing tests
         run: node tools/test-editor.cjs
+      - name: AI protocol and transformation tests
+        run: node tools/test-editor-features.cjs

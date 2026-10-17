@@ -9,8 +9,10 @@ export interface Clip {
   zoom:number; x:number; y:number; rotation:number; flip:boolean;
   brightness:number; contrast:number; saturation:number; opacity:number;
   visualIn:number; visualOut:number;
+  scaleX:number; scaleY:number; shape:'rect'|'round'|'ellipse';
+  corner:number; cropLeft:number; cropRight:number; cropTop:number; cropBottom:number;
 }
-export interface Caption { id:string; text:string; from:number; to:number; x:number; y:number; size:number; color:string; background:boolean; }
+export interface Caption { id:string; text:string; from:number; to:number; x:number; y:number; size:number; color:string; background:boolean; fontId:string; weight:number; italic:boolean; align:'left'|'center'|'right'; }
 export interface Project {
   id:string; schema:4; name:string; mode:Mode; ratio:Ratio; clips:Clip[]; audio:Clip[]; texts:Caption[];
   title:string; brief:string; created:number; modified:number; master:number;
@@ -30,15 +32,21 @@ export function newProject(mode:Mode='video',brief=''):Project {
 }
 export function normalizeClip(value:unknown):Clip {
  const c=object(value), duration=number(c.duration,5,.04,86400), start=number(c.start,0,0,duration-.04);
+ const cropLeft=number(c.cropLeft,0,0,.9),cropTop=number(c.cropTop,0,0,.9);
  return {id:safeId(c.id)||uid(),assetId:safeId(c.assetId),name:string(c.name,'Media'),kind:c.kind==='image'?'image':c.kind==='audio'?'audio':'video',duration,
  start,end:number(c.end,duration,start+.04,duration),speed:number(c.speed,1,.25,4),volume:number(c.volume,1,0,2),muted:c.muted===true,
  fadeIn:number(c.fadeIn,0,0,30),fadeOut:number(c.fadeOut,0,0,30),at:number(c.at,0,0,86400),fit:c.fit==='cover'?'cover':'contain',
  zoom:number(c.zoom,1,.25,4),x:number(c.x,0,-100,100),y:number(c.y,0,-100,100),rotation:number(c.rotation,0,-180,180),flip:c.flip===true,
- brightness:number(c.brightness,1,0,2),contrast:number(c.contrast,1,0,2),saturation:number(c.saturation,1,0,2),opacity:number(c.opacity,1,0,1),visualIn:number(c.visualIn,0,0,5),visualOut:number(c.visualOut,0,0,5)};
+ brightness:number(c.brightness,1,0,2),contrast:number(c.contrast,1,0,2),saturation:number(c.saturation,1,0,2),opacity:number(c.opacity,1,0,1),visualIn:number(c.visualIn,0,0,5),visualOut:number(c.visualOut,0,0,5),
+ scaleX:number(c.scaleX,1,.05,8),scaleY:number(c.scaleY,1,.05,8),shape:c.shape==='ellipse'?'ellipse':c.shape==='round'?'round':'rect',
+ corner:number(c.corner,.12,0,.5),cropLeft,cropTop,cropRight:number(c.cropRight,0,0,.9-cropLeft),cropBottom:number(c.cropBottom,0,0,.9-cropTop)};
 }
 export function normalizeCaption(value:unknown):Caption {
  const c=object(value), from=number(c.from,0,0,86400);
- return {id:safeId(c.id)||uid(),text:string(c.text).slice(0,1200),from,to:number(c.to,from+5,from+.04,86400),x:number(c.x,.5,0,1),y:number(c.y,.82,0,1),size:number(c.size,.065,.015,.2),color:typeof c.color==='string'&&/^#[\da-f]{6}$/i.test(c.color)?c.color:'#ffffff',background:c.background!==false};
+ return {id:safeId(c.id)||uid(),text:string(c.text).slice(0,1200),from,to:number(c.to,from+5,from+.04,86400),x:number(c.x,.5,0,1),y:number(c.y,.82,0,1),size:number(c.size,.065,.015,.2),color:typeof c.color==='string'&&/^#[\da-f]{6}$/i.test(c.color)?c.color:'#ffffff',background:c.background!==false,
+ fontId:typeof c.fontId==='string'&&/^[a-z0-9_-]{1,64}$/.test(c.fontId)?c.fontId:'system',
+ weight:[400,500,600,700,800,900].includes(Number(c.weight))?Number(c.weight):600,
+ italic:c.italic===true,align:c.align==='left'?'left':c.align==='right'?'right':'center'};
 }
 export function normalizeProject(value:unknown):Project {
  const p=object(value);const fresh=newProject(p.mode==='reels'?'reels':'video',string(p.brief));
