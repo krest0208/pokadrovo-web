@@ -1,0 +1,26 @@
+name: Editor validation
+on:
+  push:
+    branches: [web/ai-context-transform]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - name: Source snapshot (no credentials, media uploads or fonts)
+        run: |
+          tar -czf editor-validation.tgz src public docs tests package.json package-lock.json tsconfig.json vite.config.ts index.html README.md .github node_modules/react node_modules/react-dom node_modules/scheduler node_modules/@types node_modules/csstype
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-validation
+          path: editor-validation.tgz
+          retention-days: 3
