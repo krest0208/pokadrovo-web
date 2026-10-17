@@ -19,3 +19,5 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck and build
         run: npm run build
+      - name: Editor model and timing tests
+        run: node tools/test-editor.cjs

@@ -1,0 +1,246 @@
+import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, clone, clock, currentClip, cutRange, dimensions, fromAsset, length, normalizeCaption, normalizeClip, normalizeProject, parseSrt, patchClip, positions, splitClip, totalLength, uid, videoLength } from './model';
+import { download, inspectFile, persistAsset, restoreAsset, saveProject } from './assets';
+import { PlaybackEngine, exportFormats, exportProject } from './engine';
+import { t } from './copy';
+export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+const paths:Record<string,string>={
+ home:'m3 10 9-7 9 7v11h-6v-7H9v7H3Z',video:'M3 5h13v14H3Zm13 5 5-4v12l-5-4',audio:'M9 18V4l12-2v14M9 8l12-2M9 18a3 3 0 1 1-3-3h3M21 16a3 3 0 1 1-3-3h3',text:'M4 4h16M12 4v16M8 20h8',
+ upload:'M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5',save:'M4 3h13l4 4v14H3V3h1Zm3 0v6h9V3M7 21v-8h10v8',download:'M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4',
+ play:'m8 4 12 8L8 20Z',pause:'M8 4v16M16 4v16',left:'m15 4-8 8 8 8',right:'m9 4 8 8-8 8',split:'M8 8 20 20M8 16 20 4M4 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8M4 13a4 4 0 1 0 0 8 4 4 0 0 0 0-8',
+ trash:'M3 6h18M9 6V3h6v3M5 6v15h14V6M10 10v7M14 10v7',copy:'M8 8h13v13H8ZM3 16V3h13',undo:'m8 3-6 6 6 6M3 9h10a7 7 0 0 1 7 7v3',redo:'m16 3 6 6-6 6M21 9H11a7 7 0 0 0-7 7v3',
+ expand:'M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5',close:'m5 5 14 14M5 19 19 5',sun:'M12 1v3M12 20v3M1 12h3M20 12h3M4 4l2 2M18 18l2 2M20 4l-2 2M6 18l-2 2M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0',moon:'M21 14A9 9 0 0 1 10 3 9 9 0 1 0 21 14Z',
+ plus:'M12 4v16M4 12h16',layers:'m3 7 9-4 9 4-9 4-9-4m0 5 9 4 9-4M3 17l9 4 9-4',settings:'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6',check:'m4 12 5 5L20 6',
+};
+export const icon=(name:string,size=17)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.video}"/></svg>`;
+export const brand=()=>'<svg width="33" height="33" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#245CE0"/><path d="M23 18H19A3 3 0 0 0 16 21V43A3 3 0 0 0 19 46H23M41 18H45A3 3 0 0 1 48 21V43A3 3 0 0 1 45 46H41" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/><path d="M27 23 42 32 27 41Z" fill="white"/></svg>';
+const button=(action:string,label:string,glyph='',cls='',extra='')=>`<button type="button" data-action="${action}" class="${cls}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" ${extra}>${glyph?icon(glyph):''}${cls.includes('square')?'':`<span>${escapeHtml(label)}</span>`}</button>`;
+export interface EditorOptions { project:Project; assets:Map<string,Asset>; theme:'light'|'dark'; onHome:(project:Project)=>void; onSave:(project:Project)=>void; onTheme:()=>void; }
+export class Editor {
+ public history:History;public selected:Selection|null=null;public cursor=0;public tab:'media'|'audio'|'text'='media';
+ private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
+ private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
+ private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
+ constructor(private root:HTMLElement,private opts:EditorOptions){
+  this.history=new History(normalizeProject(opts.project));this.root.className='pe';this.root.dataset.theme=opts.theme;this.root.dataset.mobile='player';
+  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand">${button('home',t.home,'home','square')}${brand()}<b>${t.brand}<small>STUDIO / 0.5</small></b><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
+  <div class="pe-brief" hidden></div>
+  <nav class="pe-mobile-nav">${['library','player','inspector','timeline'].map((v,i)=>button('mobile-'+v,[t.files,t.preview,t.settings,t.timeline][i],['video','play','settings','layers'][i])).join('')}</nav>
+  <div class="pe-layout">
+   <nav class="pe-rail">${button('tab-media',t.media,'video')}${button('tab-audio',t.audio,'audio')}${button('tab-text',t.text,'text')}<span>LOCAL<br/>STUDIO</span></nav>
+   <section class="pe-panel pe-library" data-panel="library"><header>${t.files}${button('expand-library',t.expand,'expand','square')}</header><div class="pe-library-body"></div></section>
+   <section class="pe-panel pe-player" data-panel="player"><header><span>${t.preview}</span><span class="pe-player-meta"></span>${button('expand-player',t.expand,'expand','square')}</header><div class="pe-player-options"><select data-project="ratio" aria-label="Aspect ratio">${['16:9','9:16','1:1','4:5'].map(v=>`<option>${v}</option>`).join('')}</select><label><input type="checkbox" data-ui="safe"/> ${t.safe}</label></div><div class="pe-viewport"><div class="pe-screen"><canvas aria-label="${t.preview}"></canvas><div class="pe-safe" hidden><span>9:16 / ${t.safe}</span></div><div class="pe-empty">${brand()}<h3>${t.empty}</h3><p>${t.emptyHint}</p>${button('import',t.import,'upload','primary')}</div></div></div><div class="pe-transport"><output class="pe-time">00:00.000</output><div>${button('back',t.trimLeft,'left','square')}${button('play',t.play,'play','pe-play square')}${button('forward',t.trimRight,'right','square')}</div><output class="pe-duration">00:00.000</output></div></section>
+   <section class="pe-panel pe-inspector" data-panel="inspector"><header>${t.settings}${button('expand-inspector',t.expand,'expand','square')}</header><div class="pe-inspector-body"></div></section>
+  </div>
+  <section class="pe-panel pe-timeline" data-panel="timeline"><header><strong>${t.timeline}</strong><div class="pe-tools">${button('undo',t.undo,'undo','square')}${button('redo',t.redo,'redo','square')}<i></i>${button('split',t.split+' (S)','split')}${button('duplicate',t.duplicate,'copy','square')}${button('delete',t.remove,'trash','square')}</div><label class="pe-zoom">${t.zoom}<input type="range" min=".35" max="3" step=".05" value="1" data-ui="zoom" aria-label="${t.zoom}"/></label>${button('expand-timeline',t.expand,'expand','square')}</header><div class="pe-track-scroll"><div class="pe-track-grid"><div class="pe-track-labels"></div><div class="pe-track-content"></div></div></div><div class="pe-range">${button('mark-in',t.markIn)}<output id="pe-in">00:00.000</output>${button('mark-out',t.markOut)}<output id="pe-out">00:00.000</output>${button('cut',t.cut,'split')}<span>${t.selectionRange}</span></div></section>
+  <footer class="pe-footer"><span role="status" class="pe-status">${t.ready}</span><span>${t.shortcuts}</span></footer>
+  <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".json,application/json" hidden/>
+  <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
+  this.engine=new PlaybackEngine(this.$('canvas'),opts.assets,(time,playing)=>this.updateCursor(time,playing),e=>this.fail(e));
+  this.listen(this.root,'click',e=>this.click(e));this.listen(this.root,'change',e=>this.change(e));this.listen(this.root,'input',e=>this.input(e));
+  this.listen(this.root,'pointerdown',e=>this.pointer(e as PointerEvent));this.listen(this.root,'dragstart',e=>this.dragStart(e as DragEvent));
+  this.listen(this.root,'dragover',e=>{if((e.target as Element).closest('.pe-library,.pe-timeline'))e.preventDefault();});this.listen(this.root,'drop',e=>this.drop(e as DragEvent));
+  this.listen(document,'keydown',e=>this.key(e as KeyboardEvent));
+  this.resize=new ResizeObserver(()=>this.fitCanvas());this.resize.observe(this.$('.pe-viewport'));
+  this.render();void this.restore();
+ }
+ get project(){return this.history.value;}
+ private $<T extends HTMLElement=HTMLElement>(q:string){return this.root.querySelector<T>(q)!;}
+ private listen(target:EventTarget,event:string,fn:(e:Event)=>void){target.addEventListener(event,fn);this.cleanups.push(()=>target.removeEventListener(event,fn));}
+ setTheme(theme:'light'|'dark'){this.root.dataset.theme=theme;}
+ private status(message:string){if(!this.disposed)this.$('.pe-status').textContent=message;}
+ private fail(e:unknown){this.status(t.error+': '+(e instanceof Error?e.message:String(e)));}
+ private async restore(){
+  this.loading=true;this.status(t.loading+'...');
+  try{const metadata=new Map([...this.project.clips,...this.project.audio].map(c=>[c.assetId,c]));for(const [id,c] of metadata){if(this.opts.assets.has(id))continue;const blob=await restoreAsset(id);if(!blob)throw new Error('Missing original file: '+c.name);const a=await inspectFile(Object.assign(blob,{name:c.name}),id,c.kind==='audio'&&blob.type.startsWith('video/')?'video':c.kind);if(this.disposed){URL.revokeObjectURL(a.url);return;}this.opts.assets.set(id,a);}this.status(t.ready);}
+  catch(e){this.fail(e);}finally{this.loading=false;if(!this.disposed){this.render();await this.prepare();}}
+ }
+ async importFiles(files:FileList|File[]|null){if(!files?.length||this.exporting)return;this.engine.pause();this.loading=true;let next=clone(this.project),added=0;let storageFailed=false;const problems:string[]=[];
+  for(const file of Array.from(files)){if(this.disposed)break;try{
+   this.status(`${t.loading}: ${file.name}`);const a=await inspectFile(file);if(this.disposed){URL.revokeObjectURL(a.url);break;}
+   this.opts.assets.set(a.id,a);try{await persistAsset(a);}catch{storageFailed=true;}
+   const c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
+  }catch(e){problems.push(file.name+': '+(e instanceof Error?e.message:String(e)));}}
+  this.loading=false;if(added&&!this.disposed){this.history.commit(next);this.render();await this.prepare();this.save(false);}
+  this.status(problems.length?problems.join('; '):storageFailed?t.storageError:`${t.files}: ${added} / ${t.ready}`);
+ }
+ private async prepare(){const rev=++this.prep;this.loading=true;
+  try{const [w,h]=dimensions(this.project.ratio);this.engine.canvas.width=w;this.engine.canvas.height=h;await this.engine.prepare(this.project);if(rev===this.prep&&!this.disposed)this.fitCanvas();}
+  catch(e){if(!this.disposed&&rev===this.prep)this.fail(e);}finally{if(rev===this.prep)this.loading=false;}
+ }
+ private commit(p:Project,message=t.ready){this.engine.pause();this.history.commit(p);this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
+ private save(notify=true){try{saveProject(this.project);this.opts.onSave(clone(this.project));if(notify)this.status(t.saved);}catch{this.status(t.storageError);}}
+ private updateCursor(time:number,playing:boolean){
+  this.cursor=time;if(this.disposed)return;
+  this.$('.pe-time').textContent=clock(time);this.$('.pe-duration').textContent=clock(totalLength(this.project));const head=this.root.querySelector<HTMLElement>('.pe-head');if(head)head.style.left=(time*this.pixels())+'px';
+  const b=this.$<HTMLButtonElement>('[data-action="play"]');b.innerHTML=icon(playing?'pause':'play',18);b.title=b.ariaLabel=playing?t.pause:t.play;
+ }
+ private fitCanvas(){if(this.disposed)return;const viewport=this.$('.pe-viewport'),screen=this.$('.pe-screen');const rect=viewport.getBoundingClientRect(),[x,y]=this.project.ratio.split(':').map(Number),ratio=x/y;
+  const w=Math.max(1,Math.min(rect.width-32,(rect.height-24)*ratio));screen.style.width=w+'px';screen.style.height=(w/ratio)+'px';
+ }
+ private selectedItem():Clip|Caption|undefined{if(!this.selected)return;return this.selected.track==='text'?this.project.texts.find(c=>c.id===this.selected!.id):(this.selected.track==='video'?this.project.clips:this.project.audio).find(c=>c.id===this.selected!.id);}
+ private selectedAt():number{const s=this.selected;if(!s)return 0;if(s.track==='video')return positions(this.project).find(c=>c.clip.id===s.id)?.at||0;if(s.track==='audio')return this.project.audio.find(c=>c.id===s.id)?.at||0;return this.project.texts.find(c=>c.id===s.id)?.from||0;}
+ private changeSelected(patch:Partial<Clip>&Partial<Caption>){const sel=this.selected;if(!sel)return;const p=clone(this.project);
+  if(sel.track==='text'){p.texts=p.texts.map(c=>c.id===sel.id?normalizeCaption({...c,...patch}):c);}else {const arr=sel.track==='video'?'clips':'audio';p[arr]=p[arr].map(c=>c.id===sel.id?patchClip(c,patch):c);}this.commit(p);
+ }
+ private render(){if(this.disposed)return;
+  const active=document.activeElement as HTMLInputElement|null;const key=active?.dataset.field;const selection=active&&'selectionStart' in active?active.selectionStart:null;
+  this.$<HTMLInputElement>('#pe-name').value=this.project.name;this.$<HTMLSelectElement>('[data-project="ratio"]').value=this.project.ratio;
+  this.$('[data-action="mode-video"]').classList.toggle('active',this.project.mode==='video');this.$('[data-action="mode-reels"]').classList.toggle('active',this.project.mode==='reels');
+  this.$('[data-action="mode-video"]').setAttribute('aria-pressed',String(this.project.mode==='video'));this.$('[data-action="mode-reels"]').setAttribute('aria-pressed',String(this.project.mode==='reels'));
+  for(const name of ['media','audio','text'])this.$(`[data-action="tab-${name}"]`).classList.toggle('active',this.tab===name);
+  this.$('.pe-player-meta').textContent=`${this.project.ratio} / 30 fps`;
+  this.$('.pe-empty').hidden=!!this.project.clips.length;this.$('.pe-safe').hidden=!this.safe;
+  this.$('.pe-brief').hidden=!this.project.brief;this.$('.pe-brief').textContent=this.project.brief?`${t.brief}: ${this.project.brief} (${t.aiNote})`:'';
+  this.$<HTMLButtonElement>('[data-action="undo"]').disabled=!this.history.canUndo;this.$<HTMLButtonElement>('[data-action="redo"]').disabled=!this.history.canRedo;
+  this.$<HTMLButtonElement>('[data-action="export"]').disabled=!totalLength(this.project);
+  this.renderLibrary();this.renderInspector();this.renderTimeline();this.updateCursor(this.cursor,false);this.fitCanvas();
+  if(key){const replacement=this.root.querySelector<HTMLInputElement>(`[data-field="${key}"]`);replacement?.focus({preventScroll:true});try{if(selection!==null)replacement?.setSelectionRange(selection,selection);}catch{}}
+ }
+ private renderLibrary(){
+  let html=button('import',t.import,'upload','primary pe-import')+`<p class="pe-note">${t.importHint}</p>`;
+  if(this.tab==='text')html=button('add-text',t.addText,'plus','primary pe-import')+button('srt',t.srt,'upload','pe-import')+`<p class="pe-note">SRT / ${t.text}</p>`;
+  if(this.tab!=='text'){
+   const arr=[...this.opts.assets.values()].filter(a=>this.tab==='audio'?a.kind==='audio':a.kind!=='audio');
+   html+='<div class="pe-asset-grid">'+arr.map(a=>`<button type="button" class="pe-asset" data-asset="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}"><span>${a.thumbnail?`<img src="${a.thumbnail}" alt=""/>`:icon(a.kind==='audio'?'audio':'video',30)}<i>${clock(a.duration).slice(0,5)}</i></span><b>${escapeHtml(a.name)}</b><small>${a.kind.toUpperCase()}</small></button>`).join('')+'</div>';
+  }else html+=this.project.texts.map(c=>`<button class="pe-caption-item" data-select="text:${c.id}">${icon('text')}<span>${escapeHtml(c.text||t.text)}</span></button>`).join('');
+  html+=`<details class="pe-project-tools"><summary>JSON / ${t.save}</summary>${button('json-export',t.downloadProject)}${button('json-import',t.importProject)}<p class="pe-note">${t.backupHint}</p></details>`;
+  this.$('.pe-library-body').innerHTML=html;
+ }
+ private number(label:string,field:string,value:number,min:number,max:number,step=.1){return `<label class="pe-field">${label}<input data-field="${field}" aria-label="${label}" type="number" min="${min}" max="${max}" step="${step}" value="${Number(value.toFixed(3))}"/></label>`;}
+ private range(label:string,field:string,value:number,min:number,max:number,step=.05,suffix=''){return `<label class="pe-field pe-slider">${label}<output data-value="${field}">${Number(value.toFixed(2))}${suffix}</output><input data-field="${field}" aria-label="${label}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"/></label>`;}
+ private renderInspector(){
+  const item=this.selectedItem();let html='';
+  if(!item){html=`<div class="pe-none">${icon('settings',32)}<h3>${t.choose}</h3><p>${t.chooseHint}</p></div><h4>${t.settings}</h4><div class="pe-meta-row">${t.duration}<b>${clock(totalLength(this.project))}</b></div>`;}
+  else if(this.selected!.track==='text'){
+   const c=item as Caption;html=`<h4>${t.text}</h4><textarea data-field="text" aria-label="${t.text}" rows="3" maxlength="1200">${escapeHtml(c.text)}</textarea><div class="pe-pair">${this.number(t.start,'from',c.from,0,86400)}${this.number(t.end,'to',c.to,c.from+.04,86400)}</div>${this.range(t.fontSize,'size',c.size,.015,.2,.005)}<div class="pe-pair">${this.number('X','x',c.x,0,1,.01)}${this.number('Y','y',c.y,0,1,.01)}</div><label class="pe-field">${t.color}<input type="color" data-field="color" aria-label="${t.color}" value="${c.color}"/></label><label class="pe-check"><input type="checkbox" data-field="background" ${c.background?'checked':''}/> ${t.background}</label>`;
+  }else{
+   const c=item as Clip,isAudio=this.selected!.track==='audio';
+   html=`<div class="pe-selected-file">${icon(isAudio?'audio':'video',23)}<span><small>${isAudio?t.audio:t.selected}</small><b title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</b></span></div><h4>${t.trim}</h4><div class="pe-pair">${this.number(t.start,'start',c.start,0,c.end-.04)}${this.number(t.end,'end',c.end,c.start+.04,c.kind==='image'?600:c.duration)}</div>`;
+   if(isAudio)html+=this.number(t.at,'at',c.at,0,86400);
+   html+=`<div class="pe-pair pe-trim-actions">${button('trim-start',t.trimLeft,'split')}${button('trim-end',t.trimRight,'split')}</div>`;
+   if(c.kind!=='image'){
+    html+=`<h4>${t.speed}</h4>${this.range(t.speed,'speed',c.speed,.25,4,.05,'x')}<div class="pe-speeds">${[.5,1,1.5,2].map(v=>`<button data-speed="${v}" class="${c.speed===v?'active':''}">${v}x</button>`).join('')}</div><p class="pe-note">${t.duration}: ${length(c).toFixed(2)} s</p>`;
+    html+=`<h4>${t.audio}</h4>${this.range(t.volume,'volume',c.volume,0,2,.05,'x')}<label class="pe-check"><input type="checkbox" data-field="muted" ${c.muted?'checked':''}/> ${t.mute}</label><div class="pe-pair">${this.number(t.fadeIn,'fadeIn',c.fadeIn,0,length(c))}${this.number(t.fadeOut,'fadeOut',c.fadeOut,0,length(c))}</div>`;
+    if(!isAudio)html+=button('detach',t.detach,'audio','pe-full');
+   }
+   if(!isAudio){
+    html+=`<h4>${t.transform}</h4><div class="pe-pair">${button('fit-contain',t.fit,'','',`aria-pressed="${c.fit==='contain'}"`)}${button('fit-cover',t.fill,'','',`aria-pressed="${c.fit==='cover'}"`)}</div>${this.range(t.zoom,'zoom',c.zoom,.25,4,.05)}<div class="pe-pair">${this.number('X (%)','x',c.x,-100,100,1)}${this.number('Y (%)','y',c.y,-100,100,1)}</div>${this.number(t.rotation,'rotation',c.rotation,-180,180,1)}<label class="pe-check"><input type="checkbox" data-field="flip" ${c.flip?'checked':''}/> ${t.flip}</label><h4>${t.color}</h4>${this.range(t.brightness,'brightness',c.brightness,0,2)}${this.range(t.contrast,'contrast',c.contrast,0,2)}${this.range(t.saturation,'saturation',c.saturation,0,2)}${this.range(t.opacity,'opacity',c.opacity,0,1)}<h4>${t.fadeVisual}</h4><div class="pe-pair">${this.number(t.visualIn,'visualIn',c.visualIn,0,5)}${this.number(t.visualOut,'visualOut',c.visualOut,0,5)}</div><h4>${t.selected}</h4><div class="pe-pair">${button('move-left',t.earlier,'left')}${button('move-right',t.later,'right')}</div>`;
+   }
+  }
+  if(item)html+=button('delete',t.remove,'trash','pe-full pe-danger');
+  html+=`<h4>${t.master}</h4><label class="pe-field pe-slider">${t.volume}<output>${Math.round(this.project.master*100)}%</output><input type="range" data-project="master" min="0" max="1" step=".01" value="${this.project.master}" aria-label="${t.master}"/></label>`;
+  this.$('.pe-inspector-body').innerHTML=html;
+ }
+ private pixels(){return 62*this.zoom;}
+ private renderTimeline(){
+  const scale=this.pixels(),duration=totalLength(this.project),width=Math.max(620,this.$('.pe-track-scroll').clientWidth-105,(duration+1)*scale);
+  const rowH=58;const audioRows=Math.max(1,this.project.audio.length),textRows=Math.max(1,this.project.texts.length);
+  const content=this.$('.pe-track-content');content.style.width=width+'px';
+  this.$('.pe-track-labels').innerHTML=`<span>${t.tracks}</span><div>${icon('video',14)}${t.videoTrack}</div>${Array.from({length:audioRows},(_,i)=>`<div>${icon('audio',14)}${t.audioTrack} ${i+1}</div>`).join('')}${Array.from({length:textRows},(_,i)=>`<div>${icon('text',14)}${t.text} ${i+1}</div>`).join('')}`;
+  const tickStep=this.zoom>=1?1:2;const ticks=Array.from({length:Math.ceil(width/scale/tickStep)},(_,i)=>`<span style="left:${i*tickStep*scale}px">${clock(i*tickStep).slice(0,5)}</span>`).join('');
+  const draw=(track:'video'|'audio'|'text',id:string,name:string,at:number,d:number)=>`<button class="pe-clip ${track} ${this.selected?.id===id?'selected':''}" type="button" draggable="true" data-select="${track}:${id}" data-track="${track}" data-clip="${id}" style="left:${at*scale}px;width:${Math.max(3,d*scale)}px" title="${escapeHtml(name)}"><i data-resize="start"></i><span>${icon(track==='audio'?'audio':track==='text'?'text':'video',12)}<b>${escapeHtml(name)}</b></span><small>${d.toFixed(1)} s</small><i data-resize="end"></i></button>`;
+  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div><div class="pe-time-row" data-drop="video">${positions(this.project).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip))).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
+   (this.project.audio.length?this.project.audio.map(c=>`<div class="pe-time-row" data-drop="audio">${draw('audio',c.id,c.name,c.at,length(c))}</div>`).join(''):`<div class="pe-time-row" data-drop="audio"><button class="pe-track-add" data-action="tab-audio">${t.audio}: ${t.import}</button></div>`)+
+   (this.project.texts.length?this.project.texts.map(c=>`<div class="pe-time-row" data-drop="text">${draw('text',c.id,c.text,c.from,c.to-c.from)}</div>`).join(''):`<div class="pe-time-row" data-drop="text"><button class="pe-track-add" data-action="add-text">${t.addText}</button></div>`)+`<div class="pe-head" style="left:${this.cursor*scale}px;height:${(1+audioRows+textRows)*rowH+25}px"><span></span></div>`;
+  this.$('#pe-in').textContent=clock(this.markIn);this.$('#pe-out').textContent=clock(this.markOut);this.$<HTMLButtonElement>('[data-action="cut"]').disabled=Math.abs(this.markIn-this.markOut)<.04;
+ }
+ private async seek(time:number){if(this.loading||this.exporting)return;try{await this.engine.seek(clamp(time,0,totalLength(this.project)));}catch(e){this.fail(e);}}
+ private select(track:string,id:string){if(!['video','audio','text'].includes(track))return;this.engine.pause();this.selected={track:track as Selection['track'],id};this.cursor=this.selectedAt();this.renderInspector();this.renderTimeline();void this.seek(this.cursor);}
+ private click(e:Event){const target=e.target as Element;if(target.matches('.pe-panel-shade')&&this.expanded){this.expand(this.expanded);return;}const sel=target.closest<HTMLElement>('[data-select]');if(sel&&!target.closest('[data-resize]')){const [track,id]=sel.dataset.select!.split(':');this.select(track,id);return;}
+  const asset=target.closest<HTMLElement>('[data-asset]');if(asset){const a=this.opts.assets.get(asset.dataset.asset!);if(!a)return;const p=clone(this.project),c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;p.audio.push(c);}else p.clips.push(c);this.selected={track:a.kind==='audio'?'audio':'video',id:c.id};this.commit(p);return;}
+  const speed=target.closest<HTMLElement>('[data-speed]');if(speed){this.changeSelected({speed:Number(speed.dataset.speed)});return;}
+  const action=target.closest<HTMLElement>('[data-action]')?.dataset.action;if(!action)return;
+  if(this.exporting&&action!=='cancel-export')return;
+  if(action==='home'){this.engine.pause();this.save(false);this.opts.onHome(clone(this.project));return;}
+  if(action==='theme'){this.opts.onTheme();return;}
+  if(action==='save'){this.save();return;}
+  if(action.startsWith('mode-')){const p=clone(this.project);p.mode=action==='mode-reels'?'reels':'video';p.ratio=p.mode==='reels'?'9:16':'16:9';this.commit(p);return;}
+  if(action.startsWith('tab-')){this.tab=action.slice(4) as typeof this.tab;this.root.dataset.mobile='library';this.renderLibrary();for(const name of ['media','audio','text'])this.$(`[data-action="tab-${name}"]`).classList.toggle('active',this.tab===name);return;}
+  if(action.startsWith('mobile-')){this.root.dataset.mobile=action.slice(7);requestAnimationFrame(()=>this.fitCanvas());return;}
+  if(action.startsWith('expand-')){this.expand(action.slice(7));return;}
+  if(action==='import'){const input=this.$<HTMLInputElement>('.pe-file-input');input.accept=this.tab==='audio'?'audio/*':'video/*,image/*,audio/*';input.click();return;}
+  if(action==='srt'){this.$<HTMLInputElement>('.pe-srt-input').click();return;}
+  if(action==='json-import'){this.$<HTMLInputElement>('.pe-json-input').click();return;}
+  if(action==='json-export'){download(new Blob([JSON.stringify(this.project,null,2)],{type:'application/json'}),this.project.name+'.json');return;}
+  if(action==='play'){if(this.loading)return;this.engine.playing?this.engine.pause():void this.engine.play().catch(e=>this.fail(e));return;}
+  if(action==='back'||action==='forward'){void this.seek(this.cursor+(action==='back'?-1:1));return;}
+  if(action==='undo'||action==='redo'){this.engine.pause();this.history[action]();this.selected=null;this.render();void this.prepare();return;}
+  if(action==='mark-in'||action==='mark-out'){if(action==='mark-in')this.markIn=this.cursor;else this.markOut=this.cursor;this.renderTimeline();return;}
+  if(action==='cut'){this.commit(cutRange(this.project,this.markIn,this.markOut));this.markOut=this.markIn;this.renderTimeline();return;}
+  if(action==='add-text'){const p=clone(this.project),c=normalizeCaption({text:t.text,from:this.cursor,to:Math.max(this.cursor+3,videoLength(p))});p.texts.push(c);this.selected={track:'text',id:c.id};this.tab='text';this.commit(p);return;}
+  if(action==='export'){this.openExport();return;}
+  if(action==='close-export'){this.closeExport();return;}
+  if(action==='start-export'){void this.runExport();return;}
+  if(action==='cancel-export'){this.abort?.abort();return;}
+  const item=this.selectedItem(),s=this.selected;if(!item||!s)return;
+  const p=clone(this.project),list=s.track==='video'?p.clips:s.track==='audio'?p.audio:p.texts,index=list.findIndex(c=>c.id===s.id);
+  if(action==='delete'){list.splice(index,1);this.selected=null;this.commit(p);return;}
+  if(action==='duplicate'){const c=clone(item);c.id=uid();if(s.track==='text'){const a=c as Caption;const d=a.to-a.from;a.from=a.to;a.to+=d;p.texts.push(a);}else if(s.track==='audio'){(c as Clip).at+=length(c as Clip);p.audio.push(c as Clip);}else p.clips.splice(index+1,0,c as Clip);this.selected={track:s.track,id:c.id};this.commit(p);return;}
+  if(action==='split'){
+   if(s.track==='text'){const c=item as Caption;if(this.cursor<=c.from+.04||this.cursor>=c.to-.04)return;p.texts.splice(index,1,{...c,to:this.cursor},{...c,id:uid(),from:this.cursor});}
+   else{const halves=splitClip(item as Clip,this.cursor-this.selectedAt());if(!halves)return;(s.track==='video'?p.clips:p.audio).splice(index,1,...halves);}this.commit(p);return;
+  }
+  if(action==='trim-start'||action==='trim-end'){if(s.track==='text'){const c=item as Caption;this.changeSelected(action==='trim-start'?{from:clamp(this.cursor,0,c.to-.04)}:{to:Math.max(c.from+.04,this.cursor)});}else{const c=item as Clip,v=c.start+(this.cursor-this.selectedAt())*c.speed;this.changeSelected(action==='trim-start'?{start:clamp(v,c.start,c.end-.04),...(s.track==='audio'?{at:this.cursor}:{})}:{end:clamp(v,c.start+.04,c.end)});}return;}
+  if(action==='detach'&&s.track==='video'){const c=p.clips[index];p.audio.push({...c,id:uid(),kind:'audio',at:this.selectedAt()});c.muted=true;this.commit(p);return;}
+  if(action==='move-left'||action==='move-right'){if(s.track!=='video')return;const j=index+(action==='move-left'?-1:1);if(j<0||j>=p.clips.length)return;[p.clips[index],p.clips[j]]=[p.clips[j],p.clips[index]];this.commit(p);return;}
+  if(action==='fit-contain'||action==='fit-cover'){this.changeSelected({fit:action==='fit-cover'?'cover':'contain'});}
+ }
+ private input(e:Event){const target=e.target as HTMLInputElement;if(target.type==='range'&&target.dataset.field){const out=this.root.querySelector(`[data-value="${target.dataset.field}"]`);if(out)out.textContent=target.value;}
+  if(target.dataset.ui==='zoom'){this.zoom=Number(target.value);this.renderTimeline();}
+ }
+ private change(e:Event){if(this.exporting)return;const target=e.target as HTMLInputElement;
+  if(target.matches('.pe-file-input')){const files=Array.from(target.files||[]);target.value='';void this.importFiles(files);return;}
+  if(target.matches('.pe-srt-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const captions=parseSrt(s);if(!captions.length)throw Error('No valid SRT cues');const p=clone(this.project);p.texts.push(...captions);this.commit(p);}).catch(e=>this.fail(e));return;}
+  if(target.matches('.pe-json-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const parsed=JSON.parse(s);if(!parsed||!Array.isArray(parsed.clips))throw Error('Invalid project');this.engine.pause();this.history=new History(normalizeProject(parsed));this.selected=null;this.cursor=0;this.render();return this.restore();}).catch(e=>this.fail(e));return;}
+  if(target.dataset.ui==='safe'){this.safe=target.checked;this.$('.pe-safe').hidden=!this.safe;return;}
+  if(target.dataset.project){const p=clone(this.project);if(target.dataset.project==='name')p.name=target.value;else if(target.dataset.project==='ratio')p.ratio=target.value as Ratio;else p.master=Number(target.value);this.commit(p);return;}
+  if(target.dataset.field){const field=target.dataset.field;let value:unknown=target.type==='checkbox'?target.checked:['number','range'].includes(target.type)?Number(target.value):target.value;
+   if(typeof value==='number'&&!Number.isFinite(value))return;const c=this.selectedItem();let patch={ [field]:value } as Partial<Clip>&Partial<Caption>;
+   if(c&&this.selected?.track!=='text'&&field==='end'&&(c as Clip).kind==='image')patch.duration=Math.max((c as Clip).duration,Number(value));this.changeSelected(patch);
+  }
+ }
+ private pointer(e:PointerEvent){if(this.exporting)return;const target=e.target as Element,panel=target.closest<HTMLElement>('[data-panel]');if(panel){this.root.querySelectorAll('.pe-panel.front').forEach(n=>n.classList.remove('front'));panel.classList.add('front');}
+  if(target.closest('[data-seek],.pe-time-row')&&!target.closest('button')&&!this.loading){const rect=this.$('.pe-track-content').getBoundingClientRect();void this.seek((e.clientX-rect.left)/this.pixels());}
+  const handle=target.closest<HTMLElement>('[data-resize]'),clip=handle?.closest<HTMLElement>('[data-clip]');if(!handle||!clip)return;
+  e.preventDefault();e.stopPropagation();const [track,id]=clip.dataset.select!.split(':');this.selected={track:track as Selection['track'],id};const item=clone(this.selectedItem());if(!item)return;const startX=e.clientX;this.engine.pause();
+  const move=(event:PointerEvent)=>{const delta=(event.clientX-startX)/this.pixels();clip.style.opacity='.65';clip.style.translate=(handle.dataset.resize==='start'?delta*this.pixels():0)+'px 0';};
+  const end=(event:PointerEvent)=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',cancel);const delta=(event.clientX-startX)/this.pixels();if(track==='text'){const c=item as Caption;this.changeSelected(handle.dataset.resize==='start'?{from:clamp(c.from+delta,0,c.to-.04)}:{to:Math.max(c.from+.04,c.to+delta)});}else{const c=item as Clip;this.changeSelected(handle.dataset.resize==='start'?{start:clamp(c.start+delta*c.speed,0,c.end-.04),...(track==='audio'?{at:Math.max(0,c.at+delta)}:{})}:{end:clamp(c.end+delta*c.speed,c.start+.04,c.duration)});}};
+  const cancel=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',cancel);this.renderTimeline();};
+  document.addEventListener('pointermove',move);document.addEventListener('pointerup',end);document.addEventListener('pointercancel',cancel);this.cleanups.push(cancel);
+ }
+ private dragStart(e:DragEvent){const target=(e.target as Element).closest<HTMLElement>('[data-clip]');if(!target)return;e.dataTransfer?.setData('application/x-pokadrovo',target.dataset.select!);}
+ private drop(e:DragEvent){e.preventDefault();if(this.exporting)return;if(e.dataTransfer?.files.length){void this.importFiles(Array.from(e.dataTransfer.files));return;}
+  const raw=e.dataTransfer?.getData('application/x-pokadrovo');if(!raw)return;const [track,id]=raw.split(':'),p=clone(this.project);const rect=this.$('.pe-track-content').getBoundingClientRect(),at=Math.max(0,(e.clientX-rect.left)/this.pixels());
+  if(track==='video'){const index=p.clips.findIndex(c=>c.id===id);if(index<0)return;const target=positions(p).find(c=>at<c.end)?.clip.id;const dest=target?p.clips.findIndex(c=>c.id===target):p.clips.length;const [c]=p.clips.splice(index,1);p.clips.splice(Math.max(0,dest-(index<dest?1:0)),0,c);}
+  if(track==='audio'){const c=p.audio.find(c=>c.id===id);if(c)c.at=at;}
+  if(track==='text'){const c=p.texts.find(c=>c.id===id);if(c){c.to=at+(c.to-c.from);c.from=at;}}
+  this.selected={track:track as Selection['track'],id};this.commit(p);
+ }
+ private expand(panel:string){const same=this.expanded===panel;this.root.querySelectorAll<HTMLElement>('.pe-panel.maximized').forEach(n=>{n.classList.remove('maximized');n.removeAttribute('role');n.removeAttribute('aria-modal');});
+  this.expanded=same?'':panel;this.$('.pe-panel-shade').hidden=!this.expanded;
+  if(this.expanded){this.lastFocus=document.activeElement as HTMLElement;const node=this.$(`[data-panel="${panel}"]`);node.classList.add('maximized');node.setAttribute('role','dialog');node.setAttribute('aria-modal','true');node.setAttribute('aria-label',panel);node.querySelector<HTMLElement>('button')?.focus();}else this.lastFocus?.focus();
+  requestAnimationFrame(()=>this.fitCanvas());
+ }
+ private key(e:KeyboardEvent){if(this.disposed)return;
+  if(e.key==='Escape'){if(this.exporting){this.abort?.abort();return;}if(this.expanded)this.expand(this.expanded);else this.closeExport();return;}
+  if(e.key==='Tab'&&(this.expanded||!this.$('.pe-modal').hidden)){const host=this.expanded?this.$(`[data-panel="${this.expanded}"]`):this.$('.pe-modal');const els=[...host.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select,textarea')].filter(n=>n.getClientRects().length);if(els.length){const first=els[0],last=els[els.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}return;}
+  if(this.exporting||!this.$('.pe-modal').hidden)return;const input=(e.target as Element)?.closest('input,textarea,select,[contenteditable=true]');
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();this.save();return;}if(input)return;
+  const actions:Record<string,string>={' ':'play',s:'split',Delete:'delete',Backspace:'delete',i:'mark-in',o:'mark-out'};
+  let action=actions[e.key];if(e.ctrlKey||e.metaKey){if(e.key.toLowerCase()==='z')action=e.shiftKey?'redo':'undo';if(e.key.toLowerCase()==='y')action='redo';if(e.key.toLowerCase()==='d')action='duplicate';}
+  if(action){e.preventDefault();this.root.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)?.click();}
+ }
+ private openExport(){this.engine.pause();const formats=exportFormats(),modal=this.$('.pe-modal');this.lastFocus=document.activeElement as HTMLElement;modal.hidden=false;modal.innerHTML=`<section role="dialog" aria-modal="true" aria-label="${t.export}" class="pe-export-dialog"><header><h2>${t.export}</h2>${button('close-export',t.close,'close','square')}</header><p>${this.project.ratio} / ${clock(totalLength(this.project))}</p><label class="pe-field">${t.quality}<select id="pe-quality"><option value="720">720p</option><option value="1080">1080p</option></select></label><label class="pe-field">${t.export}<select id="pe-format">${formats.map((f,i)=>`<option value="${i}">${f.label} + ${t.audio}</option>`).join('')}</select></label><p class="pe-note">${t.renderHint}</p><progress max="1" value="0"></progress><output class="pe-export-progress">0%</output><p role="status" class="pe-export-message"></p><div class="pe-export-actions">${button('cancel-export',t.cancel,'','', 'hidden')}${button('start-export',t.export,'download','primary',formats.length?'':'disabled')}</div></section>`;modal.querySelector<HTMLElement>('select')?.focus();}
+ private closeExport(){if(this.exporting)return;this.$('.pe-modal').hidden=true;this.lastFocus?.focus();}
+ private async runExport(){if(this.exporting)return;this.exporting=true;this.abort=new AbortController();const format=exportFormats()[Number(this.$<HTMLSelectElement>('#pe-format').value)];const modal=this.$('.pe-modal');
+  if(!format){this.exporting=false;return;}const quality=Number(this.$<HTMLSelectElement>('#pe-quality').value);
+  modal.querySelectorAll<HTMLInputElement>('select,button').forEach(n=>n.disabled=true);const cancel=this.$<HTMLButtonElement>('[data-action="cancel-export"]');cancel.hidden=false;cancel.disabled=false;cancel.focus();
+  this.$('.pe-export-message').textContent=t.loading+'...';
+  try{const blob=await exportProject(clone(this.project),this.opts.assets,format,quality,v=>{this.$<HTMLProgressElement>('progress').value=v;this.$('.pe-export-progress').textContent=Math.floor(v*100)+'%';this.$('.pe-export-message').textContent=t.renderHint;},this.abort.signal);
+   download(blob,this.project.name+'.'+format.ext);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.exportUrl=URL.createObjectURL(blob);
+   const link=document.createElement('a');link.href=this.exportUrl;link.download=this.project.name+'.'+format.ext;link.textContent=t.download;link.className='pe-download';this.$('.pe-export-actions').append(link);this.$('.pe-export-message').textContent=t.done;this.status(t.done);
+  }catch(e){this.$('.pe-export-message').textContent=e instanceof DOMException&&e.name==='AbortError'?t.cancel:t.error+': '+(e instanceof Error?e.message:String(e));}
+  finally{this.exporting=false;cancel.hidden=true;modal.querySelectorAll<HTMLInputElement>('select,button').forEach(n=>n.disabled=false);}
+ }
+ dispose(){this.disposed=true;this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
+}
