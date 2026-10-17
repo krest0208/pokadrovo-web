@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Film, Plus, Play, Pause, Scissors, Trash2, Download, Upload, Save, FolderOpen, Type, ChevronLeft, ChevronRight, MoveUp, MoveDown, Settings2, Sparkles, MonitorPlay, Volume2, CircleHelp, RotateCcw, Moon, Sun, Home, ArrowRight, WandSparkles, Zap, ShieldCheck, Layers, PlayCircle, ArrowUpRight } from "lucide-react";
 import BrandMark from "./BrandMark";
-import { ArrowLeft, CheckCircle2, Grid2X2, FileVideo2, FileImage, MousePointer2, SlidersHorizontal, Video, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Grid2X2, FileVideo2, FileImage, MousePointer2, SlidersHorizontal, Video, ZoomIn, ZoomOut, WandSparkles, X } from "lucide-react";
 import "./pokadrovo.css";
 import "./workspace-pro.css";
+import AiHome from "./AiHome";
 
 
 type Clip = { id:string; assetId:string; name:string; kind:"video"|"image"; duration:number; start:number; end:number };
@@ -31,6 +32,7 @@ export default function Studio(){
  const [theme,setTheme]=useState<"light"|"dark">("light");
  const [screen,setScreen]=useState<"home"|"editor">("home");
  const [timelineZoom,setTimelineZoom]=useState(1);
+ const [aiBrief,setAiBrief]=useState("");
  const fileInput=useRef<HTMLInputElement>(null);
  const videoRef=useRef<HTMLVideoElement>(null);
  const stillRef=useRef<HTMLImageElement>(null);
@@ -61,6 +63,8 @@ export default function Studio(){
    });
  };
  const startNewProject=()=>{setPlaying(false);setProject(makeProject());setSelected(null);setCursor(0);setOpenProjects(false);setMessage("Новый проект создан. Добавьте видео или фото");setScreen("editor")};
+ const startFromIdea=(idea:string)=>{setAiBrief(idea);startNewProject();setMessage(idea?"Задание добавлено в проект. ИИ-обработка пока не подключена.":"Новый проект создан. Добавьте медиа");};
+ const importFromHome=(files:FileList|null,idea:string)=>{if(!files?.length)return;setAiBrief(idea);setScreen("editor");setOpenProjects(false);void importFiles(files);};
  const continueProject=()=>{setPlaying(false);setOpenProjects(false);setScreen("editor")};
  useEffect(()=>{try{const p=JSON.parse(localStorage.getItem(KEY)||"[]") as Project[];setProjects(p);if(p.length){setProject(p[0]);setSelected(p[0].clips[0]?.id||null)}}catch{}},[]);
  useEffect(()=>{const ids=new Set(project.clips.map(c=>c.assetId));let alive=true;(async()=>{for(const c of project.clips){if(assetsRef.current.some(a=>a.id===c.assetId))continue;try{const blob=await readFile(c.assetId);if(blob&&alive){const url=URL.createObjectURL(blob);urlsRef.current.push(url);setAssets(old=>old.some(a=>a.id===c.assetId)?old:[...old,{id:c.assetId,kind:c.kind,name:c.name,blob,url,duration:c.duration}])}}catch{setMessage("Не удалось загрузить часть медиафайлов")}}})();return()=>{alive=false}},[project.id,project.clips.length]);
@@ -94,13 +98,14 @@ export default function Studio(){
     return()=>window.removeEventListener("keydown",onKey);
   });
  return <div className="pk-app" data-theme={theme}>
- {screen==="home" ? <HomeScreen
+ {screen==="home" ? <AiHome
    theme={theme}
    onToggleTheme={toggleTheme}
-   onNewProject={startNewProject}
+   onCreate={startFromIdea}
    onContinue={continueProject}
-   onOpenProject={openProjectFromHome}
-   projects={projects}
+   onImport={importFromHome}
+   onOpenProject={(id)=>{const p=projects.find(item=>item.id===id);if(p)openProjectFromHome(p)}}
+   projects={projects.map(p=>({id:p.id,name:p.name,modified:p.modified,count:p.clips.length}))}
  /> : <>
 
  <header className="px-topbar">
@@ -122,6 +127,7 @@ export default function Studio(){
    <div className="px-menu-heading"><strong>Сохранённые проекты</strong><button onClick={()=>{chooseProject(makeProject());setOpenProjects(false)}}><Plus size={14}/> Новый</button></div>
    {projects.length?projects.map(p=><button key={p.id} className="px-project-row" onClick={()=>chooseProject(p)}><BrandMark size={27}/><span><strong>{p.name||"Без названия"}</strong><small>{p.clips.length} клипов · {new Date(p.modified).toLocaleDateString("ru-RU")}</small></span><ChevronRight size={15}/></button>):<p className="px-hint">Сохранённых проектов пока нет.</p>}
  </div>}
+ {aiBrief&&<div className="px-ai-brief"><WandSparkles size={16}/><span><strong>Ваш замысел:</strong> {aiBrief}</span><small>ИИ пока не подключён</small><button title="Убрать задание" aria-label="Убрать задание" onClick={()=>setAiBrief("")}><X size={15}/></button></div>}
  <div className="px-editor">
   <nav className="px-toolrail" aria-label="Инструменты">
     <button className={tab==="media"?"is-active":""} onClick={()=>setTab("media")}><Grid2X2 size={21}/><span>Медиа</span></button>
@@ -194,57 +200,3 @@ export default function Studio(){
  </div>
 }
 
-type ThemeMode="light"|"dark";
-type HomeScreenProps={
- theme:ThemeMode;
- onToggleTheme:()=>void;
- onNewProject:()=>void;
- onContinue:()=>void;
- onOpenProject:(project:Project)=>void;
- projects:Project[];
-};
-function HomeScreen({theme,onToggleTheme,onNewProject,onContinue,onOpenProject,projects}:HomeScreenProps){
- return <div className="pk-home" lang="ru">
-  <header className="pk-home-header">
-   <div className="pk-home-brand"><BrandMark size={41} className="pk-brand-symbol"/><span className="pk-home-brand-word">ПОКАДРОВО<small>видеоредактор нового поколения</small></span></div>
-   <nav className="pk-home-nav" aria-label="Навигация главного меню"><a href="#pk-advantages">Преимущества</a><a href="#pk-ai-vision">Наш ИИ</a><button onClick={onContinue}>Монтажёр <ArrowUpRight size={14}/></button></nav>
-   <button className="pk-theme-toggle pk-home-theme" onClick={onToggleTheme} aria-label={theme==="light"?"Включить тёмную тему":"Включить светлую тему"} title={theme==="light"?"Тёмная тема":"Светлая тема"}>{theme==="light"?<Moon size={19}/>:<Sun size={19}/>}<span>{theme==="light"?"Тёмная тема":"Светлая тема"}</span></button>
-  </header>
-  <div className="pk-home-content">
-   <section className="pk-home-hero">
-    <div className="pk-hero-copy">
-     <div className="pk-hero-pill"><span className="pk-pulse"/> ДОБРО ПОЖАЛОВАТЬ В ПОКАДРОВО</div>
-     <h1>Ваши идеи.<br/><span>Наш следующий кадр.</span></h1>
-     <p className="pk-hero-intro">Начните с простого монтажа уже сейчас. Мы создаём ИИ-редактор, который в будущем будет понимать смысл видео и помогать собирать сильные истории.</p>
-     <div className="pk-hero-actions">
-      <button type="button" className="pk-home-primary" onClick={onNewProject}><Plus size={19}/> Начать монтаж <ArrowRight size={18}/></button>
-      <button type="button" className="pk-home-secondary" onClick={onContinue}><PlayCircle size={18}/> Продолжить проект</button>
-     </div>
-     <p className="pk-hero-footnote"><ShieldCheck size={15}/> Монтаж в браузере · Проекты сохраняются на устройстве</p>
-    </div>
-    <div className="pk-hero-showcase" aria-label="Иллюстрация творческой монтажной студии">
-      <div className="pk-showcase-top"><span className="pk-showcase-dots"><i/><i/><i/></span><strong><BrandMark size={17}/> Покадрово Studio</strong><span>ПРЕДПРОСМОТР</span></div>
-      <div className="pk-showcase-media"><div className="pk-showcase-sun"/><div className="pk-showcase-hill pk-showcase-hill-one"/><div className="pk-showcase-hill pk-showcase-hill-two"/><div className="pk-showcase-focus"><Play size={21} fill="currentColor"/></div><div className="pk-showcase-caption">Истории начинаются с кадра</div></div>
-      <div className="pk-showcase-timeline"><div className="pk-showcase-ruler"><span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span></div><div className="pk-showcase-clips"><div><span/><span/><span/></div><div><span/><span/></div></div><div className="pk-showcase-line"/></div>
-      <div className="pk-showcase-bottom"><span><span className="pk-live-circle"/> Творческая студия</span><span>16:9</span></div>
-      <div className="pk-float-note"><WandSparkles size={19}/><span>Умный монтаж<br/><small>наша следующая цель</small></span></div>
-    </div>
-   </section>
-   <section className="pk-home-advantages" id="pk-advantages">
-    <div className="pk-home-section-label">ПОЧЕМУ ПОКАДРОВО</div>
-    <h2>Всё начинается с идеи.<br/><span>Мы помогаем воплотить её.</span></h2>
-    <div className="pk-home-feature-grid">
-     <article className="pk-home-feature"><span className="pk-feature-icon"><Zap size={23}/></span><h3>Начать легко</h3><p>Загружайте свои видео и фотографии, собирайте клипы на таймлайне и сразу смотрите результат.</p><span className="pk-feature-state"><span/> Уже доступно</span></article>
-     <article className="pk-home-feature"><span className="pk-feature-icon"><Layers size={23}/></span><h3>Контроль над кадром</h3><p>Обрезайте, делите и переставляйте фрагменты. Добавляйте текст и сохраняйте проекты в браузере.</p><span className="pk-feature-state"><span/> Уже доступно</span></article>
-     <article className="pk-home-feature"><span className="pk-feature-icon"><WandSparkles size={23}/></span><h3>ИИ как соавтор</h3><p>Наша большая цель: ИИ, который анализирует сцены, предлагает удачные моменты и помогает довести видео до нужного настроения.</p><span className="pk-feature-state pk-feature-planned"><span/> В разработке</span></article>
-    </div>
-   </section>
-   <section id="pk-ai-vision" className="pk-home-ai">
-    <div className="pk-ai-copy"><div className="pk-ai-badge"><WandSparkles size={16}/> НАШЕ ВИДЕНИЕ</div><h2>Монтажёр, который<br/>понимает <em>вашу историю.</em></h2><p>Мы хотим создать один из лучших ИИ-видеоредакторов: не просто набор эффектов, а помощника, который понимает сюжет, ритм, стиль и ваши пожелания. Эти возможности ещё предстоит реализовать и проверить на практике.</p><button type="button" onClick={onNewProject}>Создать первый проект <ArrowRight size={17}/></button></div>
-    <div className="pk-ai-checklist"><div className="pk-ai-list-heading">Что мы планируем для ИИ</div><div><WandSparkles size={18}/><span><strong>Умный выбор кадров</strong><small>Находить лучшие моменты в видео</small></span><b>ПЛАН</b></div><div><Zap size={18}/><span><strong>Монтаж по описанию</strong><small>Собирать ролик по вашим словам</small></span><b>ПЛАН</b></div><div><Film size={18}/><span><strong>Автосубтитры и звук</strong><small>Работа с речью, музыкой и ритмом</small></span><b>ПЛАН</b></div></div>
-   </section>
-   {projects.length>0&&<section className="pk-home-recent"><div className="pk-recent-title"><div><div className="pk-home-section-label">ВАШИ ПРОЕКТЫ</div><h2>Продолжим с того кадра?</h2></div><button onClick={onContinue}>Открыть монтажёр <ArrowRight size={16}/></button></div><div className="pk-recent-list">{projects.slice(0,3).map(p=><button key={p.id} onClick={()=>onOpenProject(p)} className="pk-recent-item"><span><Film size={20}/></span><span><strong>{p.name||"Без названия"}</strong><small>{p.clips.length} клипов · сохранён {new Date(p.modified).toLocaleDateString("ru-RU")}</small></span><ArrowRight size={19}/></button>)}</div></section>}
-   <footer className="pk-home-footer"><strong className="px-footer-logo"><BrandMark size={23}/> ПОКАДРОВО</strong><span>Создаём видеоредактор, который растёт вместе с вашими идеями.</span><span>Веб-версия · ранняя стадия</span></footer>
-  </div>
- </div>
-}
