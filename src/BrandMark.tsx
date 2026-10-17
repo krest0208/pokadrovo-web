@@ -1,10 +1,14 @@
 import type { SVGProps } from "react";
 
-export default function BrandMark({size=36,...props}:SVGProps<SVGSVGElement>&{size?:number}) {
- return <svg {...props} width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <rect width="64" height="64" rx="17" fill="#2563eb"/>
-  <path d="M20.8 15.1C20.8 12.9 23.2 11.6 25.1 12.7L51.2 29.5C53.1 30.7 53.1 33.3 51.2 34.5L25.1 51.3C23.2 52.4 20.8 51.1 20.8 48.9V15.1Z" fill="white"/>
-  <rect x="28" y="24.1" width="4.5" height="15.8" rx="1.4" fill="#2563eb"/>
-  <rect x="36.3" y="27.5" width="4.5" height="9" rx="1.4" fill="#2563eb"/>
- </svg>;
+/** An open film frame around a playhead: an idea becoming editable footage. */
+export default function BrandMark({ size = 36, ...props }: SVGProps<SVGSVGElement> & { size?: number }) {
+  return (
+    <svg {...props} width={size} height={size} viewBox="0 0 64 64" fill="none"
+      xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <rect width="64" height="64" rx="16" fill="#245CE0" />
+      <path d="M23 18H19A3 3 0 0 0 16 21V43A3 3 0 0 0 19 46H23M41 18H45A3 3 0 0 1 48 21V43A3 3 0 0 1 45 46H41"
+        stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M27 23L42 32L27 41V23Z" fill="white" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
 }

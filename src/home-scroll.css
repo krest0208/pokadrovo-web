@@ -1,0 +1,247 @@
+/* Viewport choreography. Each block is complete before JavaScript runs. */
+.pkh { --page-gutter:clamp(20px,4vw,56px); }
+.pkh .pkh-header {
+  width:100%;max-width:1440px;padding-inline:var(--page-gutter);
+  gap:24px;height:80px;
+}
+.pkh .pkh-header-right { gap:18px; }
+.pkh .pkh-editor-link {
+  display:inline-flex;align-items:center;justify-content:center;gap:11px;
+  min-height:44px;padding:0 19px;border:1px solid #245ce0;border-radius:10px;
+  background:#245ce0;color:#fff;font-size:12px;font-weight:650;white-space:nowrap;
+  box-shadow:0 6px 18px -9px #245ce080;transition:background .18s,box-shadow .18s,translate .18s;
+}
+.pkh .pkh-editor-link:hover {color:white;background:#194dc7;box-shadow:0 9px 22px -10px #245ce0b3;translate:0 -1px}
+.pkh .pkh-editor-link:active {translate:0 0;box-shadow:none}
+.pkh .pkh-editor-link>svg:first-child {fill:currentColor;stroke-width:1.3}
+.pkh .pkh-editor-link>svg:last-child {transition:translate .2s}
+.pkh .pkh-editor-link:hover>svg:last-child {translate:2px 0}
+.pkh .pkh-brand>svg,.pkh .pkh-footer>div>svg {border-radius:9px;flex-shrink:0}
+/* Shared, centred safe area instead of independent offsets for each section. */
+.pkh .pkh-hero {
+  width:calc(100% - 2 * var(--page-gutter));max-width:1312px;margin:0 auto;
+  min-height:748px;padding-bottom:4px;
+}
+.pkh .pkh-hero-copy {padding-top:65px;width:47%;max-width:565px;min-width:0}
+.pkh h1 {font-size:clamp(49px,5vw,70px);line-height:1.13;letter-spacing:-3.35px;max-width:100%}
+.pkh .pkh-lead {max-width:445px;font-size:14px;line-height:1.85}
+.pkh .pkh-heading-selected {white-space:normal}
+.pkh .pkh-stage {
+  width:716px;height:695px;right:4px;top:23px;scale:.88;
+  transform:none;transform-origin:top right;
+}
+.pkh .pkh-composer-wrap {width:47.5%;max-width:610px;margin-top:31px}
+.pkh .pkh-hero-bottom {left:0;right:0}
+.pkh .pkh-stage-controls {gap:10px;max-width:570px;top:675px}
+.pkh .pkh-autoplay-label {flex-basis:100%;font-size:10px;line-height:1.5;color:var(--muted);text-align:right;margin-bottom:2px}
+.pkh .pkh-method,.pkh .pkh-recent,.pkh .pkh-faq {
+  width:calc(100% - 2 * var(--page-gutter));max-width:1200px;margin-inline:auto;
+}
+.pkh .pkh-method {grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:46px;margin-top:78px;margin-bottom:85px}
+.pkh .pkh-method-left {min-width:0;max-width:530px;justify-self:start}
+.pkh .pkh-method h2 {font-size:clamp(29px,3.2vw,42px);line-height:1.16;letter-spacing:-1.6px;overflow-wrap:normal}
+.pkh .pkh-section-lead {max-width:410px}
+.pkh .pkh-method-art {scale:.95;transform-origin:center;min-width:0}
+.pkh .pkh-steps {max-width:490px;min-height:252px}
+.pkh .pkh-steps button {width:100%;min-width:0}
+.pkh .pkh-steps button>div {min-width:0}
+.pkh .pkh-vision {width:calc(100% - 2 * var(--page-gutter));max-width:1280px;margin-inline:auto;padding:48px 44px;gap:55px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.pkh .pkh-vision-paper h2 {max-width:430px;font-size:clamp(28px,2.7vw,36px)}
+.pkh .pkh-vision-paper,.pkh .pkh-roadmap,.pkh .pkh-faq>div {min-width:0}
+.pkh .pkh-roadmap article>div {min-width:0}
+.pkh .pkh-faq {grid-template-columns:minmax(0,.8fr) minmax(0,1fr);gap:54px}
+.pkh .pkh-faq summary {min-width:0}
+.pkh .pkh-faq summary>svg {flex-shrink:0}
+.pkh .pkh-footer {padding-inline:var(--page-gutter)}
+.pkh .pkh-composer-top>span {max-width:40%;text-align:right;line-height:1.5}
+.pkh .pkh-composer textarea {overflow-wrap:anywhere}
+
+/* Remove old on-load motion, which fired even when a block was offscreen. */
+.pkh .pkh-main-frame,.pkh .pkh-portrait-card,.pkh .pkh-note-paper {animation:none}
+.pkh [data-scroll-scene]:not([data-motion-active="true"]) {--scene-playing:paused}
+.pkh [data-scroll-scene][data-motion-active="true"] {--scene-playing:running}
+
+/* 1. The headline settles into the composition without shifting its layout. */
+.pkh [data-scroll-scene="intro"][data-motion-active="true"] h1 {animation:pkv-title .85s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="intro"][data-motion-active="true"] .pkh-eyebrow {animation:pkv-ink .65s ease both}
+.pkh [data-scroll-scene="intro"][data-motion-active="true"] .pkh-lead {animation:pkv-rise .8s .12s cubic-bezier(.16,1,.3,1) both}
+
+/* 2. Photo layers land in sequence; the selected photo pans while in view. */
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-frame-outline {animation:pkv-outline 1.2s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-blue-print {animation:pkv-backdrop 1.3s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-acetate-sheet {animation:pkv-acetate 1.5s .08s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-main-frame {animation:pkv-photo-land 1.1s .1s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-portrait-card {animation:pkv-portrait-land 1.3s .18s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-note-paper {animation:pkv-note-land 1.15s .26s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-contact-strip {animation:pkv-film-land 1.2s .32s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-image-action>img {animation:pkv-photo-pan 8s ease-in-out infinite alternate}
+.pkh [data-scroll-scene="hero"][data-motion-active="true"] .pkh-frame-overlay {animation:pkv-ink .7s ease both}
+
+/* 3. The editing brief slides off its blue backing, not another floating card. */
+.pkh [data-scroll-scene="brief"][data-motion-active="true"] .pkh-composer-underlay {animation:pkv-brief-back 1s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="brief"][data-motion-active="true"] .pkh-composer {animation:pkv-brief .9s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="brief"][data-motion-active="true"] .pkh-presets {animation:pkv-ink 1s .2s both}
+
+/* 4. Process pages unfold, and tabs advance only while the section is visible. */
+.pkh [data-scroll-scene="process"][data-motion-active="true"] .pkh-method-left {animation:pkv-rise .9s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="process"][data-motion-active="true"] .pkh-sheet-back {animation:pkv-sheet-back 1.2s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="process"][data-motion-active="true"] .pkh-director-sheet {animation:pkv-sheet 1.3s .1s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="process"][data-motion-active="true"] .pkh-mini-film {animation:pkv-small-film 1.3s .25s cubic-bezier(.16,1,.3,1) both;overflow:hidden}
+.pkh [data-scroll-scene="process"][data-motion-active="true"] .pkh-mini-film>img {animation:pkv-small-pan 7s ease-in-out infinite alternate}
+.pkh [data-scroll-scene="process"][data-motion-active="true"] .pkh-cut-guide {animation:pkv-ink 1.2s .3s both}
+
+/* 5. Mission text is revealed as ink; planned steps slide in one by one. */
+.pkh [data-scroll-scene="vision"][data-motion-active="true"] .pkh-vision-paper {animation:pkv-mission 1.1s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="vision"][data-motion-active="true"] .pkh-roadmap article {animation:pkv-roadmap .85s .12s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="vision"][data-motion-active="true"] .pkh-roadmap article:nth-child(2) {animation-delay:.26s}
+.pkh [data-scroll-scene="vision"][data-motion-active="true"] .pkh-roadmap article:nth-child(3) {animation-delay:.4s}
+
+/* 6. Saved projects read as a contact sheet appearing from the desk. */
+.pkh [data-scroll-scene="projects"][data-motion-active="true"] .pkh-recent-heading {animation:pkv-ink .7s both}
+.pkh [data-scroll-scene="projects"][data-motion-active="true"] .pkh-project-list>button,
+.pkh [data-scroll-scene="projects"][data-motion-active="true"] .pkh-no-projects {animation:pkv-project .8s .15s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="projects"][data-motion-active="true"] .pkh-project-list>button:nth-child(2) {animation-delay:.25s}
+.pkh [data-scroll-scene="projects"][data-motion-active="true"] .pkh-project-list>button:nth-child(3) {animation-delay:.35s}
+.pkh [data-scroll-scene="projects"][data-motion-active="true"] .pkh-project-list>button:nth-child(4) {animation-delay:.45s}
+
+/* 7. FAQ lines arrive horizontally; answers use a short, separate expansion. */
+.pkh [data-scroll-scene="faq"][data-motion-active="true"] h2 {animation:pkv-rise .7s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="faq"][data-motion-active="true"] details {animation:pkv-faq .85s .1s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="faq"][data-motion-active="true"] details:nth-child(2) {animation-delay:.22s}
+.pkh [data-scroll-scene="faq"][data-motion-active="true"] details:nth-child(3) {animation-delay:.34s}
+.pkh [data-scroll-scene="faq"][data-motion-active="true"] details[open]>p {animation:pkv-answer .35s ease both}
+
+/* 8. Quiet final brand reveal. */
+.pkh [data-scroll-scene="footer"][data-motion-active="true"]>div {animation:pkv-logo .8s cubic-bezier(.16,1,.3,1) both}
+.pkh [data-scroll-scene="footer"][data-motion-active="true"]>p {animation:pkv-ink 1s .12s both}
+
+@keyframes pkv-title {from {translate:0 18px;opacity:.65} to {translate:0 0;opacity:1}}
+@keyframes pkv-rise {from {translate:0 14px;opacity:.65} to {translate:0 0;opacity:1}}
+@keyframes pkv-ink {from {opacity:.4} to {opacity:1}}
+@keyframes pkv-outline {from {translate:12px -18px;opacity:.3} to {translate:0 0;opacity:1}}
+@keyframes pkv-backdrop {from {translate:14px -28px;opacity:.5} to {translate:0 0;opacity:1}}
+@keyframes pkv-acetate {from {translate:-17px 18px;opacity:.3} to {translate:0 0;opacity:1}}
+@keyframes pkv-photo-land {from {translate:0 36px;opacity:.7} to {translate:0 0;opacity:1}}
+@keyframes pkv-portrait-land {from {translate:-22px 25px;opacity:.6} to {translate:0 0;opacity:1}}
+@keyframes pkv-note-land {from {translate:17px -15px;opacity:.6} to {translate:0 0;opacity:1}}
+@keyframes pkv-film-land {from {translate:22px 19px;opacity:.6} to {translate:0 0;opacity:1}}
+@keyframes pkv-photo-pan {from {transform:scale(1.015) translateX(-.35%)} to {transform:scale(1.065) translateX(.35%)}}
+@keyframes pkv-brief-back {from {translate:-7px 10px;opacity:.6} to {translate:0 0;opacity:1}}
+@keyframes pkv-brief {from {translate:0 17px;opacity:.65} to {translate:0 0;opacity:1}}
+@keyframes pkv-sheet-back {from {translate:15px -24px;opacity:.5} to {translate:0 0;opacity:1}}
+@keyframes pkv-sheet {from {translate:-15px 28px;opacity:.6} to {translate:0 0;opacity:1}}
+@keyframes pkv-small-film {from {translate:24px 19px;opacity:.65} to {translate:0 0;opacity:1}}
+@keyframes pkv-small-pan {from {transform:scale(1)} to {transform:scale(1.055)}}
+@keyframes pkv-mission {from {translate:0 18px;opacity:.45;clip-path:inset(0 0 12% 0)} to {translate:0 0;opacity:1;clip-path:inset(0)}}
+@keyframes pkv-roadmap {from {translate:22px 0;opacity:.4} to {translate:0 0;opacity:1}}
+@keyframes pkv-project {from {translate:0 18px;opacity:.5;scale:.99} to {translate:0 0;opacity:1;scale:1}}
+@keyframes pkv-faq {from {translate:18px 0;opacity:.5} to {translate:0 0;opacity:1}}
+@keyframes pkv-answer {from {translate:0 -5px;opacity:.4} to {translate:0 0;opacity:1}}
+@keyframes pkv-logo {from {translate:0 7px;opacity:.4} to {translate:0 0;opacity:1}}
+
+@media (min-width:951px) and (max-width:1190px) {
+  .pkh .pkh-hero {min-height:700px}
+  .pkh .pkh-hero-copy {padding-top:63px;width:47%}
+  .pkh h1 {font-size:clamp(43px,4.9vw,58px);letter-spacing:-2.7px}
+  .pkh .pkh-stage {width:716px;scale:.74;right:3px;top:40px}
+  .pkh .pkh-main-frame {left:135px;width:515px}
+  .pkh .pkh-blue-print {right:16px}
+  .pkh .pkh-portrait-card {left:47px}
+  .pkh .pkh-note-paper {right:-6px;width:229px;top:438px}
+  .pkh .pkh-contact-strip {left:193px;width:398px;top:566px}
+  .pkh .pkh-lead {font-size:13px;max-width:390px}
+  .pkh .pkh-composer-wrap {width:48%;margin-top:24px}
+  .pkh .pkh-composer-top>span {font-size:6px}
+  .pkh .pkh-method {gap:28px}
+  .pkh .pkh-method-art {scale:.81;transform-origin:left center}
+  .pkh .pkh-method h2 {font-size:32px}
+  .pkh .pkh-vision {gap:36px;padding:36px}
+}
+@media (max-width:950px) {
+  .pkh .pkh-header {height:72px;gap:16px}
+  .pkh .pkh-header-right {gap:10px}
+  .pkh .pkh-editor-link {padding:0 13px;min-height:42px;gap:7px;font-size:11px}
+  .pkh .pkh-hero {min-height:0;display:flex;flex-direction:column}
+  .pkh .pkh-hero-copy {width:100%;max-width:620px;padding-top:54px}
+  .pkh h1 {font-size:clamp(47px,7vw,62px);letter-spacing:-2.6px}
+  .pkh .pkh-lead {max-width:520px}
+  .pkh .pkh-composer-wrap {width:100%;max-width:650px;order:1;margin-top:29px}
+  .pkh .pkh-stage {position:relative;top:auto;right:auto;order:2;align-self:center;width:680px;height:730px;scale:.94;transform-origin:top center;margin-top:0;margin-bottom:-25px}
+  .pkh .pkh-stage-controls {max-width:560px;top:687px;right:12px}
+  .pkh .pkh-method {grid-template-columns:1fr;gap:10px;margin-top:65px}
+  .pkh .pkh-method-left {max-width:620px}
+  .pkh .pkh-method h2 {font-size:38px;max-width:620px}
+  .pkh .pkh-method-art {width:520px;scale:1;min-height:545px;transform-origin:center;justify-self:center}
+  .pkh .pkh-vision {padding:35px 30px;gap:32px}
+  .pkh .pkh-faq {grid-template-columns:1fr;gap:28px}
+}
+@media (max-width:650px) {
+  .pkh .pkh-header {padding-inline:18px;height:70px;gap:10px}
+  .pkh .pkh-header-right {gap:5px}
+  .pkh .pkh-brand {gap:8px}
+  .pkh .pkh-brand>span {font-size:17px}
+  .pkh .pkh-brand small {font-size:6px;letter-spacing:1px}
+  .pkh .pkh-brand>svg {width:32px;height:32px}
+  .pkh .pkh-editor-link {min-height:38px;padding:0 10px;gap:7px;font-size:10px;border-radius:8px}
+  .pkh .pkh-editor-link>svg:first-child {display:none}
+  .pkh .pkh-editor-link>svg:last-child {width:13px}
+  .pkh .pkh-theme {width:26px;min-width:26px;padding:4px}
+  .pkh .pkh-menu {width:24px;padding:3px}
+  .pkh .pkh-nav {top:69px}
+  .pkh .pkh-hero-copy {padding-top:43px}
+  .pkh h1 {font-size:clamp(37px,9.75vw,57px);letter-spacing:-2px}
+  .pkh .pkh-lead {font-size:13px;line-height:1.85;max-width:100%}
+  .pkh .pkh-short-note {max-width:100%;line-height:1.7}
+  .pkh .pkh-composer-wrap {max-width:100%;margin-top:28px;padding-bottom:10px}
+  .pkh .pkh-composer-top>span {display:none}
+  .pkh .pkh-stage {width:min(100%,352px);height:auto;min-height:0;aspect-ratio:352/458;scale:1;transform:none;margin:16px 0 0}
+  .pkh .pkh-stage .pkh-ghost-title {left:9%;font-size:clamp(45px,16vw,68px);top:1%}
+  .pkh .pkh-frame-outline {left:11%;top:6%;width:82%}
+  .pkh .pkh-blue-print {top:10%;right:3%;width:38%;height:38%;padding:12px}
+  .pkh .pkh-main-frame {left:13%;top:15%;width:79%;padding:6px}
+  .pkh .pkh-image-action>img,.pkh .pkh-image-action>video {height:auto;aspect-ratio:1.6;object-fit:cover}
+  .pkh .pkh-portrait-card {left:2%;top:48%;width:28%;padding:5px}
+  .pkh .pkh-portrait-card>img {height:auto;aspect-ratio:1;object-fit:cover}
+  .pkh .pkh-acetate-sheet {left:20%;top:12%;width:67%;height:37%}
+  .pkh .pkh-note-paper {top:58%;right:3%;width:36%;padding:12px 10px 9px}
+  .pkh .pkh-note-paper>p {font-size:9px;line-height:1.5}
+  .pkh .pkh-contact-strip {top:76%;left:24%;width:58%;padding:6px;gap:4px}
+  .pkh .pkh-contact-strip>button>img {height:27px}
+  .pkh .pkh-frame-overlay {padding:17px 9px 10px 39px}
+  .pkh .pkh-frame-overlay strong {font-size:16px}
+  .pkh .pkh-stage-controls {top:auto;bottom:0;right:0;left:0;justify-content:center;gap:9px;max-width:100%}
+  .pkh .pkh-autoplay-label {font-size:8px;text-align:center}
+  .pkh .pkh-depth-control {gap:5px}
+  .pkh .pkh-depth-control input {width:58px}
+  .pkh .pkh-hero-bottom {margin-top:22px}
+  .pkh .pkh-method {margin-top:52px;margin-bottom:46px;gap:12px}
+  .pkh .pkh-method h2 {font-size:clamp(28px,7.4vw,36px);letter-spacing:-1.2px}
+  .pkh .pkh-steps {min-height:290px}
+  .pkh .pkh-method-art {width:100%;max-width:355px;min-height:0;height:434px;scale:1;transform:none;margin:12px 0 0}
+  .pkh .pkh-sheet-back {left:24%;top:7%;width:68%;height:72%;padding:16px}
+  .pkh .pkh-director-sheet {left:4%;top:13%;width:80%;min-height:300px;padding:21px}
+  .pkh .pkh-director-sheet h3 {font-size:21px;margin-top:21px}
+  .pkh .pkh-mini-film {left:auto;right:4%;top:65%;width:40%;padding:6px}
+  .pkh .pkh-mini-film>img {height:80px;object-fit:cover}
+  .pkh .pkh-index-label {left:5%;bottom:6px;max-width:90%;font-size:6px;letter-spacing:1px}
+  .pkh .pkh-vision {grid-template-columns:1fr;margin-bottom:49px;padding:28px 22px;gap:18px}
+  .pkh .pkh-vision-paper h2 {font-size:28px}
+  .pkh .pkh-recent,.pkh .pkh-faq {margin-bottom:48px}
+  .pkh .pkh-footer {padding:22px 20px;gap:15px}
+}
+@media (max-width:370px) {
+  .pkh .pkh-header {padding-inline:12px;gap:5px}
+  .pkh .pkh-brand {gap:6px}
+  .pkh .pkh-brand>span {font-size:15px}
+  .pkh .pkh-brand small {font-size:5px}
+  .pkh .pkh-brand>svg {width:29px;height:29px}
+  .pkh .pkh-editor-link {font-size:9px;padding:0 8px;gap:5px}
+  .pkh .pkh-theme {width:23px;min-width:23px}
+  .pkh .pkh-method-art {height:437px}
+  .pkh .pkh-director-sheet {padding:17px}
+  .pkh .pkh-director-sheet h3 {font-size:20px}
+}
+.pkh[data-motion="off"] *, .pkh[data-motion="off"] *::before, .pkh[data-motion="off"] *::after {animation:none!important;transition:none!important;scroll-behavior:auto!important}
+@media (prefers-reduced-motion:reduce) {
+  .pkh *, .pkh *::before, .pkh *::after {animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
