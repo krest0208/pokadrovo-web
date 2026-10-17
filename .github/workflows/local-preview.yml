@@ -1,0 +1,20 @@
+name: Local preview package
+on:
+  push:
+    branches: [web/accounts-08]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive tracked source only
+        run: git archive --format=tar.gz --output=pokadrovo-source.tgz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokadrovo-public-source
+          path: pokadrovo-source.tgz
+          retention-days: 3
