@@ -1,0 +1,21 @@
+# Demo image credits
+
+The photo series is demonstration material, not footage edited by an AI and not a claim of endorsement by any depicted person or organization. It is reused from the supplied Pokadrovo layered-home archive, resized and compressed as WebP for this homepage.
+
+- Launch: SpaceX, bundled as `rocket.jpg` in scikit-image sample data. The package identifies it as a public-domain photograph. Original: https://www.flickr.com/photos/spacexphotos/16511594820/
+- Astronaut portrait: NASA, bundled as `astronaut.png` in scikit-image sample data. The package identifies it as public domain / no known copyright restrictions. A monochrome treatment is applied. Original: https://flic.kr/p/r9qvLn
+- Deep field: NASA, bundled as `hubble_deep_field.jpg` in scikit-image sample data. Original: https://hubblesite.org/contents/media/images/2012/37/3057-Image.html
+
+No font files are included or redistributed in this change. Production continues to use the project's already-configured font packages. The separately supplied standalone preview uses installed system fonts.
+
+The standalone HTML preview, which is not the production application, reuses React 16.0.0 / ReactDOM 16.0.1 UMD runtimes from the supplied preview archive. These runtimes use the MIT license and retain their original license headers. This does not alter the production React 19 dependencies.
+
+## React MIT license
+
+Copyright (c) 2013-present, Facebook, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
