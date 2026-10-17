@@ -9,3 +9,19 @@ editor-validation.tgz
 *.sqlite
 *.sqlite-*
 *.key
+
+# Personal delivery packages, credentials and private database backups.
+Pokadrovo-*-PRIVATE.*
+Pokadrovo-*-private.*
+*-ADMIN-PRIVATE.*
+*-admin-private.*
+*signing-backup*
+*.db
+*.db-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore

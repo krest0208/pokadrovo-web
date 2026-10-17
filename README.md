@@ -37,3 +37,7 @@ Node.js **22.16+**. Из исходников: `npm install`, `npm run build`, `
 Порядок настройки: [ACCOUNTS-START.md](ACCOUNTS-START.md). Границы проверок: [docs/ACCOUNTS-0.8-QA.md](docs/ACCOUNTS-0.8-QA.md). ИИ-протокол: [docs/AI-INTEGRATION.md](docs/AI-INTEGRATION.md).
 
 Никакого хостинга и автодеплоя. GitHub Actions только собирает и проверяет код. Android-репозиторий `krest0208/pokadrovo` не менялся.
+
+## Карта проекта и передача разработки
+
+[PROJECT-HANDOFF.md](docs/PROJECT-HANDOFF.md) содержит расположение всех модулей, принятые решения, текущие ограничения, правила работы с секретами и результат сверки с последней локальной поставкой. Для продолжения разработки используйте актуальный `main`, не старые HTML-предпросмотры.
