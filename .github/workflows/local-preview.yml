@@ -1,4 +1,4 @@
-name: Local preview package
+name: Account build and local preview
 on:
   push:
     branches: [web/accounts-08]
@@ -6,15 +6,28 @@ on:
 permissions:
   contents: read
 jobs:
-  package:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Archive tracked source only
-        run: git archive --format=tar.gz --output=pokadrovo-source.tgz HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: node tools/test-editor.cjs
+      - run: node tools/test-editor-features.cjs
+      - name: Package public build only, without font binaries
+        run: |
+          mkdir -p local-preview
+          cp -R dist server local-preview/
+          find local-preview -type f \( -iname '*.woff*' -o -iname '*.ttf' -o -iname '*.otf' -o -iname '*.eot' \) -delete
+          node --input-type=module -e "import fs from 'node:fs';import path from 'node:path';function walk(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory())walk(p);else if(p.endsWith('.css'))fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace(/@font-face\s*\{[^}]*\}/g,''));}}walk('local-preview/dist');"
+          cp start-local.bat start-local.sh ACCOUNTS-START.md package.json local-preview/
+          tar -czf pokadrovo-local-public.tgz -C local-preview .
       - uses: actions/upload-artifact@v4
         with:
-          name: pokadrovo-public-source
-          path: pokadrovo-source.tgz
+          name: pokadrovo-local-public
+          path: pokadrovo-local-public.tgz
           retention-days: 3

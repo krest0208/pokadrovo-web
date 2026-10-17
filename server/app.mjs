@@ -2,22 +2,13 @@ import { createServer } from 'node:http';
 import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAccounts } from './accounts.mjs';
+import { HttpError, deny, cookie, json, body } from './http.mjs';
 import { openStore, token, digest, equal, checkPassword, hashPassword, newTotpSecret, verifyTotp } from './security.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const DAY = 86400000;
-class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
-const deny = (status, message) => { throw new HttpError(status, message); };
-const cookie = (req, name) => String(req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith(name + '='))?.slice(name.length + 1) || '';
 const isLoopback = host => ['localhost', '127.0.0.1', '[::1]'].includes(host);
-const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
-async function body(req, maximum = 16384) {
-  if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) deny(415, 'Нужен JSON-запрос.');
-  const chunks = []; let bytes = 0;
-  for await (const chunk of req) { bytes += chunk.length; if (bytes > maximum) deny(413, 'Слишком большой запрос.'); chunks.push(chunk); }
-  try { const b = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (!b || Array.isArray(b) || typeof b !== 'object') throw Error(); return b; }
-  catch { deny(400, 'Некорректный JSON.'); }
-}
 
 export function createApp(options = {}) {
   const origin = new URL(options.origin || process.env.POKADROVO_PUBLIC_ORIGIN || 'http://localhost:5173');
@@ -68,7 +59,9 @@ export function createApp(options = {}) {
     if (!fresh || !equal(fresh.password, o.password)) deny(401, 'Credentials changed. Sign in again.');
     return fresh;
   }
-  function visitor(req) {
+const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, reauthOwner: reauth, oauthFetch: options.oauthFetch,
+    revokeOwner(req, res) { const s = session(req); store.run('DELETE FROM sessions WHERE id=?', s.id); setCookie(res, sessionName, '', 0); }
+  });  function visitor(req) {
     const [id, signature] = cookie(req, visitorName).split('.');
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
@@ -86,7 +79,7 @@ export function createApp(options = {}) {
     return { from, to, timezone: 'UTC', startedAt: Number(store.get('SELECT value FROM meta WHERE key=?', 'started').value), series,
       metrics: { pageRequests: sum('page_requests'), uniqueBrowsers: unique, visits: sum('site_view'), editorOpens: sum('editor_open'), projects, projectSaves: sum('project_saved'), exports: sum('export_completed'), aiRequests: sum('ai_request') },
       breakdown: { devices: store.all("SELECT device label,count(DISTINCT visitor) count FROM events WHERE kind='site_view' AND at>=? AND at<=? GROUP BY device", start, now()), modes: store.all("SELECT mode label,count(*) count FROM events WHERE kind='editor_open' AND at>=? AND at<=? GROUP BY mode", start, now()), formats: store.all("SELECT format label,count(*) count FROM events WHERE kind='export_completed' AND at>=? AND at<=? GROUP BY format", start, now()) },
-      integrations: { users: false, payments: false, aiProvider: false },
+      users: accounts.userMetrics(days), integrations: { users: true, payments: false, aiProvider: false },
       notes: ['Счётчик запросов включает обновления страницы и ботов. Это не число людей.', 'События и приблизительные уникальные браузеры учитываются только с согласия пользователя. DNT/GPC отключают события.', 'Данные начинаются с запуска этого сервера. История старого хостинга не импортирована.', 'Клиентские события не являются биллингом: их можно блокировать или подделывать.', 'Экспорт означает подготовленный файл и отправку на скачивание, а не подтверждённую загрузку в соцсеть.'] };
   }
   async function route(req, res) {
@@ -95,6 +88,7 @@ export function createApp(options = {}) {
     const path = url.pathname;
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
+    if (await accounts.route(req, res, url)) return;
     if (req.method === 'POST' && path === '/api/admin/login') {
       sameOrigin(req);
       const data = await body(req);
@@ -125,6 +119,7 @@ export function createApp(options = {}) {
     if (path.startsWith('/api/admin/')) {
       const s = session(req);
       if (!['GET', 'HEAD'].includes(req.method)) csrf(req, s);
+      if (await accounts.adminRoute(req, res, url)) return;
       if (req.method === 'GET' && path === '/api/admin/session') return json(res, 200, { login: owner().login, csrf: s.csrf, totpEnabled: !!owner().totp, expires: s.expires, idleMinutes: 30 });
       if (req.method === 'POST' && path === '/api/admin/logout') {
         store.run('DELETE FROM sessions WHERE id=?', s.id); store.audit('logout', 'ok', now()); setCookie(res, sessionName, '', 0); return json(res, 200, { ok: true });
@@ -154,13 +149,18 @@ export function createApp(options = {}) {
       }
       if (req.method === 'POST' && path === '/api/admin/password') {
         const data = await body(req); await reauth(req, data);
-        if (!equal(data.newPassword, data.confirmPassword)) deny(400, 'Пароли не совпадают.');
-        let hash; try { hash = await hashPassword(data.newPassword); } catch (e) { deny(400, e.message); }
+const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().login : data.newLogin;
+        if (typeof newLogin !== 'string' || !/^[a-zA-Z0-9_.-]{3,64}$/.test(newLogin)) deny(400, 'Логин: 3–64 латинских символа, цифры, точка, дефис или подчёркивание.');
+        const before = owner().password; let hash = before;
+        if (data.newPassword) {
+          if (!equal(data.newPassword, data.confirmPassword)) deny(400, 'Пароли не совпадают.');
+          try { hash = await hashPassword(data.newPassword); } catch (e) { deny(400, e.message); }
+        } else if (newLogin === owner().login) deny(400, 'Укажите новый логин или пароль.');
         session(req);
-        store.run('UPDATE owner SET password=? WHERE id=1', hash); store.run('DELETE FROM sessions'); store.audit('password_changed', 'ok', now());
+        if (!equal(owner().password, before)) deny(401, 'Данные доступа уже изменились. Войдите снова.');
+        store.run('UPDATE owner SET password=?,login=? WHERE id=1', hash, newLogin); store.run('DELETE FROM sessions'); store.audit('password_changed', 'ok', now());
         setCookie(res, sessionName, '', 0); return json(res, 200, { ok: true, reauthenticate: true });
-      }
-      if (req.method === 'POST' && path === '/api/admin/totp/begin') {
+      }      if (req.method === 'POST' && path === '/api/admin/totp/begin') {
         const data = await body(req); const o = await reauth(req, data); if (o.totp) deny(409, 'Двухэтапный вход уже включён.');
         const secret = newTotpSecret(); store.run('UPDATE sessions SET pending_totp=?,pending_until=? WHERE id=?', store.seal(secret), now() + 10 * 60000, s.id);
         return json(res, 200, { secret, issuer: 'Pokadrovo', login: o.login, expiresIn: 600 });
@@ -217,7 +217,8 @@ export function createApp(options = {}) {
     if (path === '/admin' || path === '/admin/') return sendFile(res, join(here, 'public/admin.html'), 'text/html; charset=utf-8', req.method);
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
-    let decoded; try { decoded = decodeURIComponent(path); } catch { deny(400, 'Некорректный адрес.'); }
+    if (['/studio', '/profile'].includes(path) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
+    let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
     if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some(s => s.startsWith('.'))) deny(404, 'Не найдено.');
     const target = resolve(dist, '.' + (decoded === '/' ? '/index.html' : decoded));
     if (!target.startsWith(dist + sep)) deny(404, 'Не найдено.');
@@ -241,7 +242,7 @@ export function createApp(options = {}) {
     void route(req, res).catch(error => { if (res.headersSent || res.destroyed) return; json(res, error instanceof HttpError ? error.status : 500, { error: error instanceof HttpError ? error.message : 'Ошибка сервера. Подробности не публикуются.' }); });
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
-  store.cleanup(now()); const housekeeping = setInterval(() => store.cleanup(now()), 300000); housekeeping.unref();
+  store.cleanup(now()); const housekeeping = setInterval(() => { store.cleanup(now()); accounts.cleanup(); }, 300000); housekeeping.unref();
   server.on('close', () => { clearInterval(housekeeping); store.close(); });
   return { server, store, origin: origin.origin };
 }

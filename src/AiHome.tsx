@@ -9,6 +9,8 @@ import "./home-scroll.css";
 type RecentProject = { id: string; name: string; count: number; modified: number };
 export type AiHomeProps = {
   theme: "light" | "dark";
+  account?: { id:string;name:string;role:string } | null;
+  onAccount?: () => void;
   onToggleTheme: () => void;
   onCreate: (prompt: string) => void;
   onContinue: () => void;
@@ -71,7 +73,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
   componentDidMount() {
     this.motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     try {
-      const prompt = localStorage.getItem("pokadrovo.home.brief.v3") || "";
+      const prompt = localStorage.getItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest")) || "";
       const motionOff = localStorage.getItem("pokadrovo.home.motion.v3") === "off";
       this.setState({ prompt: prompt.slice(0, 1600), motionOff });
     } catch { /* Private browsing may disable persistence; editing still works. */ }
@@ -86,6 +88,9 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     });
   }
   componentDidUpdate(_previousProps: AiHomeProps, previousState: State) {
+    if (_previousProps.account?.id !== this.props.account?.id) {
+      try { this.setState({prompt:localStorage.getItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest")) || "", files:null}); } catch {}
+    }
     if (previousState.motionOff !== this.state.motionOff || previousState.mediaOpen !== this.state.mediaOpen || previousState.files !== this.state.files) {
       this.motion?.refresh();
     }
@@ -127,7 +132,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     this.setState({ prompt: prompt.slice(0, 1600), draftSaved: false });
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
-      try { localStorage.setItem("pokadrovo.home.brief.v3", this.state.prompt); this.setState({ draftSaved: true }); }
+      try { localStorage.setItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest"), this.state.prompt); this.setState({ draftSaved: true }); }
       catch { /* No persistence claim when storage is unavailable. */ }
     }, 350);
   };
@@ -172,7 +177,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
   };
   private create = (event?: React.FormEvent) => {
     event?.preventDefault();
-    try { localStorage.setItem("pokadrovo.home.brief.v3", this.state.prompt); } catch {}
+    try { localStorage.setItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest"), this.state.prompt); } catch {}
     if (this.state.files?.length) this.props.onImport(this.state.files, this.state.prompt.trim());
     else this.props.onCreate(this.state.prompt.trim());
   };
@@ -198,7 +203,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
         </nav>
         <div className="pkh-header-right">
           <button className="pkh-theme" type="button" aria-label={theme === "light" ? t.themeDark : t.themeLight} title={theme === "light" ? t.themeDark : t.themeLight} onClick={onToggleTheme}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
-          <button className="pkh-editor-link" type="button" onClick={onContinue}><Icon name="play" size={15}/><span>В монтажную</span><Icon name="arrow" size={16}/></button>
+<button className="pkh-editor-link" type="button" onClick={this.props.onAccount || onContinue}><Icon name={this.props.account ? 'folder' : 'plus'} size={15}/><span>{this.props.account ? 'Мой профиль' : 'Зарегистрироваться'}</span><Icon name="arrow" size={16}/></button>
           <button className="pkh-menu" type="button" aria-label={t.menu} aria-expanded={menuOpen} onClick={() => this.setState({ menuOpen: !menuOpen })}><Icon name={menuOpen ? "close" : "menu"}/></button>
         </div>
       </header>
@@ -267,7 +272,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
           <div className="pkh-roadmap">{[{ title:t.roadmap1, body:t.roadmap1text },{ title:t.roadmap2, body:t.roadmap2text },{ title:t.roadmap3, body:t.roadmap3text }].map((item,index) => <article key={item.title}><span>0{index+1}</span><div><h3>{item.title}</h3><p>{item.body}</p></div><b>{t.planned}</b></article>)}</div>
         </section>
 
-        <section className="pkh-recent" data-scroll-scene="projects" id="pkh-projects" aria-labelledby="pkh-recent-title"><div className="pkh-recent-heading"><h2 id="pkh-recent-title">{t.recentTitle}</h2><Icon name="folder" size={23}/></div>{projects.length ? <div className="pkh-project-list">{projects.slice(0,4).map(project => <button type="button" key={project.id} onClick={() => onOpenProject(project.id)}><BrandMark size={31}/><span><strong>{project.name}</strong><small>{project.count} {t.clips} / {new Date(project.modified).toLocaleDateString("ru-RU")}</small></span><Icon name="up" size={17}/></button>)}</div> : <p className="pkh-no-projects">{t.noProjects}</p>}</section>
+        <section className="pkh-recent" data-scroll-scene="projects" id="pkh-projects" aria-labelledby="pkh-recent-title"><div className="pkh-recent-heading"><h2 id="pkh-recent-title">{t.recentTitle}</h2><Icon name="folder" size={23}/></div>{projects.length ? <div className="pkh-project-list">{projects.slice(0,4).map(project => <button type="button" key={project.id} onClick={() => onOpenProject(project.id)}><BrandMark size={31}/><span><strong>{project.name}</strong><small>{project.count} {t.clips} / {new Date(project.modified).toLocaleDateString("ru-RU")}</small></span><Icon name="up" size={17}/></button>)}</div> : <div className="pkh-no-projects"><p>{this.props.account ? 'Ваша первая история начинается здесь.' : 'Войдите, чтобы открыть свои проекты.'}</p><button className="pkh-method-cta" type="button" onClick={onContinue}>{this.props.account ? 'Создать проект' : 'Войти и открыть проекты'}<Icon name="arrow" size={16}/></button></div>}</section>
 
         <section className="pkh-faq" data-scroll-scene="faq"><h2>{t.faqTitle}</h2><div>{[{ q:t.faqQuestion1, a:t.faqAnswer1 },{ q:t.faqQuestion2, a:t.faqAnswer2 },{ q:t.faqQuestion3, a:t.faqAnswer3 }].map(item => <details key={item.q}><summary>{item.q}<Icon name="plus" size={17}/></summary><p>{item.a}</p></details>)}</div></section>
       </main>

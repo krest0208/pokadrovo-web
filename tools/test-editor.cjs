@@ -19,7 +19,7 @@ try {
   fs.writeFileSync(path.join(output, 'package.json'), '{"type":"commonjs"}\n');
   const tests = spawnSync(process.execPath, [path.join(root, 'tests/editor-model.test.cjs')], {
     cwd: root, stdio: 'inherit',
-    env: { ...process.env, POKADROVO_TEST_MODEL: path.join(output, 'model.js') }
+    env: { ...process.env, POKADROVO_TEST_MODEL: fs.existsSync(path.join(output, 'editor/model.js')) ? path.join(output, 'editor/model.js') : path.join(output, 'model.js') }
   });
   if (tests.error) throw tests.error;
   status = tests.status === null ? 1 : tests.status;

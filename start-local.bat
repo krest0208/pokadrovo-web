@@ -1,36 +1,30 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo ======================================
-echo Pokadrovo WEB - local video editor
-echo ======================================
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Node.js not found.
-  echo Install Node.js LTS from https://nodejs.org/
+  echo Install Node.js 22.16 or newer from https://nodejs.org/
   pause
   exit /b 1
 )
-where npm >nul 2>nul
-if errorlevel 1 (
-  echo npm was not found. Reinstall Node.js LTS.
-  pause
-  exit /b 1
-)
-if not exist "node_modules\vite" (
-  echo Installing project dependencies...
-  call npm install
+node -e "const [a,b]=process.versions.node.split('.').map(Number);if(a<22||(a===22&&b<16)){console.error('Node.js 22.16 or newer is required');process.exit(1)}"
+if errorlevel 1 goto :failed
+if not exist "dist\index.html" (
+  echo Building local website from source...
+  call npm install --no-audit --no-fund
+  if errorlevel 1 goto :failed
+  call npm run build
   if errorlevel 1 goto :failed
 )
 echo.
-echo Local editor: http://localhost:5173
-echo Keep this window open. Ctrl+C stops the site.
-start "" "http://localhost:5173"
-call npm run dev
+echo Website: http://localhost:5173
+echo Admin:   http://localhost:5173/admin
+echo Keep this window open. Ctrl+C stops the server.
+echo.
+node server/app.mjs
 if errorlevel 1 goto :failed
 exit /b 0
 :failed
-echo.
-echo Startup failed. Copy the error text to report the problem.
+echo Startup failed. Please review the error above.
 pause
 exit /b 1

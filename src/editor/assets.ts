@@ -1,18 +1,22 @@
+import { storageScope, syncProject } from '../account/api';
 import { Asset, Kind, Project, STORAGE_KEY, normalizeProject, uid } from './model';
 export async function openDb():Promise<IDBDatabase>{return new Promise((ok,no)=>{
  const req=indexedDB.open('pokadrovo-media-v1',1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('files'))req.result.createObjectStore('files');};
  req.onsuccess=()=>ok(req.result);req.onerror=()=>no(req.error);req.onblocked=()=>no(new Error('Storage blocked'));
 });}
-export async function persistAsset(a:Asset){const db=await openDb();try{await new Promise<void>((ok,no)=>{
- const tx=db.transaction('files','readwrite');tx.objectStore('files').put(a.blob,a.id);tx.oncomplete=()=>ok();tx.onerror=()=>no(tx.error);tx.onabort=()=>no(tx.error);
+function scope(){const id=storageScope();if(!id)throw Error('Войдите в аккаунт для работы с проектами.');return id;}
+function cacheKey(){return STORAGE_KEY+':account:'+scope();}
+export async function persistAsset(a:Asset){const key=scope()+':'+a.id;const db=await openDb();try{await new Promise<void>((ok,no)=>{
+ const tx=db.transaction('files','readwrite');tx.objectStore('files').put(a.blob,key);tx.oncomplete=()=>ok();tx.onerror=()=>no(tx.error);tx.onabort=()=>no(tx.error);
 });}finally{db.close();}}
-export async function restoreAsset(id:string):Promise<Blob|undefined>{const db=await openDb();try{return await new Promise<Blob|undefined>((ok,no)=>{const r=db.transaction('files').objectStore('files').get(id);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);});}finally{db.close();}}
+export async function restoreAsset(id:string):Promise<Blob|undefined>{const account=scope(),key=account+':'+id;const db=await openDb();try{const read=(key:string)=>new Promise<Blob|undefined>((ok,no)=>{const r=db.transaction('files').objectStore('files').get(key);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);});return await read(key)||(account==='owner'?await read(id):undefined);}finally{db.close();}}
 export function loadProjects():Project[]{
- const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return [];
+ if(!storageScope())return [];const raw=localStorage.getItem(cacheKey());if(!raw)return [];
  const arr=JSON.parse(raw);if(!Array.isArray(arr))throw Error('Invalid project library');return arr.map(normalizeProject);
 }
-export function saveProject(p:Project){const arr=loadProjects();localStorage.setItem(STORAGE_KEY,JSON.stringify([p,...arr.filter(a=>a.id!==p.id)]));try{window.dispatchEvent(new CustomEvent('pokadrovo:metric',{detail:{kind:'project_saved',project:p.id,mode:p.mode}}));}catch{/* Metrics never block local persistence. */}}
-export function mediaReady(el:HTMLMediaElement,url:string):Promise<void>{return new Promise((ok,no)=>{
+export function replaceProjectCache(projects:Project[]){localStorage.setItem(cacheKey(),JSON.stringify(projects));}
+export function importOwnerLegacy():Project[]{if(scope()!=='owner')throw Error('Только владелец может перенести старую локальную библиотеку.');const old=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');if(!Array.isArray(old))throw Error('Некорректная библиотека.');const found=new Map(loadProjects().map(p=>[p.id,p]));for(const raw of old){const p=normalizeProject(raw);if(!found.has(p.id))found.set(p.id,p);}const merged=[...found.values()];replaceProjectCache(merged);merged.forEach(syncProject);return merged;}
+export function saveProject(p:Project){const arr=loadProjects();replaceProjectCache([p,...arr.filter(a=>a.id!==p.id)]);syncProject(p);try{window.dispatchEvent(new CustomEvent('pokadrovo:metric',{detail:{kind:'project_saved',project:p.id,mode:p.mode}}));}catch{/* Metrics never block local persistence. */}}export function mediaReady(el:HTMLMediaElement,url:string):Promise<void>{return new Promise((ok,no)=>{
  const finish=(err?:Error)=>{clearTimeout(timer);el.onloadeddata=null;el.onerror=null;err?no(err):ok();};
  const timer=setTimeout(()=>finish(new Error('Media decode timeout')),12000);
  el.preload='auto';el.onloadeddata=()=>finish();el.onerror=()=>finish(new Error('Unsupported or damaged media'));el.src=url;el.load();

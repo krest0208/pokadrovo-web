@@ -11,7 +11,7 @@
     csrf = ''; owner = null; settings = null; clearTimeout(idleTimer);
     app.hidden = true; $('login-screen').hidden = false; text($('login-error'), message);
     $('login-form').elements.password.value = ''; $('login-form').elements.code.value = '';
-    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes']) $(id).replaceChildren();
+    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body']) $(id).replaceChildren();
     for (const form of app.querySelectorAll('form')) form.reset();
     text($('totp-secret'), ''); $('totp-confirm').hidden = true;
   }
@@ -42,7 +42,7 @@
   }
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
-  const titles = { overview: 'Обзор и статистика', api: 'ИИ и API-ключ', security: 'Защита доступа', audit: 'Журнал действий' };
+  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'ИИ и API-ключ', security: 'Защита доступа', audit: 'Журнал действий' };
   async function switchView(view) {
     currentView = view;
     for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== view + '-view';
@@ -53,6 +53,8 @@
     if (view === 'api') await loadSettings();
     if (view === 'security') await loadSecurity();
     if (view === 'audit') await loadAudit();
+    if (view === 'users') await loadUsers();
+    if (view === 'oauth') await loadOAuth();
   }
   for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => switchView(b.dataset.view).catch(e => notify(e.message)));
   $('period').addEventListener('change', () => loadOverview().catch(e => notify(e.message)));
@@ -62,12 +64,14 @@
   async function loadOverview() {
     const data = await request('/overview?days=' + $('period').value); if (!owner) return;
     const m = data.metrics; text($('period-note'), `${data.from} — ${data.to} · UTC · сбор с ${new Date(data.startedAt).toLocaleDateString('ru-RU')}`);
+const accountCards = data.users ? [['Зарегистрировано за период', data.users.registered, 'По базе аккаунтов'], ['Всего пользователей', data.users.total, 'Без учётной записи владельца']] : [];
     const cards = [
       ['Запросы главной страницы', m.pageRequests, 'Включая повторные открытия'],
       ['Уникальные браузеры', m.uniqueBrowsers, 'Приблизительно · с согласием'],
       ['Сохранённые проекты', m.projects, 'Уникальные проекты за период'],
       ['Сформировано видео', m.exports, 'Файл отправлен на скачивание']
     ];
+    cards.push(...accountCards);
     $('metrics').replaceChildren(...cards.map(([label, value, note]) => { const card = element('article', 'metric'); card.append(element('span', 'metric-label', label), element('strong', 'metric-number', number(value)), element('span', 'metric-note', note)); return card; }));
     const flows = [['Открытия редактора', m.editorOpens], ['Сохранения проектов', m.projectSaves], ['Подготовленные экспорты', m.exports], ['Запуски ИИ-запроса', m.aiRequests]];
     const max = Math.max(1, ...flows.map(x => x[1]));
@@ -117,7 +121,7 @@
     await request('/settings', { method: 'PUT', data }); form.reset(); await loadSettings(); notify('Настройки сохранены. Ключ не проверялся у провайдера, ИИ не запускался.');
   });
   async function loadSecurity() {
-    const session = await request('/session'); if (!owner) return; owner.totpEnabled = session.totpEnabled;
+    const session = await request('/session'); if (!owner) return; owner.totpEnabled = session.totpEnabled; $('password-form').elements.newLogin.value = session.login;
     text($('totp-status'), session.totpEnabled ? 'Включён' : 'Выключен'); $('totp-begin').hidden = session.totpEnabled; $('totp-disable').hidden = !session.totpEnabled;
     text($('totp-secret'), ''); $('totp-confirm').hidden = true;
   }
@@ -130,5 +134,28 @@
     const data = await request('/audit'); if (!owner) return;
     $('audit-body').replaceChildren(...data.items.map(r => { const tr = element('tr'); tr.append(element('td', '', date(r.at)), element('td', '', auditNames[r.action] || 'Действие сервера'), element('td', '', r.result === 'ok' ? 'Выполнено' : 'Отклонено')); return tr; }));
   }
+let usersPage = 1, usersPages = 1, oauthSettings = [];
+  async function loadUsers() {
+    const data = await request('/users?page=' + usersPage + '&q=' + encodeURIComponent($('users-query').value));
+    if (!owner) return; usersPages = data.pages; text($('users-count'), data.count + ' аккаунтов'); text($('users-page'), data.page + ' / ' + data.pages);
+    $('users-prev').disabled = usersPage <= 1; $('users-next').disabled = usersPage >= usersPages;
+    $('users-body').replaceChildren(...data.items.map(u => { const row = element('tr'); row.append(element('td', '', u.name), element('td', '', u.email || 'Не передана'), element('td', '', u.providers.length ? u.providers.join(', ') : 'Почта и пароль'), element('td', '', u.projectCount), element('td', '', date(u.created)), element('td', '', date(u.last_login))); return row; }));
+    if (!data.items.length) { const row = element('tr'), cell = element('td', 'muted', 'Пользователи пока не найдены'); cell.colSpan = 6; row.append(cell); $('users-body').append(row); }
+  }
+  $('users-search').addEventListener('submit', e => { e.preventDefault(); usersPage = 1; loadUsers().catch(e => notify(e.message)); });
+  $('users-prev').addEventListener('click', () => { usersPage = Math.max(1, usersPage - 1); loadUsers().catch(e => notify(e.message)); });
+  $('users-next').addEventListener('click', () => { usersPage = Math.min(usersPages, usersPage + 1); loadUsers().catch(e => notify(e.message)); });
+  function showProvider() {
+    const form = $('oauth-form'), selected = oauthSettings.find(p => p.provider === form.elements.provider.value); if (!selected) return;
+    form.elements.clientId.value = selected.clientId; form.elements.clientSecret.value = ''; form.elements.password.value = ''; form.elements.graphVersion.value = selected.graphVersion; form.elements.graphVersion.disabled = selected.provider === 'google';
+    form.elements.enabled.checked = !!selected.enabled; form.elements.removeSecret.checked = false; $('oauth-redirect').value = selected.redirectUri;
+    text($('oauth-status'), selected.ready ? 'Настроен · проверьте реальный вход' : selected.secretConfigured ? 'Секрет сохранён, вход не активен' : 'Не подключён');
+  }
+  async function loadOAuth() { const data = await request('/oauth'); if (!owner) return; oauthSettings = data.providers; showProvider(); }
+  $('oauth-provider').addEventListener('change', showProvider);
+  bindForm('oauth-form', async (data, form) => {
+    data.enabled = form.elements.enabled.checked; data.removeSecret = form.elements.removeSecret.checked;
+    await request('/oauth', { method: 'PUT', data }); await loadOAuth(); notify('Настройки сохранены. Реальный вход нужно проверить после настройки приложения у провайдера.');
+  });
   request('/session').then(unlocked).catch(() => locked());
 })();
