@@ -9,7 +9,7 @@ import AiHome from "./AiHome";
 
 type Clip = { id:string; assetId:string; name:string; kind:"video"|"image"; duration:number; start:number; end:number };
 type Asset = { id:string; name:string; kind:"video"|"image"; blob:Blob; url:string; duration:number };
-type Project = { id:string; name:string; clips:Clip[]; title:string; created:number; modified:number };
+type Project = { id:string; name:string; clips:Clip[]; title:string; created:number; modified:number; brief?:string };
 const KEY="pokadrovo-projects-v1";
 const randomId=()=>crypto.randomUUID();
 const stamp=(t:number)=>{const s=Math.max(0,Math.floor(t));return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
@@ -32,7 +32,7 @@ export default function Studio(){
  const [theme,setTheme]=useState<"light"|"dark">("light");
  const [screen,setScreen]=useState<"home"|"editor">("home");
  const [timelineZoom,setTimelineZoom]=useState(1);
- const [aiBrief,setAiBrief]=useState("");
+ const aiBrief=project.brief||"";
  const fileInput=useRef<HTMLInputElement>(null);
  const videoRef=useRef<HTMLVideoElement>(null);
  const stillRef=useRef<HTMLImageElement>(null);
@@ -63,8 +63,8 @@ export default function Studio(){
    });
  };
  const startNewProject=()=>{setPlaying(false);setProject(makeProject());setSelected(null);setCursor(0);setOpenProjects(false);setMessage("Новый проект создан. Добавьте видео или фото");setScreen("editor")};
- const startFromIdea=(idea:string)=>{setAiBrief(idea);startNewProject();setMessage(idea?"Задание добавлено в проект. ИИ-обработка пока не подключена.":"Новый проект создан. Добавьте медиа");};
- const importFromHome=(files:FileList|null,idea:string)=>{if(!files?.length)return;setAiBrief(idea);setScreen("editor");setOpenProjects(false);void importFiles(files);};
+ const startFromIdea=(idea:string)=>{setPlaying(false);setProject({...makeProject(),brief:idea});setSelected(null);setCursor(0);setOpenProjects(false);setScreen("editor");setMessage(idea?"Задание сохранится вместе с проектом. ИИ-обработка пока не подключена.":"Новый проект создан. Добавьте медиа");};
+ const importFromHome=(files:FileList|null,idea:string)=>{if(!files?.length)return;setPlaying(false);setProject({...makeProject(),brief:idea});setSelected(null);setCursor(0);setScreen("editor");setOpenProjects(false);void importFiles(files);};
  const continueProject=()=>{setPlaying(false);setOpenProjects(false);setScreen("editor")};
  useEffect(()=>{try{const p=JSON.parse(localStorage.getItem(KEY)||"[]") as Project[];setProjects(p);if(p.length){setProject(p[0]);setSelected(p[0].clips[0]?.id||null)}}catch{}},[]);
  useEffect(()=>{const ids=new Set(project.clips.map(c=>c.assetId));let alive=true;(async()=>{for(const c of project.clips){if(assetsRef.current.some(a=>a.id===c.assetId))continue;try{const blob=await readFile(c.assetId);if(blob&&alive){const url=URL.createObjectURL(blob);urlsRef.current.push(url);setAssets(old=>old.some(a=>a.id===c.assetId)?old:[...old,{id:c.assetId,kind:c.kind,name:c.name,blob,url,duration:c.duration}])}}catch{setMessage("Не удалось загрузить часть медиафайлов")}}})();return()=>{alive=false}},[project.id,project.clips.length]);
@@ -127,7 +127,7 @@ export default function Studio(){
    <div className="px-menu-heading"><strong>Сохранённые проекты</strong><button onClick={()=>{chooseProject(makeProject());setOpenProjects(false)}}><Plus size={14}/> Новый</button></div>
    {projects.length?projects.map(p=><button key={p.id} className="px-project-row" onClick={()=>chooseProject(p)}><BrandMark size={27}/><span><strong>{p.name||"Без названия"}</strong><small>{p.clips.length} клипов · {new Date(p.modified).toLocaleDateString("ru-RU")}</small></span><ChevronRight size={15}/></button>):<p className="px-hint">Сохранённых проектов пока нет.</p>}
  </div>}
- {aiBrief&&<div className="px-ai-brief"><WandSparkles size={16}/><span><strong>Ваш замысел:</strong> {aiBrief}</span><small>ИИ пока не подключён</small><button title="Убрать задание" aria-label="Убрать задание" onClick={()=>setAiBrief("")}><X size={15}/></button></div>}
+ {aiBrief&&<div className="px-ai-brief"><WandSparkles size={16}/><span><strong>Ваш замысел:</strong> {aiBrief}</span><small>ИИ пока не подключён</small><button title="Убрать задание" aria-label="Убрать задание" onClick={()=>changeProject(p=>({...p,brief:""}))}><X size={15}/></button></div>}
  <div className="px-editor">
   <nav className="px-toolrail" aria-label="Инструменты">
     <button className={tab==="media"?"is-active":""} onClick={()=>setTab("media")}><Grid2X2 size={21}/><span>Медиа</span></button>
