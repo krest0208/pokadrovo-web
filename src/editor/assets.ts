@@ -11,7 +11,7 @@ export function loadProjects():Project[]{
  const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return [];
  const arr=JSON.parse(raw);if(!Array.isArray(arr))throw Error('Invalid project library');return arr.map(normalizeProject);
 }
-export function saveProject(p:Project){const arr=loadProjects();localStorage.setItem(STORAGE_KEY,JSON.stringify([p,...arr.filter(a=>a.id!==p.id)]));}
+export function saveProject(p:Project){const arr=loadProjects();localStorage.setItem(STORAGE_KEY,JSON.stringify([p,...arr.filter(a=>a.id!==p.id)]));try{window.dispatchEvent(new CustomEvent('pokadrovo:metric',{detail:{kind:'project_saved',project:p.id,mode:p.mode}}));}catch{/* Metrics never block local persistence. */}}
 export function mediaReady(el:HTMLMediaElement,url:string):Promise<void>{return new Promise((ok,no)=>{
  const finish=(err?:Error)=>{clearTimeout(timer);el.onloadeddata=null;el.onerror=null;err?no(err):ok();};
  const timer=setTimeout(()=>finish(new Error('Media decode timeout')),12000);
@@ -34,4 +34,4 @@ export async function inspectFile(file:Blob & {name?:string},id:string=uid(),kin
   return {id,name:file.name||'Media',blob:file,kind,url,duration,width,height,thumbnail};
  }catch(e){URL.revokeObjectURL(url);throw e;}
 }
-export function download(blob:Blob,name:string){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
+export function download(blob:Blob,name:string){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();if(blob.type.startsWith('video/')){try{window.dispatchEvent(new CustomEvent('pokadrovo:metric',{detail:{kind:'export_completed',format:blob.type.includes('mp4')?'mp4':'webm'}}));}catch{/* Metrics never block file download. */}}setTimeout(()=>URL.revokeObjectURL(url),30000);}

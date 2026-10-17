@@ -1,13 +1,17 @@
 {
   "name": "pokadrovo-web",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
-    "build": "tsc --noEmit && vite build",
+    "dev": "node server/dev.mjs",
+    "build": "npm run test:admin && tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "start": "node server/app.mjs",
+    "admin:setup": "node server/setup.mjs",
+    "test:admin": "node --test server/tests/*.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -22,5 +26,6 @@
     "@vitejs/plugin-react": "^4.5.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
-  }
+  },
+  "engines": { "node": ">=22.16.0" }
 }

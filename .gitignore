@@ -5,3 +5,7 @@ dist/
 !.env.example
 .compiled/
 editor-validation.tgz
+.pokadrovo-private/
+*.sqlite
+*.sqlite-*
+*.key
