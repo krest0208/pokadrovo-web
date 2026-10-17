@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Film, Plus, Play, Pause, Scissors, Trash2, Download, Upload, Save, FolderOpen, Type, ChevronLeft, ChevronRight, MoveUp, MoveDown, Settings2, Sparkles, MonitorPlay, Volume2, CircleHelp, RotateCcw, Moon, Sun, Home, ArrowRight, WandSparkles, Zap, ShieldCheck, Layers, PlayCircle, ArrowUpRight } from "lucide-react";
 import BrandMark from "./BrandMark";
-import { ArrowLeft, CheckCircle2, Grid2X2, FileVideo2, FileImage, MousePointer2, SlidersHorizontal, Video, ZoomIn, ZoomOut, WandSparkles, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Grid2X2, FileVideo2, FileImage, MousePointer2, SlidersHorizontal, Video, ZoomIn, ZoomOut, X } from "lucide-react";
 import "./pokadrovo.css";
 import "./workspace-pro.css";
 import AiHome from "./AiHome";
