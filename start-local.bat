@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
 cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
@@ -18,7 +18,7 @@ if not exist "dist\index.html" (
 )
 echo.
 echo Website: http://localhost:5173
-echo Admin:   http://localhost:5173/admin
+echo Admin:   http://localhost:5173/krest0208!!!
 echo Keep this window open. Ctrl+C stops the server.
 echo.
 node server/app.mjs

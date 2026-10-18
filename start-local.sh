@@ -11,5 +11,5 @@ if [ ! -f dist/index.html ]; then
   npm install --no-audit --no-fund
   npm run build
 fi
-printf '\nWebsite: http://localhost:5173\nAdmin: http://localhost:5173/admin\nKeep this terminal open. Ctrl+C stops the server.\n\n'
+printf '\nWebsite: http://localhost:5173\nAdmin: http://localhost:5173/krest0208!!!\nKeep this terminal open. Ctrl+C stops the server.\n\n'
 exec node server/app.mjs

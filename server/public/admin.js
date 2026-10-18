@@ -37,9 +37,10 @@
       const error = form.querySelector('.form-error') || $('login-error'); text(error, '');
       try { await submit(formData(form), form); }
       catch (e) { text(error, e.name === 'TimeoutError' ? 'Сервер не ответил вовремя.' : e.message); }
-      finally { button.disabled = false; for (const input of form.querySelectorAll('input[type=password]')) input.value = ''; }
+      finally { button.disabled = false; for (const input of form.querySelectorAll('input[type=password],input[autocomplete=current-password],input[autocomplete=new-password]')) input.value = ''; if (form.id === 'login-form') { $('owner-password').type = 'password'; $('toggle-owner-password').setAttribute('aria-pressed', 'false'); text($('toggle-owner-password'), 'Показать пароль'); } }
     });
   }
+  $('toggle-owner-password').addEventListener('click', () => { const input = $('owner-password'), show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggle-owner-password').setAttribute('aria-pressed', String(show)); text($('toggle-owner-password'), show ? 'Скрыть пароль' : 'Показать пароль'); });
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
   const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'ИИ и API-ключ', security: 'Защита доступа', audit: 'Журнал действий' };

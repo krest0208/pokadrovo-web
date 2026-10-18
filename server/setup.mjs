@@ -36,6 +36,6 @@ try {
   const confirm = await secret('Повторите пароль: ');
   if (password !== confirm) throw Error('Пароли не совпадают.');
   await provisionOwner(store, login, password, reset);
-  console.log(`\nВладелец ${login} настроен.\nЗапустите npm start и откройте http://localhost:5173/admin.\nВ разделе «Защита» включите код подтверждения с телефона.\nХраните резервную копию всей папки .pokadrovo-private вне GitHub.`);
+  console.log(`\nВладелец ${login} настроен.\nЗапустите npm start и откройте http://localhost:5173/krest0208!!!.\nВ разделе «Защита» включите код подтверждения с телефона.\nХраните резервную копию всей папки .pokadrovo-private вне GitHub.`);
 } catch (error) { console.error(error.message); process.exitCode = 1; }
 finally { store.close(); }

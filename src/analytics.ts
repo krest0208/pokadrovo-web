@@ -3,7 +3,7 @@ type Metric = { kind: 'site_view'|'editor_open'|'project_saved'|'export_complete
 const CONSENT = 'pokadrovo.analytics.consent.v1';
 const id = () => globalThis.crypto?.randomUUID?.() || 'event-' + Date.now().toString(36) + Math.random().toString(36).slice(2);
 async function initialise() {
-  if (!/^https?:$/.test(location.protocol) || location.pathname.startsWith('/admin')) return;
+  if (!/^https?:$/.test(location.protocol) || !['/', '/studio', '/profile'].includes(location.pathname)) return;
   const privacy = navigator as Navigator & { globalPrivacyControl?:boolean };
   let enabled = false, alive = false, started = false, choice = '', editor:Element|null = null;
   let queue:Metric[] = [], sending = false;

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { createApp } from '../app.mjs';
+import { OWNER_PATH } from '../owner-route.mjs';
 import { hashPassword, checkPassword, token, totp, newTotpSecret, verifyTotp, provisionOwner, openStore } from '../security.mjs';
 
 const password = 'test-only-' + token();
@@ -100,7 +101,7 @@ test('public HTTP origins and wrong Host are rejected',async()=>{
  await using(async f=>assert.equal((await f.request('/',{headers:{Host:'attacker.example'}})).status,421));
 });
 test('admin shell has CSP and source/private paths cannot be downloaded',async()=>using(async f=>{
- const shell=await f.request('/admin');assert.equal(shell.status,200);assert.match(shell.headers.get('content-security-policy'),/frame-ancestors 'none'/);
+ const shell=await f.request(OWNER_PATH);assert.equal(shell.status,200);assert.match(shell.headers.get('content-security-policy'),/frame-ancestors 'none'/);
  assert.equal(shell.headers.get('x-frame-options'),'DENY');
  for(const path of ['/.pokadrovo-private/master.key','/.env','/server/security.mjs','/owner-assets/../security.mjs','/%2e%2e%2fprivate%2fowner.sqlite']) assert.equal((await f.request(path)).status,404,path);
 }));
@@ -154,7 +155,7 @@ test('counts come from real requests/events, duplicates are idempotent and proje
  const headers={'X-PK-Metrics':'1'},start=await f.request('/api/metrics/start',{method:'POST',headers,data:{consent:true}});
  const event={kind:'site_view',id:token(),device:'desktop',prompt:'PRIVATE TEXT MUST NOT BE STORED'};
  const metric=async data=>{const r=await f.request('/api/metrics/event',{method:'POST',headers,cookie:start.cookie,data});assert.equal(r.status,200,r.raw);};
- await f.request('/');await f.request('/');await f.request('/admin');
+ await f.request('/');await f.request('/');await f.request(OWNER_PATH);
  await metric(event);await metric(event);await metric({kind:'editor_open',id:token(),mode:'reels'});
  await metric({kind:'project_saved',id:token(),project:'test-project-id'});await metric({kind:'project_saved',id:token(),project:'test-project-id'});
  await metric({kind:'export_completed',id:token(),format:'webm'});

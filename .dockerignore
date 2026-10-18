@@ -1,0 +1,25 @@
+# Allow only build inputs. Private files never enter a Docker build context.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!index.html
+!tsconfig.json
+!vite.config.ts
+!src/
+!src/**
+!public/
+!public/**
+!server/
+!server/**
+!tools/
+!tools/**
+!tests/
+!tests/**
+**/.env
+**/.env.*
+**/.pokadrovo-private/**
+**/*.sqlite*
+**/*.db*
+**/*.key
+**/*.pem

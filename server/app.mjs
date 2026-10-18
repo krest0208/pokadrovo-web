@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAccounts } from './accounts.mjs';
+import { OWNER_PATH } from './owner-route.mjs';
 import { HttpError, deny, cookie, json, body } from './http.mjs';
 import { openStore, token, digest, equal, checkPassword, hashPassword, newTotpSecret, verifyTotp } from './security.mjs';
 
@@ -214,7 +215,12 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     }
     if (path.startsWith('/api/')) deny(404, 'Метод не найден.');
     if (!['GET', 'HEAD'].includes(req.method)) deny(405, 'Метод не поддерживается.');
-    if (path === '/admin' || path === '/admin/') return sendFile(res, join(here, 'public/admin.html'), 'text/html; charset=utf-8', req.method);
+    let pagePath; try { pagePath = decodeURIComponent(path); } catch { deny(400, 'Некорректный адрес.'); }
+    if (pagePath === '/admin' || pagePath.startsWith('/admin/')) deny(404, 'Не найдено.');
+    if (pagePath === OWNER_PATH || pagePath === OWNER_PATH + '/') {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      return sendFile(res, join(here, 'public/admin.html'), 'text/html; charset=utf-8', req.method);
+    }
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
     if (['/studio', '/profile'].includes(path) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
@@ -251,5 +257,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const port = Number(process.env.POKADROVO_PORT || 5173), host = process.env.POKADROVO_HOST || '127.0.0.1';
   const app = createApp();
   if (!isLoopback(host) && !app.origin.startsWith('https://')) throw Error('Binding to a public interface requires a configured HTTPS origin.');
-  app.server.listen(port, host, () => console.log(`Pokadrovo: ${app.origin}\nOwner login: ${app.origin}/admin\nNo cloud deployment performed.`));
+  app.server.listen(port, host, () => console.log(`Pokadrovo: ${app.origin}\nOwner login: ${app.origin}${OWNER_PATH}\nNo cloud deployment performed.`));
 }

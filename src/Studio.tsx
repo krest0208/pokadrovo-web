@@ -12,7 +12,7 @@ import './editor/tools.css';
 import './home-formats.css';
 
 type Intent = { kind:'create'|'resume'|'open'; brief?:string; id?:string; mode?:Mode; ratio?:Ratio };
-type State={screen:'home'|'editor'|'profile';theme:'light'|'dark';mode:Mode;ratio:Ratio;project:Project|null;projects:Project[];error:string;session:Session|null;checking:boolean;auth:boolean;authMode:'register'|'login'|'owner'};
+type State={screen:'home'|'editor'|'profile';theme:'light'|'dark';mode:Mode;ratio:Ratio;project:Project|null;projects:Project[];error:string;session:Session|null;checking:boolean;auth:boolean;authMode:'register'|'login'};
 export default class Studio extends React.Component<Record<string,never>,State>{
  state:State={screen:'home',theme:'light',mode:'video',ratio:'16:9',project:null,projects:[],error:'',session:null,checking:true,auth:false,authMode:'register'};
  private host:HTMLDivElement|null=null; private editor:Editor|null=null; private assets=new Map<string,Asset>();
@@ -27,7 +27,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
    if(this.disposed)return;await this.adopt(session);
    if(session.user&&this.intent)this.runIntent();
    else if(session.user&&location.pathname==='/profile')this.navigate('profile');
-   else if(!session.user&&(auth||location.pathname==='/profile'||location.pathname==='/studio'))this.setState({auth:true,authMode:auth==='owner'?'owner':auth==='register'?'register':'login'});
+   else if(!session.user&&(auth||location.pathname==='/profile'||location.pathname==='/studio'))this.setState({auth:true,authMode:auth==='register'?'register':'login'});
    if(q.get('authError'))this.setState({error:'Соцсеть не подтвердила вход. Попробуйте снова или используйте почту и пароль.',auth:true,authMode:'login'});
    if(location.search)history.replaceState({},'',location.pathname);
   }).catch(e=>{if(!this.disposed)this.setState({checking:false,error:e.message});});
@@ -89,7 +89,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
   {s.screen==='home'?<div key="home" className="ps-shell" data-theme={s.theme}>
    <AiHome theme={s.theme} onToggleTheme={this.toggleTheme} onCreate={this.create} onContinue={this.resume} onImport={this.attach} onOpenProject={this.openProject} account={user?{id:user.id,name:user.name,role:user.role}:null} onAccount={this.openAccount} projects={s.projects.map(p=>({id:p.id,name:p.name,count:p.clips.length,modified:p.modified}))}/>
    <HomeFormats mode={s.mode} ratio={s.ratio} onChoose={(mode,ratio)=>this.setState({mode,ratio})} onStart={()=>this.create('')}/>
-  </div>:s.screen==='profile'&&user?<><ProfileView user={user} projects={s.projects} theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onEditor={this.resume} onNew={()=>this.create('')} onOpen={this.openProject} onLogout={this.signOut} onUser={this.changedUser}/>{user.role==='owner'&&<button className="au-legacy" onClick={this.restoreLegacy}>Восстановить проекты прежней версии из этого браузера</button>}</>:<><div key="editor" ref={node=>{this.host=node;}}/>{user&&<div className="au-editor-account" data-theme={s.theme}><button onClick={this.openAccount}>Профиль · {user.name}</button>{user.role==='owner'&&<a href="/admin" onClick={()=>this.persistEditor()}>Админ-панель</a>}</div>}</>}
+  </div>:s.screen==='profile'&&user?<><ProfileView user={user} projects={s.projects} theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onEditor={this.resume} onNew={()=>this.create('')} onOpen={this.openProject} onLogout={this.signOut} onUser={this.changedUser}/>{user.role==='owner'&&<button className="au-legacy" onClick={this.restoreLegacy}>Восстановить проекты прежней версии из этого браузера</button>}</>:<><div key="editor" ref={node=>{this.host=node;}}/>{user&&<div className="au-editor-account" data-theme={s.theme}><button onClick={this.openAccount}>Профиль · {user.name}</button></div>}</>}
   {s.error&&!s.auth&&<button className="au-shell-notice" onClick={()=>this.setState({error:''})} title="Закрыть сообщение" role="status">{s.error} ×</button>}
   {s.auth&&<AuthDialog session={s.session} theme={s.theme} initialMode={s.authMode} error={s.error} onClose={this.closeAuth} onSuccess={this.authenticated}/>}
  </>;}
