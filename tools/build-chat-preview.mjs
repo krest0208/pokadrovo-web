@@ -1,0 +1,55 @@
+import {build} from 'esbuild';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const root=fileURLToPath(new URL('..',import.meta.url));
+const output=resolve(process.argv[2]||resolve(root,'../pokadrovo-preview.html'));
+const assets=resolve(root,'src/editor/assets.ts'),api=resolve(root,'src/account/api.ts');
+const previewAssets=resolve(root,'src/preview/assets.ts');
+const result=await build({absWorkingDir:root,entryPoints:['src/preview/main.tsx'],bundle:true,minify:true,write:false,outfile:'.compiled/preview/app.js',format:'iife',target:'es2022',metafile:true,define:{'process.env.NODE_ENV':'"production"'},plugins:[{
+  name:'isolated-chat-preview',setup(b){
+    b.onResolve({filter:/\?raw$/},args=>({path:resolve(args.resolveDir,args.path.slice(0,-4)),namespace:'preview-raw'}));
+    b.onLoad({filter:/.*/,namespace:'preview-raw'},async args=>{
+      let contents=await readFile(args.path,'utf8');
+      if(args.path.endsWith('/server/public/admin.html')){
+        // Embed only the interface, never the server document or resource loaders.
+        const body=contents.match(/<body\b[^>]*>([\s\S]*?)<\/body\s*>/i);
+        if(!body)throw Error('Admin template has no body.');
+        contents=body[1].replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi,'');
+        if(/<(?:link|iframe|script)\b/i.test(contents))throw Error('Unexpected resource loader in admin preview.');
+      }
+      return {contents,loader:'text'};
+    });
+    b.onResolve({filter:/account\/api$|(?:^|\/)assets$/},args=>{
+      const target=resolve(args.resolveDir,args.path+'.ts');
+      if(target===api)return {path:resolve(root,'src/preview/account-stub.ts')};
+      if(target===assets&&args.importer!==previewAssets)return {path:previewAssets};
+    });
+    b.onLoad({filter:/AiHome\.tsx$/},async args=>({contents:"import {previewStorage as localStorage} from './preview/storage';\n"+await readFile(args.path,'utf8'),loader:'tsx',resolveDir:dirname(args.path)}));
+  }
+}]});
+let script=result.outputFiles.find(f=>f.path.endsWith('.js')).text;
+// React contains an inert script-element string. Keep it as a JS escape so
+// fragment extractors cannot mistake it for another executable script block.
+script=script.replace(/<(?=\/?script\b)/gi,'\\x3c');
+let css=result.outputFiles.find(f=>f.path.endsWith('.css')).text;
+// Preserve the existing site's bundled typefaces without network dependencies.
+for(const [family,weight,file]of [
+  ['Outfit',400,'@fontsource/outfit/files/outfit-latin-400-normal.woff2'],
+  ['Outfit',600,'@fontsource/outfit/files/outfit-latin-600-normal.woff2'],
+  ['Outfit',800,'@fontsource/outfit/files/outfit-latin-800-normal.woff2'],
+  ['IBM Plex Mono',400,'@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2']
+]){const bytes=await readFile(resolve(root,'node_modules',file));css+=`\n@font-face{font-family:'${family}';font-style:normal;font-weight:${weight};font-display:swap;src:url(data:font/woff2;base64,${bytes.toString('base64')}) format('woff2')}`;}
+if(/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b/.test(script))throw Error('Unexpected network API in preview bundle.');
+if(result.metafile.inputs['src/account/api.ts']||result.metafile.inputs['src/Studio.tsx'])throw Error('Live account code leaked into preview.');
+let template=await readFile(resolve(root,'src/preview/fragment.html'),'utf8');
+if(process.argv.includes('--ai-settings'))template=template.replace('id="pokadrovo-chat-preview"','id="pokadrovo-chat-preview" data-start="ai"');
+const html=template.replace('/* PREVIEW_STYLES */',()=>css.replace(/<\/style/gi,'<\\/style')).replace('/* PREVIEW_SCRIPT */',()=>script.replace(/<\/script/gi,'<\\/script'));
+if(/<!doctype\s|<\s*(?:html|head|body)(?:\s|>)/i.test(html))throw Error('A full document leaked into the inline fragment.');
+if((html.match(/<script\b/gi)||[]).length!==1)throw Error('Unexpected embedded script marker.');
+if(Buffer.byteLength(html)>1000000)throw Error('Preview exceeds 1 MB.');
+await writeFile(output,html);
+await mkdir(resolve(root,'.compiled/preview'),{recursive:true});
+await writeFile(resolve(root,'.compiled/preview/meta.json'),JSON.stringify(result.metafile));
+console.log(JSON.stringify({output,bytes:Buffer.byteLength(html),modules:Object.keys(result.metafile.inputs).length,network:false}));

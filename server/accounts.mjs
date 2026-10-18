@@ -10,7 +10,7 @@ const sidOk = value => /^[\w-]{43}$/.test(value);
 const projectIdOk = value => typeof value === 'string' && /^[\w.-]{1,120}$/.test(value);
 const profile = row => ({ id: row.id, name: row.name, email: row.email, emailVerified: !!row.email_verified, role: 'user', created: row.created, passwordSet: !!row.password });
 
-export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, revokeOwner, reauthOwner, oauthFetch }) {
+export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE COLLATE NOCASE, name TEXT NOT NULL, password TEXT, email_verified INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, last_login INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active');
     CREATE TABLE IF NOT EXISTS identities(provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(provider,subject));
@@ -37,6 +37,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
   function session(req, required = true) {
     try { const s = ownerSession(req), o = owner(); if (o) return { csrf: s.csrf, key: 'owner', owner: true, session: s, user: { id: 'owner', name: o.login, email: null, emailVerified: false, role: 'owner', created: o.created, passwordSet: true } }; }
     catch (e) { if (e.status !== 401) throw e; }
+    if (!accountsEnabled) { if (required) deny(401, 'Для серверных данных требуется вход владельца.'); return null; }
     const raw = cookie(req, sessionName);
     if (sidOk(raw)) {
       const s = store.get('SELECT s.*,u.name,u.email,u.email_verified,u.password,u.status,u.created AS user_created FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?', digest(raw));
@@ -71,7 +72,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
     // Bound active devices; invalidate oldest ones after five sessions.
     store.run('DELETE FROM user_sessions WHERE user_id=? AND id NOT IN (SELECT id FROM user_sessions WHERE user_id=? ORDER BY created DESC LIMIT 5)', user.id, user.id);
     appendCookie(res, sessionName, sid, 7 * 86400, secure);
-    return { user: profile(user), csrf, providers: providers() };
+    return { user: profile(user), csrf, providers: providers(), accountsEnabled };
   }
   function listProjects(auth) { return store.all('SELECT payload FROM account_projects WHERE account_id=? ORDER BY modified DESC LIMIT 200', auth.key).map(r => JSON.parse(r.payload)); }
   // Only document metadata is stored: never a Blob, object URL, credential or executable HTML.
@@ -89,9 +90,10 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
     if (!path.startsWith('/api/account/') && !path.startsWith('/auth/')) return false;
     cleanup();
     if (req.method === 'GET' && path === '/api/account/session') {
-      const a = session(req, false); const csrf = a?.csrf || anonymousCsrf(req, res);
-      json(res, 200, { user: a?.user || null, csrf, providers: providers() }); return true;
+      const a = session(req, false); const csrf = a?.csrf || (accountsEnabled ? anonymousCsrf(req, res) : '');
+      json(res, 200, { user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled }); return true;
     }
+    if (!accountsEnabled && (['/api/account/register', '/api/account/login'].includes(path) || path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Регистрация и вход посетителей отключены. Монтажёр доступен без аккаунта.');
     if (req.method === 'POST' && (path === '/api/account/register' || path === '/api/account/login')) {
       publicMutation(req); limit(req, 'user-auth');
       if (!store.consume('user-auth-global', 100, 15 * 60000, now())) deny(429, 'Попробуйте войти позднее.');

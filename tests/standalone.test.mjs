@@ -15,10 +15,10 @@ async function freePort() {
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = server.address().port; await new Promise(ok => server.close(ok)); return port;
 }
-function launch(directory, port) {
+function launch(directory, port, accountsEnabled = false) {
   let output = '';
   const child = spawn(process.execPath, ['tools/start-standalone.mjs'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, POKADROVO_PORT: String(port), POKADROVO_PUBLIC_ORIGIN: `http://127.0.0.1:${port}`, POKADROVO_DATA_DIR: join(directory, 'private') } });
+    env: { ...process.env, POKADROVO_ACCOUNTS_ENABLED: accountsEnabled ? '1' : '0', POKADROVO_PORT: String(port), POKADROVO_PUBLIC_ORIGIN: `http://127.0.0.1:${port}`, POKADROVO_DATA_DIR: join(directory, 'private') } });
   child.stdout.on('data', b => { output += b; }); child.stderr.on('data', b => { output += b; });
   const exited = once(child, 'exit');
   return { child, exited, output: () => output, async stop() { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); await exited; } };
@@ -79,7 +79,7 @@ test('ready delivery starts without npm, preserves accounts/projects and owner a
   const store = openStore(join(directory, 'private'));
   try { await provisionOwner(store, 'standalone_owner', ownerPassword); } finally { store.close(); }
   const originalKey = readFileSync(join(directory, 'private/master.key'));
-  let app = launch(directory, port);
+  let app = launch(directory, port, true);
   try {
     await ready(app, origin);
     assert.equal((await fetch(origin)).status, 200);
@@ -90,7 +90,7 @@ test('ready delivery starts without npm, preserves accounts/projects and owner a
     assert.equal((await user('/api/account/projects', 'PUT', { project })).status, 200);
     assert.equal((await user('/api/admin/users')).status, 401);
     await app.stop(); assert.equal(app.child.exitCode, 0);
-    app = launch(directory, port); await ready(app, origin);
+    app = launch(directory, port, true); await ready(app, origin);
     const returning = client(origin); await returning('/api/account/session');
     assert.equal((await returning('/api/account/login', 'POST', { email: 'local@example.test', password: userPassword })).status, 200);
     assert.equal((await returning('/api/account/projects')).data.projects[0].brief, project.brief);
@@ -101,4 +101,24 @@ test('ready delivery starts without npm, preserves accounts/projects and owner a
     const probe = spawn(process.execPath, ['server/healthcheck.mjs'], { cwd: directory, env: { ...process.env, POKADROVO_PORT: String(port), POKADROVO_PUBLIC_ORIGIN: origin }, stdio: 'ignore' });
     assert.equal((await once(probe, 'exit'))[0], 0);
   } finally { await app.stop(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('default unified delivery serves guest routes and retains encrypted AI settings after restart', { timeout: 30000 }, async () => {
+  const directory=delivery(),port=await freePort(),origin=`http://127.0.0.1:${port}`,password=token(),key=token();
+  const store=openStore(join(directory,'private'));
+  try { await provisionOwner(store,'site_owner',password); } finally { store.close(); }
+  let app=launch(directory,port);
+  try {
+    await ready(app,origin);
+    const guest=client(origin),session=await guest('/api/account/session');
+    assert.equal(session.data.accountsEnabled,false);
+    for(const route of ['/','/studio','/projects']){const response=await fetch(origin+route,{redirect:'manual'});assert.equal(response.status,200);assert.match(await response.text(),/assets\/index-/);}
+    assert.equal((await guest('/api/account/register','POST',{})).status,404);
+    assert.equal((await guest('/api/admin/settings')).status,401);
+    const owner=client(origin);await owner('/api/admin/login','POST',{login:'site_owner',password});
+    assert.equal((await owner('/api/admin/settings','PUT',{provider:'openai',model:'test-model',apiKey:key,password,analyticsEnabled:true})).status,200);
+    await app.stop();app=launch(directory,port);await ready(app,origin);
+    const returning=client(origin);await returning('/api/admin/login','POST',{login:'site_owner',password});
+    const settings=await returning('/api/admin/settings');assert.equal(settings.data.keyConfigured,true);assert.equal(settings.data.model,'test-model');assert.equal(JSON.stringify(settings.data).includes(key),false);
+  } finally { await app.stop();rmSync(directory,{recursive:true,force:true}); }
 });

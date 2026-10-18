@@ -1,10 +1,10 @@
 export type User = { id:string; name:string; email:string|null; emailVerified:boolean; role:'user'|'owner'; created:number; passwordSet:boolean };
 export type Provider = { id:'google'|'facebook'|'instagram'; ready:boolean; professionalOnly:boolean; note:string };
-export type Session = { user:User|null; csrf:string; providers:Provider[] };
+export type Session = { user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean };
 let active:Session|null=null;
 export class AccountError extends Error { constructor(message:string,public status:number){super(message);} }
 export const currentUser=()=>active?.user||null;
-export const storageScope=()=>active?.user?.id||null;
+export const storageScope=()=>active?.user?.id||(active?.accountsEnabled===false?'guest-local':null);
 export function acceptSession(session:Session){active=session;return session;}
 export async function request<T=Record<string,unknown>>(path:string,method='GET',data?:unknown):Promise<T>{
  if(location.protocol==='file:')throw new AccountError('Регистрация и админ-панель работают через локальный сервер. Запустите start-local и откройте localhost:5173.',503);
@@ -29,7 +29,7 @@ export async function socialLogin(provider:Provider['id']){const result=await re
 let saves=Promise.resolve();
 /** Sequential metadata saves cannot cross an account switch. Original media are never uploaded. */
 export function syncProject(project:unknown){
- const scope=storageScope();if(!scope)return;
+ const scope=storageScope();if(!scope||!currentUser())return;
  const snapshot=JSON.parse(JSON.stringify(project));
  saves=saves.catch(()=>{}).then(async()=>{
   if(storageScope()!==scope)return;

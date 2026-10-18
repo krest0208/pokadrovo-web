@@ -15,7 +15,7 @@ async function fixture() {
   mkdirSync(dist); writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Test</title>');
   let app;
   async function start() {
-    app = createApp({ origin: 'http://localhost:5173', dataDir: join(directory, 'private'), dist });
+    app = createApp({ accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(directory, 'private'), dist });
     app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
   }
   await start();

@@ -1,0 +1,48 @@
+# Prepared for later deployment only. Nothing is published by building this file.
+name: pokadrovo
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    image: pokadrovo-unified:local
+    init: true
+    restart: unless-stopped
+    environment:
+      POKADROVO_PUBLIC_ORIGIN: https://${POKADROVO_DOMAIN:?Set POKADROVO_DOMAIN in .env first}
+      POKADROVO_PORT: "5173"
+      POKADROVO_DATA_DIR: /data
+      POKADROVO_ACCOUNTS_ENABLED: ${POKADROVO_ACCOUNTS_ENABLED:-0}
+    expose:
+      - "5173"
+    volumes:
+      - private-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    stop_grace_period: 20s
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: [publish]
+    environment:
+      POKADROVO_DOMAIN: ${POKADROVO_DOMAIN:?Set POKADROVO_DOMAIN in .env first}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls-data:/data
+      - tls-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  private-data:
+  tls-data:
+  tls-config:

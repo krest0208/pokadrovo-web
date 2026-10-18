@@ -15,7 +15,7 @@ before(async()=>{encoded=await hashPassword(password);});
 async function fixture(extra={}){
  const dir=mkdtempSync(join(tmpdir(),'pk-accounts-'));mkdirSync(join(dir,'dist'));writeFileSync(join(dir,'dist/index.html'),'<!doctype html><title>Test</title>');
  let time=Date.now();const origin=extra.origin||'http://localhost:5173';
- const app=createApp({origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),now:()=>time,...extra});
+ const app=createApp({accountsEnabled:true,origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),now:()=>time,...extra});
  app.store.run('INSERT INTO owner(id,login,password,created) VALUES(1,?,?,?)','owner',encoded,time);
  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
  const clients=[];
@@ -64,3 +64,22 @@ test('Google callback creates a user, does not link by matching email, and consu
  await using(async f=>{const a=f.client(),b=f.client();const original=(await a.signup()).body.user.id;f.store.run('UPDATE oauth_config SET client_id=?,secret=?,enabled=1,updated=1 WHERE provider=?','client',f.store.seal('fake'),'google');await b.init();const r=await b.request('/api/account/oauth/google',{method:'POST',data:{}}),url=new URL(r.body.url);nonce=url.searchParams.get('nonce');const cb='/auth/google/callback?state='+url.searchParams.get('state')+'&code=valid';assert.equal((await b.request(cb)).headers.location,'/?signedIn=1');const user=(await b.init()).body.user;assert.notEqual(user.id,original);assert.equal(user.email,null);assert.equal(f.store.get('SELECT count(*) n FROM users').n,2);assert.equal((await b.request(cb)).headers.location,'/?auth=login&authError=provider');},{oauthFetch:mock});
 });
 test('all provider authorization URLs point to fixed hosts and minimal scopes',()=>{const config={clientId:'123',graphVersion:'v23.0'};for(const provider of ['google','facebook','instagram']){const u=new URL(authorizeUrl(provider,config,'https://app.example/callback','state','challenge','nonce'));assert.equal(u.protocol,'https:');assert.ok(!u.search.includes('content_publish'));} });
+
+test('guest mode opens studio and projects while registration, OAuth and private APIs stay closed',()=>using(async f=>{
+ const c=f.client(),r=await c.init();assert.equal(r.body.accountsEnabled,false);assert.equal(r.body.user,null);assert.equal(r.body.csrf,'');assert.deepEqual(r.body.providers,[]);
+ for(const path of ['/','/studio','/projects','/profile','/%73tudio'])assert.equal((await c.request(path)).status,200,path);
+ for(const path of ['/api/account/register','/api/account/login','/api/account/oauth/google'])assert.equal((await c.request(path,{method:'POST',data:{}})).status,404,path);
+ assert.equal((await c.request('/auth/google/callback?state=fake&code=fake')).status,404);
+ for(const path of ['/api/admin/settings','/api/admin/users','/api/account/projects'])assert.equal((await c.request(path)).status,401,path);
+ assert.equal((await c.request('/api/account/projects',{method:'PUT',data:{project:documentOf()}})).status,401);
+ assert.equal(f.store.get('SELECT count(*) n FROM users').n,0);
+},{accountsEnabled:false}));
+
+test('guest mode keeps owner login, encrypted AI settings and owner project storage operational',()=>using(async f=>{
+ const c=f.client();await c.admin();const s=await c.init();assert.equal(s.body.user.role,'owner');assert.equal(s.body.accountsEnabled,false);
+ const key='test-key-'+token();const saved=await c.request('/api/admin/settings',{method:'PUT',data:{provider:'openai',model:'test-model',apiKey:key,password,analyticsEnabled:true}});assert.equal(saved.status,200);
+ const settings=await c.request('/api/admin/settings');assert.equal(settings.body.keyConfigured,true);assert.equal(settings.body.connected,false);assert.equal(settings.raw.includes(key),false);
+ assert.equal((await c.request('/api/account/projects',{method:'PUT',data:{project:documentOf()}})).status,200);
+ assert.equal((await c.request('/api/account/projects')).body.projects.length,1);
+ const shell=await c.request('/krest0208!!!');assert.equal(shell.status,200);assert.match(shell.raw,/Подключение нейросети/);
+},{accountsEnabled:false}));

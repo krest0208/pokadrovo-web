@@ -8,6 +8,7 @@
     "build": "npm run test:admin && tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit",
+    "preview:chat": "node tools/build-chat-preview.mjs",
     "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "start": "node server/app.mjs",
     "admin:setup": "node server/setup.mjs",

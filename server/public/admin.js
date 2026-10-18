@@ -25,6 +25,7 @@
   }
   async function unlocked(data) {
     owner = data; csrf = data.csrf; $('login-screen').hidden = true; app.hidden = false;
+    document.querySelector('[data-view="oauth"]').hidden = data.accountsEnabled === false;
     text($('owner-name'), data.login); $('login-form').reset(); armIdle();
     await switchView('overview');
   }
@@ -43,7 +44,7 @@
   $('toggle-owner-password').addEventListener('click', () => { const input = $('owner-password'), show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggle-owner-password').setAttribute('aria-pressed', String(show)); text($('toggle-owner-password'), show ? 'Скрыть пароль' : 'Показать пароль'); });
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
-  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'ИИ и API-ключ', security: 'Защита доступа', audit: 'Журнал действий' };
+  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий' };
   async function switchView(view) {
     currentView = view;
     for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== view + '-view';
@@ -64,6 +65,9 @@
   $('show-table').addEventListener('click', () => { $('chart-table').hidden = !$('chart-table').hidden; text($('show-table'), $('chart-table').hidden ? 'Показать таблицу' : 'Скрыть таблицу'); });
   async function loadOverview() {
     const data = await request('/overview?days=' + $('period').value); if (!owner) return;
+    const registration = document.querySelectorAll('.integration-row b')[1];
+    text(registration, data.integrations.users ? 'Подключена' : 'Отключена');
+    registration.classList.toggle('good', data.integrations.users);
     const m = data.metrics; text($('period-note'), `${data.from} — ${data.to} · UTC · сбор с ${new Date(data.startedAt).toLocaleDateString('ru-RU')}`);
 const accountCards = data.users ? [['Зарегистрировано за период', data.users.registered, 'По базе аккаунтов'], ['Всего пользователей', data.users.total, 'Без учётной записи владельца']] : [];
     const cards = [
@@ -115,6 +119,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     const form = $('settings-form'); form.elements.provider.value = settings.provider; form.elements.model.value = settings.model;
     form.elements.apiKey.value = ''; form.elements.password.value = ''; form.elements.removeKey.checked = false; form.elements.analyticsEnabled.checked = settings.analyticsEnabled;
     text($('key-status'), settings.keyConfigured ? 'Ключ сохранён на сервере' : 'Ключ не указан');
+    text($('ai-connection-status'), 'Не подключена');
   }
   bindForm('settings-form', async (data, form) => {
     data.analyticsEnabled = form.elements.analyticsEnabled.checked; data.removeKey = form.elements.removeKey.checked;
