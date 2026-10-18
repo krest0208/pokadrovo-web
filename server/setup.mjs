@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline/promises';
 import { emitKeypressEvents } from 'node:readline';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStore, provisionOwner } from './security.mjs';
+import { openStore, provisionOwner, token } from './security.mjs';
 
 function secret(question) {
   return new Promise((ok, no) => {
@@ -18,24 +18,35 @@ function secret(question) {
     process.stdin.on('keypress', key);
   });
 }
-if (!process.stdin.isTTY) throw Error('Запустите настройку в своём интерактивном терминале. Пароль через аргументы или публичный API не принимается.');
+const generate = process.argv.includes('--generate');
+const reset = process.argv.includes('--reset');
+if (generate && reset) throw Error('--generate доступен только для первого создания владельца. Для восстановления используйте интерактивный --reset.');
+if (!process.stdin.isTTY || (generate && !process.stdout.isTTY)) throw Error('Запустите настройку в своём интерактивном терминале. Пароль через аргументы, перенаправление вывода или публичный API не принимается.');
 const base = fileURLToPath(new URL('../.pokadrovo-private', import.meta.url));
 const store = openStore(resolve(process.env.POKADROVO_DATA_DIR || base));
 try {
-  const reset = process.argv.includes('--reset');
   const old = store.get('SELECT login FROM owner WHERE id=1');
   if (old && !reset) throw Error('Владелец уже существует. Для восстановления: npm run admin:setup -- --reset');
-  console.log('ПОКАДРОВО · единственный владелец\nПароль не будет отображаться или отправляться в сеть.');
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  console.log('ПОКАДРОВО · единственный владелец');
   let login;
-  try {
-    if (reset && (await rl.question('Это сменит пароль и отключит 2FA. Введите RESET: ')) !== 'RESET') throw Error('Отменено');
-    login = (await rl.question(`Логин [${old?.login || 'krest0208'}]: `)).trim() || old?.login || 'krest0208';
-  } finally { rl.close(); }
-  const password = await secret('Новый пароль (не менее 14 символов): ');
-  const confirm = await secret('Повторите пароль: ');
-  if (password !== confirm) throw Error('Пароли не совпадают.');
+  let password;
+  if (generate) {
+    login = 'krest0208';
+    password = token();
+  } else {
+    console.log('Вводимый пароль не будет отображаться или отправляться в сеть.');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      if (reset && (await rl.question('Это сменит пароль и отключит 2FA. Введите RESET: ')) !== 'RESET') throw Error('Отменено');
+      login = (await rl.question(`Логин [${old?.login || 'krest0208'}]: `)).trim() || old?.login || 'krest0208';
+    } finally { rl.close(); }
+    password = await secret('Новый пароль (не менее 14 символов): ');
+    const confirm = await secret('Повторите пароль: ');
+    if (password !== confirm) throw Error('Пароли не совпадают.');
+  }
   await provisionOwner(store, login, password, reset);
-  console.log(`\nВладелец ${login} настроен.\nЗапустите npm start и откройте http://localhost:5173/krest0208!!!.\nВ разделе «Защита» включите код подтверждения с телефона.\nХраните резервную копию всей папки .pokadrovo-private вне GitHub.`);
+  console.log(`\nВладелец ${login} настроен.`);
+  if (generate) console.log(`Начальный пароль: ${password}\nОн показан только сейчас в этом терминале. Сохраните его в менеджере паролей.\nПосле входа нажмите «Сменить пароль» и задайте собственную парольную фразу.`);
+  console.log('Откройте на своём запущенном сайте /krest0208!!!.\nВ разделе «Защита доступа» можно сменить логин и пароль и включить код с телефона.\nХраните резервную копию всей папки приватных данных вне GitHub.');
 } catch (error) { console.error(error.message); process.exitCode = 1; }
 finally { store.close(); }

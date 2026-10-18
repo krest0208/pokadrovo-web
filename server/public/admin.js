@@ -131,7 +131,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     text($('totp-status'), session.totpEnabled ? 'Включён' : 'Выключен'); $('totp-begin').hidden = session.totpEnabled; $('totp-disable').hidden = !session.totpEnabled;
     text($('totp-secret'), ''); $('totp-confirm').hidden = true;
   }
-  bindForm('password-form', async data => { await request('/password', { method: 'POST', data }); locked('Пароль изменён. Войдите с новой парольной фразой.'); });
+  bindForm('password-form', async data => { await request('/password', { method: 'POST', data }); locked('Данные доступа изменены. Войдите с актуальными логином и паролем.'); });
   bindForm('totp-begin', async data => { const r = await request('/totp/begin', { method: 'POST', data }); text($('totp-secret'), r.secret); $('totp-confirm').hidden = false; $('totp-begin').hidden = true; });
   bindForm('totp-confirm', async (data, form) => { await request('/totp/confirm', { method: 'POST', data }); form.reset(); await loadSecurity(); notify('Вход по паролю и коду с телефона включён.'); });
   bindForm('totp-disable', async data => { if (!confirm('Отключить второй фактор?')) return; await request('/totp/disable', { method: 'POST', data }); await loadSecurity(); notify('Второй фактор отключён.'); });
