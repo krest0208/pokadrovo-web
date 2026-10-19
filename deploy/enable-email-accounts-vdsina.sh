@@ -17,13 +17,13 @@ systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_DA
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru'
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_HOST=127.0.0.1'
 systemctl is-active --quiet pokadrovo.service
-pk_files=(server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/yandex.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/layered-copy.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css)
+pk_files=(server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/yandex.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/BrandMark.tsx src/brand.ts src/brand.css src/layered-copy.ts src/editor/editor.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css public/favicon.svg public/pokadrovo-logo.svg public/pokadrovo-animated.svg)
 pk_existing=()
 pk_new=()
 for pk_file in "${pk_files[@]}"; do
   [[ -f "$pk_source/$pk_file" && ! -L "$pk_app/$pk_file" ]] || exit 1
   if [[ -f "$pk_app/$pk_file" ]]; then pk_existing+=("$pk_file");
-  elif [[ "$pk_file" == server/ai.mjs || "$pk_file" == server/yandex.mjs || "$pk_file" == src/editor/omni.ts ]]; then pk_new+=("$pk_file");
+  elif [[ "$pk_file" == server/ai.mjs || "$pk_file" == server/yandex.mjs || "$pk_file" == src/editor/omni.ts || "$pk_file" == src/brand.ts || "$pk_file" == src/brand.css || "$pk_file" == public/pokadrovo-animated.svg ]]; then pk_new+=("$pk_file");
   else exit 1; fi
 done
 cd "$pk_source"
@@ -55,6 +55,9 @@ tar -C /var/lib -czf "$pk_backup/private.tar.gz" pokadrovo
 for pk_file in "${pk_files[@]}"; do install -m 0644 "$pk_file" "$pk_app/$pk_file"; done
 # Keep prior hashed assets for browser tabs that are already open.
 cp -a dist/assets/. "$pk_app/dist/assets/"
+install -m 0644 dist/favicon.svg "$pk_app/dist/favicon.svg"
+install -m 0644 dist/pokadrovo-logo.svg "$pk_app/dist/pokadrovo-logo.svg"
+install -m 0644 dist/pokadrovo-animated.svg "$pk_app/dist/pokadrovo-animated.svg"
 find "$pk_app/dist/assets" -type d -exec chmod 0755 {} +
 find "$pk_app/dist/assets" -type f -exec chmod 0644 {} +
 install -m 0644 dist/index.html "$pk_app/dist/.email-index-next"
@@ -82,6 +85,8 @@ curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/ai/status | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const a=JSON.parse(s);if(a.available||!a.freeTrialRequiresAccount||a.limits.maxDuration!==60||a.modes.some(m=>m.available))process.exit(1);console.log("Qwen trial and Yandex prepared; guests cannot start model calls.");'
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -X POST -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/oauth/google) == 404 ]]
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/ | cmp - dist/index.html
+curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/favicon.svg | cmp - dist/favicon.svg
+curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/pokadrovo-logo.svg | cmp - dist/pokadrovo-logo.svg
 trap - ERR
 echo "Update complete. Private backup directory: $pk_backup"
 echo 'Verify https://pokadrovo.ru/ in a browser. No DNS or owner credentials were changed.'

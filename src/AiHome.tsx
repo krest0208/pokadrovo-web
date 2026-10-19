@@ -192,7 +192,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     const previewImage = files?.length && this.mediaKind === "image" ? this.mediaUrl : chosen.image;
     return <div className="pkh" data-theme={theme} data-motion={this.reduced() ? "off" : "on"} ref={node => { this.root = node; }}>
       <header className="pkh-header">
-        <button className="pkh-brand" type="button" aria-label={t.brand} onClick={() => this.scrollTo("pkh-main")}><BrandMark size={35}/><span>{t.brand}<small>AI VIDEO STUDIO</small></span></button>
+        <button className="pkh-brand" type="button" aria-label={t.brand} onClick={() => this.scrollTo("pkh-main")}><BrandMark size={38} animated/><span>{t.brand}<small>AI VIDEO STUDIO</small></span></button>
         <nav className={`pkh-nav ${menuOpen ? "is-open" : ""}`} aria-label={t.menu}>
           <button type="button" onClick={() => this.scrollTo("pkh-method")}>{t.navWorkflow}</button>
           <button type="button" onClick={() => this.scrollTo("pkh-projects")}>{t.navProjects}</button>

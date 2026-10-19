@@ -2,6 +2,7 @@ import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, 
 import { download, inspectFile, persistAsset, restoreAsset, saveProject } from './assets';
 import { PlaybackEngine, exportFormats, exportProject } from './engine';
 import { t } from './copy';
+import { brandSvg } from '../brand';
 import { EditorTools } from './tools';
 import type { AiProvider } from './ai';
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -14,7 +15,7 @@ const paths:Record<string,string>={
  plus:'M12 4v16M4 12h16',layers:'m3 7 9-4 9 4-9 4-9-4m0 5 9 4 9-4M3 17l9 4 9-4',settings:'M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6',check:'m4 12 5 5L20 6',
 };
 export const icon=(name:string,size=17)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.video}"/></svg>`;
-export const brand=()=>'<svg width="33" height="33" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#245CE0"/><path d="M23 18H19A3 3 0 0 0 16 21V43A3 3 0 0 0 19 46H23M41 18H45A3 3 0 0 1 48 21V43A3 3 0 0 1 45 46H41" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/><path d="M27 23 42 32 27 41Z" fill="white"/></svg>';
+export const brand = brandSvg;
 const button=(action:string,label:string,glyph='',cls='',extra='')=>`<button type="button" data-action="${action}" class="${cls}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" ${extra}>${glyph?icon(glyph):''}${cls.includes('square')?'':`<span>${escapeHtml(label)}</span>`}</button>`;
 export interface EditorOptions { aiProvider?:AiProvider; project:Project; assets:Map<string,Asset>; theme:'light'|'dark'; onHome:(project:Project)=>void; onSave:(project:Project)=>void; onTheme:()=>void; }
 export class Editor {
@@ -25,7 +26,7 @@ export class Editor {
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
  constructor(private root:HTMLElement,private opts:EditorOptions){
   this.history=new History(normalizeProject(opts.project));this.root.className='pe';this.root.dataset.theme=opts.theme;this.root.dataset.mobile='player';
-  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand">${button('home',t.home,'home','square')}${brand()}<b>${t.brand}<small>STUDIO / 0.6</small></b><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
+  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand">${button('home',t.home,'home','square')}${brand(33,true)}<b>${t.brand}<small>STUDIO / 0.6</small></b><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
   <div class="pe-brief" hidden></div>
   <nav class="pe-mobile-nav">${['library','player','inspector','timeline'].map((v,i)=>button('mobile-'+v,[t.files,t.preview,t.settings,t.timeline][i],['video','play','settings','layers'][i])).join('')}</nav>
   <div class="pe-layout">

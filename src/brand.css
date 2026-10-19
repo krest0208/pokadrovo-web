@@ -1,0 +1,17 @@
+.pk-brand-mark{display:inline-block;flex-shrink:0;vertical-align:middle;overflow:visible}
+.pk-brand-back,.pk-brand-middle,.pk-brand-front,.pk-brand-play{transform-box:view-box;transform-origin:32px 32px;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-back{animation:pk-brand-back-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-middle{animation:pk-brand-middle-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-front{animation:pk-brand-front-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-play{transform-origin:30px 39px;animation:pk-brand-play-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-glint{animation:pk-brand-glint-in 1.7s ease-out}
+.pkh-brand:hover .pk-brand-back,.au-brand:hover .pk-brand-back,.pe-brand:hover .pk-brand-back{transform:translate(2px,-2px)}
+.pkh-brand:hover .pk-brand-middle,.au-brand:hover .pk-brand-middle,.pe-brand:hover .pk-brand-middle{transform:translate(1px,-1px)}
+.pkh-brand:hover .pk-brand-play,.au-brand:hover .pk-brand-play,.pe-brand:hover .pk-brand-play{transform:translate(1.5px,0)}
+.pkh-brand:focus-visible{outline:2px solid #5585ff;outline-offset:7px;border-radius:5px}
+@keyframes pk-brand-back-in{0%,8%{opacity:0;transform:translate(-8px,14px) rotate(-12deg)}48%{opacity:1;transform:translate(2px,-3px) rotate(3deg)}78%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-middle-in{0%,16%{opacity:0;transform:translate(-5px,12px) rotate(-8deg)}58%{opacity:1;transform:translate(1px,-2px) rotate(2deg)}86%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-front-in{0%,22%{opacity:0;transform:translate(0,13px) scale(.82)}64%{opacity:1;transform:translate(0,-1px) scale(1.025)}88%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-play-in{0%,46%{opacity:0;transform:translate(-5px,0) scale(.65)}80%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-glint-in{0%,22%,100%{opacity:0}48%{opacity:.55}78%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.pk-brand-mark,.pk-brand-mark *{animation:none!important;transition:none!important;transform:none!important}.pk-brand-glint{opacity:0!important}}

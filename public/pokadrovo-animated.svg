@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pk-brand-mark pk-brand-mark--animated" width="256" height="256" viewBox="0 0 64 64" fill="none" role="img" aria-label="Покадрово — три кадра, одна история"><style>.pk-brand-mark{display:inline-block;flex-shrink:0;vertical-align:middle;overflow:visible}
+.pk-brand-back,.pk-brand-middle,.pk-brand-front,.pk-brand-play{transform-box:view-box;transform-origin:32px 32px;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-back{animation:pk-brand-back-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-middle{animation:pk-brand-middle-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-front{animation:pk-brand-front-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-play{transform-origin:30px 39px;animation:pk-brand-play-in 1.7s cubic-bezier(.2,.8,.2,1)}
+.pk-brand-mark--animated .pk-brand-glint{animation:pk-brand-glint-in 1.7s ease-out}
+.pkh-brand:hover .pk-brand-back,.au-brand:hover .pk-brand-back,.pe-brand:hover .pk-brand-back{transform:translate(2px,-2px)}
+.pkh-brand:hover .pk-brand-middle,.au-brand:hover .pk-brand-middle,.pe-brand:hover .pk-brand-middle{transform:translate(1px,-1px)}
+.pkh-brand:hover .pk-brand-play,.au-brand:hover .pk-brand-play,.pe-brand:hover .pk-brand-play{transform:translate(1.5px,0)}
+.pkh-brand:focus-visible{outline:2px solid #5585ff;outline-offset:7px;border-radius:5px}
+@keyframes pk-brand-back-in{0%,8%{opacity:0;transform:translate(-8px,14px) rotate(-12deg)}48%{opacity:1;transform:translate(2px,-3px) rotate(3deg)}78%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-middle-in{0%,16%{opacity:0;transform:translate(-5px,12px) rotate(-8deg)}58%{opacity:1;transform:translate(1px,-2px) rotate(2deg)}86%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-front-in{0%,22%{opacity:0;transform:translate(0,13px) scale(.82)}64%{opacity:1;transform:translate(0,-1px) scale(1.025)}88%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-play-in{0%,46%{opacity:0;transform:translate(-5px,0) scale(.65)}80%,100%{opacity:1;transform:none}}
+@keyframes pk-brand-glint-in{0%,22%,100%{opacity:0}48%{opacity:.55}78%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.pk-brand-mark,.pk-brand-mark *{animation:none!important;transition:none!important;transform:none!important}.pk-brand-glint{opacity:0!important}}
+</style><rect class="pk-brand-tile" width="64" height="64" rx="18" fill="#111820"/>
+<g class="pk-brand-back"><path d="M26 12h20a6 6 0 0 1 6 6v20" fill="none" stroke="#8BAEFF" stroke-width="3.5" stroke-linecap="round"/></g>
+<g class="pk-brand-middle"><path d="M19 18h21a6 6 0 0 1 6 6v20" fill="none" stroke="#5585FF" stroke-width="3.5" stroke-linecap="round"/></g>
+<g class="pk-brand-front"><rect x="12" y="24" width="34" height="29" rx="7" fill="#245CE0"/><path d="M18 29h7" stroke="#8BAEFF" stroke-width="2" stroke-linecap="round"/>
+<path class="pk-brand-play" d="M25 33.2c0-1 .9-1.5 1.7-1l9.6 5.5c.9.5.9 1.7 0 2.2l-9.6 5.5c-.8.5-1.7 0-1.7-1V33.2Z" fill="#FFFFFF"/></g>
+<path class="pk-brand-glint" d="M3 21V18A15 15 0 0 1 18 3h10" fill="none" stroke="#B9CEFF" stroke-width="1.3" stroke-linecap="round" opacity="0"/></svg>
