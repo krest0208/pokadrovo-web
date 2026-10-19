@@ -114,3 +114,18 @@ test('email-only mode blocks configured third-party sign-in, callbacks and owner
  assert.equal((await admin.request('/api/admin/oauth',{method:'PUT',data:{provider:'google',enabled:true,password}})).status,404);
  assert.equal(f.store.get('SELECT count(*) n FROM users').n,0);assert.equal(f.store.get('SELECT count(*) n FROM oauth_states').n,0);
 },{socialLoginEnabled:false,guestEditingEnabled:true,oauthFetch:()=>{throw Error('Must not contact a provider');}}));
+
+test('direct mode ignores forwarded IPs when applying authentication rate limits',()=>using(async f=>{
+ const c=f.client();await c.init();
+ for(let i=1;i<=12;i++)assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':'203.0.113.'+i},data:{email:'invalid'}})).status,400);
+ assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':'198.51.100.10'},data:{email:'invalid'}})).status,429);
+},{socialLoginEnabled:false,trustLoopbackProxy:false}));
+
+test('explicit local-proxy mode separates visitors without accepting forwarded chains',()=>using(async f=>{
+ const c=f.client();await c.init();const attempt=address=>c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':address},data:{email:'invalid'}});
+ for(let i=0;i<12;i++)assert.equal((await attempt('203.0.113.10')).status,400);
+ assert.equal((await attempt('203.0.113.10')).status,429);assert.equal((await attempt('203.0.113.11')).status,400);
+ for(let i=0;i<12;i++)assert.equal((await attempt('203.0.113.10, 198.51.100.20')).status,400);
+ assert.equal((await attempt('203.0.113.12, 198.51.100.21')).status,429);
+ assert.equal((await attempt('not-an-ip')).status,429);
+},{socialLoginEnabled:false,trustLoopbackProxy:true}));

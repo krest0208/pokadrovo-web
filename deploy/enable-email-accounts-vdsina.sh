@@ -15,6 +15,7 @@ pk_drop=/etc/systemd/system/pokadrovo.service.d/email-accounts.conf
 [[ $(systemctl show -p WorkingDirectory --value pokadrovo.service) == "$pk_app" ]]
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_DATA_DIR=/var/lib/pokadrovo'
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru'
+systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_HOST=127.0.0.1'
 systemctl is-active --quiet pokadrovo.service
 pk_files=(server/accounts.mjs server/app.mjs server/standalone.mjs server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/layered-copy.ts)
 for pk_file in "${pk_files[@]}"; do
@@ -58,6 +59,7 @@ cat > "$pk_drop" <<'CONFIG'
 Environment=POKADROVO_ACCOUNTS_ENABLED=1
 Environment=POKADROVO_GUEST_EDITING=1
 Environment=POKADROVO_SOCIAL_LOGIN_ENABLED=0
+Environment=POKADROVO_TRUST_LOOPBACK_PROXY=1
 CONFIG
 chmod 0644 "$pk_drop"
 systemctl daemon-reload

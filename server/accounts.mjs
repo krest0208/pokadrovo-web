@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { token, digest, equal, hashPassword, checkPassword, validatePassword } from './security.mjs';
 import { cookie, json, deny, body, appendCookie } from './http.mjs';
 import { PROVIDERS, authorizeUrl, createOAuthClient } from './oauth.mjs';
@@ -10,7 +11,7 @@ const sidOk = value => /^[\w-]{43}$/.test(value);
 const projectIdOk = value => typeof value === 'string' && /^[\w.-]{1,120}$/.test(value);
 const profile = row => ({ id: row.id, name: row.name, email: row.email, emailVerified: !!row.email_verified, role: 'user', created: row.created, passwordSet: !!row.password });
 
-export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false }) {
+export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE COLLATE NOCASE, name TEXT NOT NULL, password TEXT, email_verified INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, last_login INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active');
     CREATE TABLE IF NOT EXISTS identities(provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(provider,subject));
@@ -28,7 +29,14 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
   const oauth = createOAuthClient(oauthFetch);
   let passwordWork = 0;
   async function passwordJob(job) { if (passwordWork >= 2) deny(429, 'Сервер обрабатывает вход. Повторите через несколько секунд.'); passwordWork++; try { return await job(); } finally { passwordWork--; } }
-  const ip = req => store.hmac('accounts-ip:' + (req.socket.remoteAddress || 'local'));
+  const ip = req => {
+    const peer = req.socket.remoteAddress || 'local';
+    const forwarded = req.headers['x-forwarded-for'];
+    // The dedicated VPS runs Caddy on loopback and Caddy replaces this header.
+    // Never accept proxy headers from a public socket, a chain, or by default.
+    const address = trustLoopbackProxy && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(peer) && typeof forwarded === 'string' && isIP(forwarded.trim()) ? forwarded.trim() : peer;
+    return store.hmac('accounts-ip:' + address);
+  };
   function limit(req, type, count = 12, ms = 15 * 60000) { if (!store.consume(type + ':' + ip(req), count, ms, now())) deny(429, 'Слишком много попыток. Попробуйте позднее.'); }
   function cleanup() {
     store.run('DELETE FROM oauth_states WHERE expires<=?', now());

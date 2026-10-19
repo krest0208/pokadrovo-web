@@ -15,6 +15,7 @@ export function createApp(options = {}) {
   const accountsEnabled = options.accountsEnabled ?? process.env.POKADROVO_ACCOUNTS_ENABLED === '1';
   const guestEditingEnabled = !accountsEnabled || (options.guestEditingEnabled ?? process.env.POKADROVO_GUEST_EDITING === '1');
   const socialLoginEnabled = accountsEnabled && (options.socialLoginEnabled ?? process.env.POKADROVO_SOCIAL_LOGIN_ENABLED === '1');
+  const trustLoopbackProxy = options.trustLoopbackProxy ?? process.env.POKADROVO_TRUST_LOOPBACK_PROXY === '1';
   const origin = new URL(options.origin || process.env.POKADROVO_PUBLIC_ORIGIN || 'http://localhost:5173');
   if (origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash || !['http:', 'https:'].includes(origin.protocol)) throw Error('PUBLIC_ORIGIN must be an origin, without path or credentials.');
   const secure = origin.protocol === 'https:';
@@ -63,7 +64,7 @@ export function createApp(options = {}) {
     if (!fresh || !equal(fresh.password, o.password)) deny(401, 'Credentials changed. Sign in again.');
     return fresh;
   }
-const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled,
+const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
     revokeOwner(req, res) { const s = session(req); store.run('DELETE FROM sessions WHERE id=?', s.id); setCookie(res, sessionName, '', 0); }
   });  function visitor(req) {
     const [id, signature] = cookie(req, visitorName).split('.');
