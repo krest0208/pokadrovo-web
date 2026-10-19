@@ -44,7 +44,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
    void import('./editor/editor').then(({Editor})=>{
     if(this.disposed||this.state.screen!=='editor'||node!==this.host||rev!==this.revision||!canEdit(this.state.session)||!this.state.project)return;
     this.editor=new Editor(node,{project:this.state.project,assets:this.assets,theme:this.state.theme,onTheme:this.toggleTheme,
-     aiProvider:this.state.session?.user?.role==='owner'?new OmniAiProvider():undefined,
+     aiProvider:this.state.session?.user?new OmniAiProvider(this.state.session.user.role==='owner'?'yandex-edit':'reels-trial'):undefined,
      onHome:p=>{try{saveProject(p);}catch{}this.setState({project:p});this.navigate('home');},
      onSave:p=>this.setState(s=>({projects:[p,...s.projects.filter(c=>c.id!==p.id)],project:p}))});
     if(this.pending.length){const files=this.pending;this.pending=[];void this.editor.importFiles(files);}

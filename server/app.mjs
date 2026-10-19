@@ -101,7 +101,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     const [id, signature] = cookie(req, visitorName).split('.');
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
-  const ai = createAi({ store, now, settings, session: accounts.session, sameOrigin, request: options.aiFetch });
+  const ai = createAi({ store, now, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
   function overview(days) {
     const to = new Date(now()).toISOString().slice(0, 10), from = new Date(now() - (days - 1) * DAY).toISOString().slice(0, 10);
     const start = Date.parse(from + 'T00:00:00Z');
@@ -126,7 +126,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
     if (await accounts.route(req, res, url)) return;
-    if (await ai.route(req, res, path)) return;
+    if (await ai.route(req, res, url)) return;
     if (req.method === 'POST' && path === '/api/admin/login') return json(res, 200, await authenticateOwner(req, res, await body(req)));
     if (path.startsWith('/api/admin/')) {
       const s = session(req);
@@ -145,6 +145,8 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
         const c = settings(); return json(res, 200, { provider: c.provider, model: c.model, keyConfigured: !!c.secret, updated: c.updated, analyticsEnabled: !!c.analytics, ...ai.adminState() });
       }
       if (req.method === 'GET' && path === '/api/admin/ai/usage') return json(res, 200, { items: ai.usage() });
+      if (req.method === 'GET' && path === '/api/admin/ai/yandex') return json(res, 200, ai.yandex.adminState());
+      if (req.method === 'PUT' && path === '/api/admin/ai/yandex') { const data = await body(req); await reauth(req, data); return json(res, 200, { ok: true, ...ai.yandex.save(data) }); }
       if (req.method === 'PUT' && path === '/api/admin/settings') {
         const data = await body(req); await reauth(req, data);
         const old = settings();

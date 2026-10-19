@@ -1,7 +1,9 @@
 # Pokadrovo Edit Plan v1
 
-The web editor accepts an optional `AiProvider`. Owners now receive the `OmniAiProvider`
-adapter, which is unavailable until its server settings are configured and explicitly enabled.
+The web editor accepts an optional `AiProvider`. Signed-in accounts receive the `OmniAiProvider`
+adapter with two services: `reels-trial` (Qwen video/audio) and `yandex-edit` (native Yandex text/project API).
+Each has independent server credentials and is unavailable until explicitly configured and enabled.
+Yandex is owner-only until a tariff/payment implementation exists. Qwen trials require a separate public opt-in.
 No key, paid request or media upload is configured by default. See [AI-OMNI-PILOT.md](AI-OMNI-PILOT.md).
 
 ## Connection
@@ -9,20 +11,22 @@ No key, paid request or media upload is configured by default. See [AI-OMNI-PILO
 ```ts
 import { OmniAiProvider } from './editor/omni';
 
-// Studio.tsx does this only for a server-authenticated owner:
+// Studio.tsx does this for a server-authenticated account:
 new Editor(host, {
   ...existingOptions,
-  aiProvider: new OmniAiProvider()
+  aiProvider: new OmniAiProvider('reels-trial')
 });
 ```
 
 Keep model API keys on the server, never in `VITE_*`, browser storage or repository files.
-The same-origin endpoint authenticates the owner, validates CSRF and quotas, limits body size,
+The same-origin endpoint authenticates the account, validates CSRF and quotas, limits body size,
 and returns JSON, never executable code. The `AiRequest` document contains no video/audio
 bytes, Blob URLs, credentials or thumbnails: only a prompt and versioned project snapshot.
-The Omni HTTP envelope is `{request, media?, mediaConsent?, context?}`. `media` is a separately
+The Omni HTTP envelope is `{service, request, media?, mediaConsent?, context?}`. `media` is a separately
 selected MP4 or WAV sent only after explicit consent in the media section. Normal text requests
-do not upload files. This first pilot accepts one complete source file up to 60 seconds / 12 MiB.
+do not upload files. Qwen accepts one complete source file up to 60 seconds / 12 MiB in a Reels project up to 60 seconds.
+Normal accounts receive one project / three requests / seven days, starting with MP4 analysis.
+Yandex accepts metadata only and rejects media. See [AI-ACCESS-AND-YANDEX.md](AI-ACCESS-AND-YANDEX.md).
 
 The metadata-only contract alone does not provide semantic video analysis. The Omni media path
 sends the source video with its audio to Qwen and receives source-time scene/audio annotations.
@@ -77,7 +81,7 @@ file-delete or arbitrary-property operations.
 5. Apply only if the project snapshot still matches. An asynchronous race also checks object identity.
 6. Commit one history entry; Ctrl/Cmd+Z undoes the whole plan.
 
-Provider calls support cancellation, a 60-second HTTP timeout and late-response suppression.
+Provider calls support cancellation, a 90-second server inference timeout (100 seconds in the browser) and late-response suppression.
 No automatic retry or background media upload occurs. Reject/close does not apply edits.
 
 ## Fonts

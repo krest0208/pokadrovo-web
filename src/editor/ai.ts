@@ -24,10 +24,15 @@ export interface AiRequest {
   capabilities:typeof AI_CAPABILITIES; fontIds:string[];
 }
 export interface AiPlan { version:1; requestId:string; projectId:string; revision:string; summary:string; operations:Operation[]; }
+export type AiService='reels-trial'|'yandex-edit';
+export interface AiStatus {available:boolean;reason:string;requiresMedia?:boolean;owner?:boolean;trial?:{projectId:string|null;remaining:number|null;expires:number|null};}
 export interface AiProvider {
   readonly name:string;
   readonly supportsMedia?:boolean;
-  getStatus?(signal?:AbortSignal):Promise<{available:boolean;reason:string}>;
+  readonly service?:AiService;
+  readonly modes?:readonly {id:AiService;label:string}[];
+  setService?(service:AiService):void;
+  getStatus?(signal?:AbortSignal):Promise<AiStatus>;
   createPlan(request:AiRequest,signal:AbortSignal,media?:AiMedia):Promise<unknown>;
 }
 export interface AiMedia {clipId:string;assetId:string;mime:'video/mp4'|'audio/wav';data:string;}

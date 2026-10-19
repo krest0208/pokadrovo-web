@@ -1,8 +1,10 @@
 import { HttpError, body, deny, json } from './http.mjs';
 import { equal } from './security.mjs';
+import { createYandex } from './yandex.mjs';
 
 export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 12 * 1024 * 1024, dailyRequests: 12 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
+export const TRIAL_RULES = Object.freeze({ projects: 1, requests: 3, days: 7 });
 const MAX_BODY = Math.ceil(AI_LIMITS.maxBytes / 3) * 4 + 300000;
 const idOk = x => typeof x === 'string' && /^[\w.-]{1,120}$/.test(x);
 const finite = x => typeof x === 'number' && Number.isFinite(x);
@@ -14,6 +16,19 @@ const operations = {
   transform: ['id', 'patch'], caption: ['text', 'from', 'to', 'fontId'], ratio: ['value'],
   audioAt: ['id', 'at'], cutRange: ['from', 'to']
 };
+
+export function validateReelsProject(project) {
+  if (project.mode !== 'reels' || project.ratio !== '9:16') deny(422, 'Бесплатная проба предназначена для Reels в формате 9:16.');
+  if (!project.clips.some(c => c.kind === 'video')) deny(422, 'Добавьте видео в проект Reels.');
+  const length = c => {
+    if (!finite(c.start) || !finite(c.end) || !finite(c.speed) || c.start < 0 || c.end <= c.start || c.speed < .25 || c.speed > 4) deny(400, 'Некорректная длительность клипа.');
+    return (c.end - c.start) / c.speed;
+  };
+  const video = project.clips.reduce((sum, c) => sum + length(c), 0);
+  const audio = project.audio.map(c => { if (!finite(c.at) || c.at < 0) deny(400, 'Некорректное время аудио.'); return c.at + length(c); });
+  const texts = project.texts.map(c => { if (!finite(c.from) || !finite(c.to) || c.from < 0 || c.to <= c.from) deny(400, 'Некорректное время текста.'); return c.to; });
+  if (Math.max(video, ...audio, ...texts) > 60.001) deny(422, 'В бесплатной пробе готовый Reels должен быть не длиннее 60 секунд.');
+}
 
 /** Only the vendor's documented HTTPS endpoints. Never fetch a browser-supplied media URL. */
 export function validateOmniEndpoint(value) {
@@ -156,48 +171,107 @@ async function readProviderJson(response) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { deny(502, 'Провайдер вернул повреждённый JSON.'); }
 }
 
-export function createAi({ store, now, settings, session, sameOrigin, request = globalThis.fetch }) {
+export function createAi({ store, now, settings, session, sameOrigin, rateKey, request = globalThis.fetch }) {
   let active = false;
-  store.db.exec(`CREATE TABLE IF NOT EXISTS ai_runs(request_id TEXT PRIMARY KEY, at INTEGER NOT NULL, result TEXT NOT NULL, model TEXT NOT NULL, media_seconds REAL, input_tokens INTEGER, output_tokens INTEGER);`);
+  const yandex = createYandex({ store, now });
+  store.db.exec(`CREATE TABLE IF NOT EXISTS ai_runs(request_id TEXT PRIMARY KEY, at INTEGER NOT NULL, result TEXT NOT NULL, model TEXT NOT NULL, media_seconds REAL, input_tokens INTEGER, output_tokens INTEGER);
+    CREATE TABLE IF NOT EXISTS ai_trial_usage(account_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL, started INTEGER NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, successes INTEGER NOT NULL DEFAULT 0, media_analyzed INTEGER NOT NULL DEFAULT 0);`);
+  const columns = new Set(store.all('PRAGMA table_info(ai_runs)').map(c => c.name));
+  for (const [name, declaration] of Object.entries({ account_id: "TEXT NOT NULL DEFAULT 'owner'", mode: "TEXT NOT NULL DEFAULT 'reels-trial'", access_kind: "TEXT NOT NULL DEFAULT 'owner_test'", customer_charge_minor: 'INTEGER NOT NULL DEFAULT 0' })) {
+    if (!columns.has(name)) store.db.exec(`ALTER TABLE ai_runs ADD COLUMN ${name} ${declaration}`);
+  }
   const meta = key => store.get('SELECT value FROM meta WHERE key=?', key)?.value || '';
   const put = (key, value) => store.run('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', key, String(value));
+  const trialEnabled = () => meta('ai_trial_enabled') === '1';
+  const trialRow = auth => !auth || auth.owner ? null : store.get('SELECT * FROM ai_trial_usage WHERE account_id=?', auth.key);
+  function trialState(auth) {
+    const row = trialRow(auth), expired = !!row && row.expires <= now();
+    return { rules: TRIAL_RULES, projectId: row?.project_id || null, remaining: auth?.owner ? null : expired ? 0 : Math.max(0, TRIAL_RULES.requests - (row?.used || 0)),
+      expires: row?.expires || null, expired, requiresMedia: !auth?.owner && !row?.media_analyzed };
+  }
   function state() {
     const c = settings(), endpoint = meta('ai_endpoint'), enabled = meta('ai_enabled') === '1';
     return { c, endpoint, enabled, configured: c.provider === 'qwen' && c.model === OMNI_MODEL && !!c.secret && !!endpoint, verified: meta('ai_verified') === String(c.updated) && c.updated > 0 };
   }
-  function adminState() { const s = state(); return { endpoint: s.endpoint, aiEnabled: s.enabled, configured: s.configured, connected: s.configured && s.enabled && s.verified, verified: s.verified, limits: AI_LIMITS }; }
+  function adminState() { const s = state(); return { endpoint: s.endpoint, aiEnabled: s.enabled, configured: s.configured, connected: s.configured && s.enabled && s.verified, verified: s.verified, limits: AI_LIMITS, trialEnabled: trialEnabled(), trialRules: TRIAL_RULES }; }
   function saveConfig(data, next) {
     if (next.provider === 'qwen' && next.model !== OMNI_MODEL) deny(400, `Для пробного анализа выберите ${OMNI_MODEL}.`);
     const endpoint = data.endpoint === undefined ? meta('ai_endpoint') : data.endpoint;
     const canonical = next.provider === 'qwen' ? validateOmniEndpoint(endpoint) : '';
-    if (data.aiEnabled !== undefined && typeof data.aiEnabled !== 'boolean') deny(400, 'Некорректный переключатель ИИ.');
-    const enabled = data.aiEnabled === true;
-    if (enabled && (next.provider !== 'qwen' || !next.secret)) deny(400, 'Для пробы укажите Qwen Omni и API-ключ.');
-    return () => { put('ai_endpoint', canonical); put('ai_enabled', enabled ? '1' : '0'); put('ai_verified', ''); };
+    for (const key of ['aiEnabled', 'trialEnabled']) if (data[key] !== undefined && typeof data[key] !== 'boolean') deny(400, 'Некорректный переключатель ИИ.');
+    const enabled = data.aiEnabled === true, publicTrial = data.trialEnabled === true;
+    if ((enabled || publicTrial) && (next.provider !== 'qwen' || !next.secret)) deny(400, 'Для пробы укажите Qwen Omni и API-ключ.');
+    if (publicTrial && !enabled) deny(400, 'Сначала включите Qwen для теста владельца.');
+    return () => { put('ai_endpoint', canonical); put('ai_enabled', enabled ? '1' : '0'); put('ai_trial_enabled', publicTrial ? '1' : '0'); put('ai_verified', ''); };
   }
-  async function route(req, res, path) {
+  function modeStatus(auth, service) {
+    const owner = !!auth?.owner, q = state(), y = yandex.state(), trial = trialState(auth);
+    if (!auth) return { available: false, reason: 'Войдите в аккаунт, чтобы попробовать монтаж.', requiresMedia: true };
+    if (service === 'yandex-edit') return { available: owner && y.configured && y.enabled,
+      reason: !owner ? 'Тариф платного монтажа готовится. Списания и оплата пока недоступны.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите Яндекс для тестов администратора.' : 'Тест Яндекса без списаний в Покадрово. Расходы API оплачивает владелец.', requiresMedia: false };
+    return { available: q.configured && q.enabled && (owner || trialEnabled() && trial.remaining > 0), requiresMedia: trial.requiresMedia,
+      reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Тест Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
+        : !q.configured || !q.enabled || !trialEnabled() ? 'Бесплатная проба Reels пока не открыта.' : trial.expired ? 'Срок бесплатной пробы закончился.' : !trial.remaining ? 'Запросы бесплатной пробы использованы. Платный тариф готовится.' : `Бесплатная проба: осталось ${trial.remaining} из ${TRIAL_RULES.requests} запросов для одного Reels до 60 секунд.` };
+  }
+  function reserveTrial(auth, r, media) {
+    if (auth.owner) return null;
+    if (!trialEnabled()) deny(503, 'Бесплатная проба пока не открыта.');
+    const old = trialRow(auth);
+    if (old?.project_id && old.project_id !== r.projectId) deny(402, 'Бесплатная проба действует для одного проекта Reels. Откройте начатый проект.');
+    if (old && old.expires <= now()) deny(402, 'Срок бесплатной пробы закончился.');
+    if (old && old.used >= TRIAL_RULES.requests) deny(402, 'Запросы бесплатной пробы использованы. Платный тариф ещё готовится.');
+    if (!old?.media_analyzed && (!media || media.mime !== 'video/mp4')) deny(422, 'Начните пробу кнопкой анализа MP4-видео со звуком.');
+    const peer = rateKey ? rateKey(auth.req) : store.hmac(auth.req.socket.remoteAddress || 'local');
+    if (!store.consume('ai-trial-ip:' + peer + ':' + new Date(now()).toISOString().slice(0, 10), 6, 86400000, now())) deny(429, 'Дневной лимит бесплатных запросов для этого подключения исчерпан.');
+    if (!old) store.run('INSERT INTO ai_trial_usage(account_id,project_id,started,expires,used) VALUES(?,?,?,?,1)', auth.key, r.projectId, now(), now() + TRIAL_RULES.days * 86400000);
+    else store.run('UPDATE ai_trial_usage SET used=used+1 WHERE account_id=?', auth.key);
+    return { accountId: auth.key, projectId: r.projectId };
+  }
+  function refundTrial(reservation) {
+    if (!reservation) return;
+    store.run('UPDATE ai_trial_usage SET used=max(0,used-1) WHERE account_id=? AND project_id=?', reservation.accountId, reservation.projectId);
+    store.run('DELETE FROM ai_trial_usage WHERE account_id=? AND successes=0 AND used=0', reservation.accountId);
+  }
+  async function route(req, res, url) {
+    const path = url.pathname;
     if (req.method === 'GET' && path === '/api/ai/status') {
-      const owner = session(req, false)?.owner === true, s = state();
-      json(res, 200, { available: owner && s.configured && s.enabled, configured: owner && s.configured, verified: owner && s.verified,
-        ownerOnly: true, model: OMNI_MODEL, limits: AI_LIMITS,
-        reason: !owner ? 'Пробный анализ доступен после входа владельца.' : !s.configured ? 'Добавьте ключ и Base URL Qwen Omni в админ-панели.' : !s.enabled ? 'Включите пробный анализ в админ-панели.' : 'Готово к пробному анализу видео и звука.' }); return true;
+      const auth = session(req, false), service = url.searchParams.get('service') || 'reels-trial';
+      if (!['reels-trial', 'yandex-edit'].includes(service)) deny(400, 'Неизвестный режим ИИ.');
+      const q = state(), selected = modeStatus(auth, service), y = yandex.state();
+      json(res, 200, { ...selected, service, ownerOnly: service === 'yandex-edit', freeTrialRequiresAccount: true,
+        owner: !!auth?.owner, configured: !!auth?.owner && (service === 'yandex-edit' ? y.configured : q.configured),
+        verified: !!auth?.owner && (service === 'yandex-edit' ? y.verified : q.verified), model: auth?.owner ? service === 'yandex-edit' ? y.c.model : OMNI_MODEL : undefined,
+        limits: AI_LIMITS, trial: trialState(auth), tariffConfigured: false, paymentsEnabled: false,
+        modes: ['reels-trial', 'yandex-edit'].map(id => ({ id, label: id === 'reels-trial' ? 'Reels · бесплатная проба' : 'Монтаж · тариф готовится', ...modeStatus(auth, id) })) }); return true;
     }
     if (req.method !== 'POST' || path !== '/api/ai/edit-plan') return false;
     const auth = session(req); sameOrigin(req);
-    if (!auth.owner) deny(403, 'Пробные запросы пока доступны только владельцу.');
     if (!equal(req.headers['x-csrf-token'], auth.csrf)) deny(403, 'Обновите страницу и повторите запрос.');
-    const s = state(); if (!s.configured || !s.enabled) deny(503, 'Сначала настройте и включите Qwen Omni в админ-панели.');
-    validateOmniEndpoint(s.endpoint);
+    if ((!auth.owner || req.headers['x-pk-account']) && !equal(req.headers['x-pk-account'], auth.key)) deny(409, 'Аккаунт изменился. Обновите страницу перед запросом.');
+    if (!store.consume('ai-http:' + auth.key, 12, 60000, now())) deny(429, 'Слишком много запросов. Подождите минуту.');
     if (active) deny(429, 'Другой запрос ИИ ещё выполняется. Дождитесь его завершения.');
     active = true;
     const controller = new AbortController(), abort = () => { if (!res.writableEnded) controller.abort(); };
     req.once('aborted', abort); res.once('close', abort);
     const timer = setTimeout(() => controller.abort(), 90000);
-    let requestId;
+    let requestId, reservation = null;
     try {
-      const data = await body(req, MAX_BODY), r = validateAiRequest(data.request);
+      const data = await body(req, MAX_BODY), service = data.service || 'reels-trial';
+      if (!['reels-trial', 'yandex-edit'].includes(service)) deny(400, 'Неизвестный режим ИИ.');
+      // Price/role/provider fields from the browser cannot unlock an undefined paid tariff.
+      if (service === 'yandex-edit' && !auth.owner) deny(402, 'Тариф платного монтажа ещё не утверждён. Оплата и списания пока не включены.');
+      const r = validateAiRequest(data.request), q = state(), y = yandex.state();
+      if (service === 'reels-trial') {
+        validateReelsProject(r.project);
+        if (!q.configured || !q.enabled) deny(503, 'Сначала настройте и включите Qwen Omni в админ-панели.');
+        validateOmniEndpoint(q.endpoint);
+      } else {
+        if (!y.configured || !y.enabled) deny(503, 'Настройте и включите Яндекс AI Studio в админ-панели.');
+        if (data.media) deny(422, 'В этом режиме Яндекс получает задание и структуру проекта, без исходного видео.');
+      }
       if (data.media && data.mediaConsent !== true) deny(400, 'Подтвердите отправку выбранного файла провайдеру.');
-      const media = validateAiMedia(data.media, r);
+      const media = service === 'reels-trial' ? validateAiMedia(data.media, r) : null;
       let context = null;
       if (data.context !== undefined && data.context !== null) {
         const c = data.context, clip = r.project.clips.concat(r.project.audio).find(c1 => c1.id === c?.clipId && c1.assetId === c?.assetId);
@@ -205,43 +279,62 @@ export function createAi({ store, now, settings, session, sameOrigin, request = 
         context = validateAnalysis(c, { clipId: clip.id, assetId: clip.assetId, duration: c.duration });
       }
       if (store.get('SELECT request_id FROM ai_runs WHERE request_id=?', r.requestId)) deny(409, 'Этот запрос уже запускался. Создайте новый, чтобы избежать повторного списания.');
-      if (!store.consume('ai-pilot:' + new Date(now()).toISOString().slice(0, 10), AI_LIMITS.dailyRequests, 86400000, now())) deny(429, 'Пробный лимит: 12 запросов в сутки. Лимит обновляется в 03:00 по Москве.');
-      requestId = r.requestId;
-      store.run('INSERT INTO ai_runs(request_id,at,result,model,media_seconds) VALUES(?,?,?,?,?)', requestId, now(), 'started', s.c.model, media?.duration ?? null);
-      const content = [{ type: 'text', text: JSON.stringify({ request: r, media: media ? { clipId: media.clipId, assetId: media.assetId, duration: media.duration } : null, previousAnalysis: context }) }];
-      if (media) content.push(media.mime === 'video/mp4' ? { type: 'video_url', video_url: { url: 'data:;base64,' + media.data } } : { type: 'input_audio', input_audio: { data: 'data:audio/wav;base64,' + media.data, format: 'wav' } });
-      let response;
+      const input = { request: r, media: media ? { clipId: media.clipId, assetId: media.assetId, duration: media.duration } : null, previousAnalysis: context };
+      let invocation;
+      if (service === 'yandex-edit') invocation = yandex.prepare(y, SYSTEM, input);
+      else {
+        const content = [{ type: 'text', text: JSON.stringify(input) }];
+        if (media) content.push(media.mime === 'video/mp4' ? { type: 'video_url', video_url: { url: 'data:;base64,' + media.data } } : { type: 'input_audio', input_audio: { data: 'data:audio/wav;base64,' + media.data, format: 'wav' } });
+        invocation = { url: q.endpoint + '/chat/completions', headers: { Authorization: 'Bearer ' + store.unseal(q.c.secret), 'Content-Type': 'application/json', Accept: 'application/json' },
+          payload: { model: q.c.model, messages: [{ role: 'system', content: SYSTEM + '\nЭто Reels: сохраняй формат 9:16 и итоговую длительность не более 60 секунд.' }, { role: 'user', content }],
+            modalities: ['text'], reasoning_effort: 'none', response_format: { type: 'json_object' }, stream: false, max_tokens: 4096 } };
+      }
+      store.db.exec('BEGIN IMMEDIATE');
       try {
-        response = await request(s.endpoint + '/chat/completions', { method: 'POST', redirect: 'error', signal: controller.signal,
-          headers: { Authorization: 'Bearer ' + store.unseal(s.c.secret), 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ model: s.c.model, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content }],
-            modalities: ['text'], reasoning_effort: 'none', response_format: { type: 'json_object' }, stream: false, max_tokens: 4096 }) });
-      } catch { deny(controller.signal.aborted ? 504 : 502, controller.signal.aborted ? 'Запрос отменён или превысил 90 секунд. Повторного запроса автоматически не будет.' : 'Нет связи с Qwen. Проверьте Base URL и доступность провайдера.'); }
+        if (service === 'reels-trial') reservation = reserveTrial({ ...auth, req }, r, media);
+        if (!store.consume('ai-pilot:' + new Date(now()).toISOString().slice(0, 10), AI_LIMITS.dailyRequests, 86400000, now())) deny(429, 'Общий пробный лимит: 12 запросов в сутки. Обновление — в 03:00 по Москве.');
+        requestId = r.requestId;
+        store.run('INSERT INTO ai_runs(request_id,at,result,model,media_seconds,account_id,mode,access_kind,customer_charge_minor) VALUES(?,?,?,?,?,?,?,?,0)', requestId, now(), 'started', service === 'yandex-edit' ? y.c.model : q.c.model, media?.duration ?? null, auth.key, service, auth.owner ? 'owner_test' : 'free_trial');
+        store.db.exec('COMMIT');
+      } catch (error) { store.db.exec('ROLLBACK'); requestId = undefined; reservation = null; throw error; }
+      let response;
+      try { response = await request(invocation.url, { method: 'POST', redirect: 'error', signal: controller.signal, headers: invocation.headers, body: JSON.stringify(invocation.payload) }); }
+      catch { deny(controller.signal.aborted ? 504 : 502, controller.signal.aborted ? 'Запрос отменён или превысил 90 секунд. Автоматического повтора не будет.' : 'Нет связи с провайдером ИИ. Повторите позже.'); }
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});
-        deny(response.status === 429 ? 429 : 502, [401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Проверьте регион ключа и Base URL.' : response.status === 429 ? 'Лимит провайдера исчерпан. Проверьте квоту и баланс.' : 'Qwen отклонил запрос. Проверьте доступ к модели и формат файла.');
+        deny(response.status === 429 ? 429 : 502, [401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Владельцу нужно проверить настройки.' : response.status === 429 ? 'Лимит провайдера исчерпан. Повторите позже.' : 'Провайдер отклонил запрос. Монтаж не изменён.');
       }
       const result = await readProviderJson(response);
-      const choice = result.choices?.[0];
-      if (choice?.finish_reason !== 'stop' || typeof choice?.message?.content !== 'string') deny(502, 'Модель не завершила ответ. Монтаж не изменён.');
-      let value; try { value = JSON.parse(choice.message.content); } catch { deny(502, 'Модель вернула неполный JSON. Монтаж не изменён.'); }
+      let value, usage;
+      if (service === 'yandex-edit') ({ value, usage } = yandex.parse(result));
+      else {
+        const choice = result.choices?.[0];
+        if (choice?.finish_reason !== 'stop' || typeof choice?.message?.content !== 'string') deny(502, 'Модель не завершила ответ. Монтаж не изменён.');
+        try { value = JSON.parse(choice.message.content); } catch { deny(502, 'Модель вернула неполный JSON. Монтаж не изменён.'); }
+        const integer = x => Number.isSafeInteger(x) && x >= 0 ? x : null;
+        usage = { inputTokens: integer(result.usage?.prompt_tokens), outputTokens: integer(result.usage?.completion_tokens) };
+      }
       const analysis = validateAnalysis(value.analysis, media);
       let plan = null, planError = '';
-      try { plan = validatePlan(value, r); }
-      catch (error) { if (!analysis) throw error; planError = 'Анализ готов, но предложенные правки не прошли проверку. Монтаж не изменён.'; }
-      // The session/config can be revoked while inference is running.
+      try {
+        plan = validatePlan(value, r);
+        if (service === 'reels-trial' && plan?.operations.some(op => op.type === 'ratio' && op.value !== '9:16' || op.type === 'caption' && op.to > 60)) deny(502, 'План вышел за ограничения Reels.');
+      } catch (error) { if (!analysis) throw error; plan = null; planError = 'Анализ готов, но предложенные правки не прошли проверку. Монтаж не изменён.'; }
       const fresh = session(req), current = settings();
-      if (!fresh.owner || !equal(fresh.csrf, auth.csrf) || current.updated !== s.c.updated || current.provider !== s.c.provider || current.model !== s.c.model || !equal(current.secret, s.c.secret) || state().endpoint !== s.endpoint || !state().enabled) deny(409, 'Сеанс или настройки изменились. Результат не применяется.');
-      const integer = x => Number.isSafeInteger(x) && x >= 0 ? x : null;
-      const usage = { inputTokens: integer(result.usage?.prompt_tokens), outputTokens: integer(result.usage?.completion_tokens) };
+      if (fresh.key !== auth.key || fresh.owner !== auth.owner || !equal(fresh.csrf, auth.csrf)) deny(409, 'Сеанс изменился. Результат не применяется.');
+      if (service === 'yandex-edit' ? !yandex.current(y) : current.updated !== q.c.updated || current.provider !== q.c.provider || current.model !== q.c.model || !equal(current.secret, q.c.secret) || state().endpoint !== q.endpoint || !state().enabled || !auth.owner && !trialEnabled()) deny(409, 'Настройки изменились. Результат не применяется.');
       store.run('UPDATE ai_runs SET result=?,input_tokens=?,output_tokens=? WHERE request_id=?', 'ok', usage.inputTokens, usage.outputTokens, requestId);
-      put('ai_verified', current.updated); store.audit('ai_request', 'ok', now());
-      json(res, 200, { plan, analysis, summary: planError || value.summary, usage });
+      if (reservation) store.run('UPDATE ai_trial_usage SET successes=successes+1,media_analyzed=max(media_analyzed,?) WHERE account_id=?', Number(!!analysis), auth.key);
+      if (service === 'yandex-edit') yandex.verified(y); else put('ai_verified', current.updated);
+      store.audit('ai_request', 'ok', now());
+      json(res, 200, { plan, analysis, summary: planError || value.summary, usage,
+        access: { kind: auth.owner ? 'owner_test' : 'free_trial', customerChargeMinor: 0, tariffConfigured: false }, trial: trialState(auth) });
     } catch (error) {
-      if (requestId) { store.run('UPDATE ai_runs SET result=? WHERE request_id=?', 'failed', requestId); store.audit('ai_request', 'failed', now()); }
+      if (requestId) { store.run('UPDATE ai_runs SET result=? WHERE request_id=?', 'failed', requestId); refundTrial(reservation); store.audit('ai_request', 'failed', now()); }
       throw error instanceof HttpError ? error : new HttpError(502, 'Не удалось завершить анализ. Монтаж не изменён.');
     } finally { clearTimeout(timer); req.off('aborted', abort); res.off('close', abort); active = false; }
     return true;
   }
-  return { route, adminState, saveConfig, usage: () => store.all('SELECT at,result,model,media_seconds,input_tokens,output_tokens FROM ai_runs ORDER BY at DESC LIMIT 20') };
+  return { route, adminState, saveConfig, yandex,
+    usage: () => store.all('SELECT at,result,model,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor FROM ai_runs ORDER BY at DESC LIMIT 20') };
 }

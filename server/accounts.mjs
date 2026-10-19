@@ -249,5 +249,5 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
     return { total: store.get('SELECT count(*) n FROM users').n, registered: store.get('SELECT count(*) n FROM users WHERE created>=?', from).n, active: store.get('SELECT count(*) n FROM users WHERE last_login>=?', from).n, accountProjects: store.get('SELECT count(*) n FROM account_projects').n,
       registrations: store.all("SELECT substr(datetime(created/1000,'unixepoch'),1,10) day,count(*) count FROM users WHERE created>=? GROUP BY day ORDER BY day", from) };
   }
-  return { route, adminRoute, session, userMetrics, cleanup };
+  return { route, adminRoute, session, userMetrics, cleanup, rateKey: ip };
 }

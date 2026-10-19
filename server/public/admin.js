@@ -118,25 +118,47 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     settings = await request('/settings'); if (!owner) return;
     const form = $('settings-form'); form.elements.provider.value = settings.provider; form.elements.model.value = settings.model;
     form.elements.endpoint.value = settings.endpoint || ''; form.elements.aiEnabled.checked = settings.aiEnabled;
+    form.elements.trialEnabled.checked = settings.trialEnabled;
     form.elements.apiKey.value = ''; form.elements.password.value = ''; form.elements.removeKey.checked = false; form.elements.analyticsEnabled.checked = settings.analyticsEnabled;
     text($('key-status'), settings.keyConfigured ? 'Ключ сохранён на сервере' : 'Ключ не указан');
     text($('ai-connection-status'), settings.connected ? 'Проверена запросом' : settings.configured && settings.aiEnabled ? 'Готова к пробе' : 'Не включена');
     text($('ai-connection-note'), settings.connected ? 'Qwen успешно ответил на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели будет проверен первым запросом из редактора.' : 'Для запуска выберите Qwen Omni, укажите ключ и Base URL, затем включите пробный режим.');
     updateAiFields();
     const usage = await request('/ai/usage');
-    $('ai-usage').replaceChildren(...(usage.items.length ? usage.items.map(row => element('p', 'field-note', `${new Date(row.at).toLocaleString('ru-RU')} · ${row.result === 'ok' ? 'Готово' : row.result === 'started' ? 'Выполняется' : 'Не завершён'}${row.media_seconds === null ? '' : ' · ' + Math.round(row.media_seconds) + ' сек.'}${row.input_tokens === null ? '' : ' · токены ' + row.input_tokens + ' / ' + row.output_tokens}`)) : [element('p', 'field-note', 'Запросов ещё нет.')]));
+    if(!owner)return;
+    $('ai-usage').replaceChildren(...(usage.items.length ? usage.items.map(row => element('p', 'field-note', `${new Date(row.at).toLocaleString('ru-RU')} · ${row.mode === 'yandex-edit' ? 'Яндекс' : 'Qwen'} · ${row.access_kind === 'free_trial' ? 'Бесплатная проба' : 'Тест администратора'} · ${row.result === 'ok' ? 'Готово' : row.result === 'started' ? 'Выполняется' : 'Не завершён'}${row.media_seconds === null ? '' : ' · ' + Math.round(row.media_seconds) + ' сек.'}${row.input_tokens === null ? '' : ' · токены ' + row.input_tokens + ' / ' + row.output_tokens}`)) : [element('p', 'field-note', 'Запросов ещё нет.')]));
+    await loadYandex();
   }
+  async function loadYandex() {
+    const data=await request('/ai/yandex'); if(!owner)return; const form=$('yandex-form');
+    form.elements.model.value=data.model;form.elements.folderId.value=data.folderId;form.elements.apiKey.value='';form.elements.password.value='';form.elements.removeKey.checked=false;form.elements.enabled.checked=data.enabled;
+    text($('yandex-key-status'),data.keyConfigured?'Отдельный ключ Яндекса сохранён':'Ключ Яндекса не указан');
+    text($('yandex-connection-status'),data.connected?'Проверен запросом':data.configured&&data.enabled?'Готов к тесту администратора':'Не включён');
+  }
+  bindForm('yandex-form',async(data,form)=>{
+    data.removeKey=form.elements.removeKey.checked;data.enabled=!data.removeKey&&form.elements.enabled.checked;
+    if(data.removeKey&&!confirm('Удалить только API-ключ Яндекса?'))return;
+    await request('/ai/yandex',{method:'PUT',data});form.reset();await loadYandex();notify('Настройки Яндекса сохранены отдельно. Платный запрос не запускался, пользовательский тариф ещё закрыт.');
+  });
   function updateAiFields() {
     const form = $('settings-form'), qwen = form.elements.provider.value === 'qwen';
     form.elements.endpoint.disabled = !qwen; form.elements.endpoint.required = qwen;
     form.elements.aiEnabled.disabled = !qwen; if (!qwen) form.elements.aiEnabled.checked = false;
+    form.elements.trialEnabled.disabled = !qwen; if (!qwen) form.elements.trialEnabled.checked = false;
   }
   $('settings-form').elements.provider.addEventListener('change', () => {
     const form = $('settings-form'); if (form.elements.provider.value === 'qwen') form.elements.model.value = 'qwen3.8-omni-flash'; updateAiFields();
   });
+  $('settings-form').elements.trialEnabled.addEventListener('change', () => {
+    const form=$('settings-form'); if(form.elements.trialEnabled.checked)form.elements.aiEnabled.checked=true;
+  });
+  $('settings-form').elements.aiEnabled.addEventListener('change', () => {
+    const form=$('settings-form'); if(!form.elements.aiEnabled.checked)form.elements.trialEnabled.checked=false;
+  });
   bindForm('settings-form', async (data, form) => {
     data.analyticsEnabled = form.elements.analyticsEnabled.checked; data.removeKey = form.elements.removeKey.checked;
     data.aiEnabled = !data.removeKey && form.elements.provider.value === 'qwen' && form.elements.aiEnabled.checked;
+    data.trialEnabled = data.aiEnabled && form.elements.trialEnabled.checked;
     if (data.removeKey && !confirm('Удалить API-ключ с сервера?')) return;
     await request('/settings', { method: 'PUT', data }); form.reset(); await loadSettings(); notify('Настройки сохранены. Платный запрос не запускался. Проверка — из ИИ-панели редактора.');
   });

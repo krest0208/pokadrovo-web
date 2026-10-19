@@ -1,5 +1,5 @@
-import { sessionCsrf } from '../account/api';
-import type { AiMedia, AiProvider, AiRequest } from './ai';
+import { sessionCsrf, currentUser, flushProjectSaves } from '../account/api';
+import type { AiMedia, AiProvider, AiRequest, AiService, AiStatus } from './ai';
 
 export interface MediaAnalysis {
  clipId:string;assetId:string;duration:number;summary:string;speech:string;audio:string;
@@ -9,27 +9,35 @@ export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summa
 
 /** Credentials and provider URLs never enter the browser. Context stays in this editor session. */
 export class OmniAiProvider implements AiProvider {
- readonly name='Qwen Omni · пробный режим';readonly supportsMedia=true;
+ readonly name='Покадрово AI';
+ readonly modes=[{id:'reels-trial',label:'Reels · бесплатная проба'},{id:'yandex-edit',label:'Монтаж · тариф готовится'}] as const;
+ constructor(public service:AiService='reels-trial'){}
+ get supportsMedia(){return this.service==='reels-trial';}
+ setService(service:AiService){this.service=service;}
  private context:{projectId:string;analysis:MediaAnalysis}|null=null;
  async getStatus(signal?:AbortSignal){
-  const r=await fetch('/api/ai/status',{credentials:'same-origin',redirect:'error',signal,headers:{Accept:'application/json'}});
+  const r=await fetch('/api/ai/status?service='+this.service,{credentials:'same-origin',redirect:'error',signal,headers:{Accept:'application/json'}});
   if(!r.ok)throw Error('Не удалось проверить подключение ИИ.');
   const s=await r.json();if(typeof s.available!=='boolean'||typeof s.reason!=='string')throw Error('Некорректный статус ИИ.');
-  return {available:s.available,reason:s.reason};
+  return s as AiStatus;
  }
  async createPlan(request:AiRequest,signal:AbortSignal,media?:AiMedia):Promise<OmniResult>{
   const controller=new AbortController(),abort=()=>controller.abort();
   if(signal.aborted)throw new DOMException('Запрос отменён','AbortError');
   signal.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,100000);
+  const service=this.service,accountId=currentUser()?.id;
   let context:MediaAnalysis|null=null;
   if(this.context?.projectId===request.projectId){
    const a=this.context.analysis;
    if([...request.project.clips,...request.project.audio].some(c=>c.id===a.clipId&&c.assetId===a.assetId))context=a;
   }
   try{
+   await flushProjectSaves();
+   if(!accountId||currentUser()?.id!==accountId)throw Error('Аккаунт изменился. Откройте проект заново.');
+   if(service==='yandex-edit'&&media)throw Error('В режиме Яндекса исходный файл не отправляется.');
    const response=await fetch('/api/ai/edit-plan',{method:'POST',credentials:'same-origin',redirect:'error',signal:controller.signal,
-    headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':sessionCsrf()},
-    body:JSON.stringify({request,media,mediaConsent:!!media,context:media?null:context})});
+    headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':sessionCsrf(),'X-PK-Account':accountId},
+    body:JSON.stringify({service,request,media,mediaConsent:!!media,context:media?null:context})});
    if(!response.body||!response.headers.get('content-type')?.includes('application/json'))throw Error('Сервис ИИ вернул неожиданный ответ.');
    const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
    try{while(true){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>512000)throw Error('Ответ ИИ слишком большой.');chunks.push(r.value);}}
