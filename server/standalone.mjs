@@ -36,12 +36,12 @@ export function launchConfig(env = process.env, container = false) {
     throw Error('HTTP разрешён только для localhost/127.0.0.1 с портом сервера. Внешнему адресу нужен HTTPS.');
   // Only the dedicated container entrypoint binds its internal interface.
   // compose.yaml publishes that port exclusively on the host loopback address.
-  return { port, host: container ? '0.0.0.0' : '127.0.0.1', dataDir, origin: origin.origin, accountsEnabled: env.POKADROVO_ACCOUNTS_ENABLED === '1' };
+  return { port, host: container ? '0.0.0.0' : '127.0.0.1', dataDir, origin: origin.origin, accountsEnabled: env.POKADROVO_ACCOUNTS_ENABLED === '1', guestEditingEnabled: env.POKADROVO_GUEST_EDITING === '1', socialLoginEnabled: env.POKADROVO_SOCIAL_LOGIN_ENABLED === '1' };
 }
 
 export async function startServer(config) {
   const { createApp } = await import('./app.mjs');
-  const app = createApp({ origin: config.origin, dataDir: config.dataDir, accountsEnabled: config.accountsEnabled });
+  const app = createApp({ origin: config.origin, dataDir: config.dataDir, accountsEnabled: config.accountsEnabled, guestEditingEnabled: config.guestEditingEnabled, socialLoginEnabled: config.socialLoginEnabled });
   try {
     await new Promise((ok, no) => {
       app.server.once('error', no);

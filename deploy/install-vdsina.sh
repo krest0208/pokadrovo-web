@@ -85,7 +85,9 @@ Environment=POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru
 Environment=POKADROVO_HOST=127.0.0.1
 Environment=POKADROVO_PORT=5173
 Environment=POKADROVO_DATA_DIR=/var/lib/pokadrovo
-Environment=POKADROVO_ACCOUNTS_ENABLED=0
+Environment=POKADROVO_ACCOUNTS_ENABLED=1
+Environment=POKADROVO_GUEST_EDITING=1
+Environment=POKADROVO_SOCIAL_LOGIN_ENABLED=0
 ExecStart=/usr/bin/node /opt/pokadrovo/app/server/app.mjs
 Restart=on-failure
 RestartSec=3

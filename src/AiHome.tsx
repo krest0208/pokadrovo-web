@@ -12,6 +12,8 @@ export type AiHomeProps = {
   account?: { id:string;name:string;role:string } | null;
   onAccount?: () => void;
   guestMode?: boolean;
+  registrationEnabled?: boolean;
+  onSignIn?: () => void;
   onToggleTheme: () => void;
   onCreate: (prompt: string) => void;
   onContinue: () => void;
@@ -201,10 +203,11 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
         <nav className={`pkh-nav ${menuOpen ? "is-open" : ""}`} aria-label={t.menu}>
           <button type="button" onClick={() => this.scrollTo("pkh-method")}>{t.navWorkflow}</button>
           <button type="button" onClick={() => this.scrollTo("pkh-projects")}>{t.navProjects}</button>
+          {this.props.registrationEnabled&&!this.props.account&&<button type="button" onClick={this.props.onSignIn}>Войти</button>}
         </nav>
         <div className="pkh-header-right">
           <button className="pkh-theme" type="button" aria-label={theme === "light" ? t.themeDark : t.themeLight} title={theme === "light" ? t.themeDark : t.themeLight} onClick={onToggleTheme}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
-<button className="pkh-editor-link" type="button" onClick={this.props.onAccount || onContinue}><Icon name={this.props.account || this.props.guestMode ? 'folder' : 'plus'} size={15}/><span>{this.props.guestMode ? 'Мои проекты' : this.props.account ? 'Мой профиль' : 'Зарегистрироваться'}</span><Icon name="arrow" size={16}/></button>
+<button className="pkh-editor-link" type="button" onClick={this.props.onAccount || onContinue}><Icon name={this.props.account || this.props.guestMode ? 'folder' : 'plus'} size={15}/><span>{this.props.account ? 'Мой профиль' : this.props.registrationEnabled ? 'Создать аккаунт' : 'Мои проекты'}</span><Icon name="arrow" size={16}/></button>
           <button className="pkh-menu" type="button" aria-label={t.menu} aria-expanded={menuOpen} onClick={() => this.setState({ menuOpen: !menuOpen })}><Icon name={menuOpen ? "close" : "menu"}/></button>
         </div>
       </header>

@@ -13,6 +13,8 @@ const isLoopback = host => ['localhost', '127.0.0.1', '[::1]'].includes(host);
 
 export function createApp(options = {}) {
   const accountsEnabled = options.accountsEnabled ?? process.env.POKADROVO_ACCOUNTS_ENABLED === '1';
+  const guestEditingEnabled = !accountsEnabled || (options.guestEditingEnabled ?? process.env.POKADROVO_GUEST_EDITING === '1');
+  const socialLoginEnabled = accountsEnabled && (options.socialLoginEnabled ?? process.env.POKADROVO_SOCIAL_LOGIN_ENABLED === '1');
   const origin = new URL(options.origin || process.env.POKADROVO_PUBLIC_ORIGIN || 'http://localhost:5173');
   if (origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash || !['http:', 'https:'].includes(origin.protocol)) throw Error('PUBLIC_ORIGIN must be an origin, without path or credentials.');
   const secure = origin.protocol === 'https:';
@@ -61,7 +63,7 @@ export function createApp(options = {}) {
     if (!fresh || !equal(fresh.password, o.password)) deny(401, 'Credentials changed. Sign in again.');
     return fresh;
   }
-const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled,
+const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled,
     revokeOwner(req, res) { const s = session(req); store.run('DELETE FROM sessions WHERE id=?', s.id); setCookie(res, sessionName, '', 0); }
   });  function visitor(req) {
     const [id, signature] = cookie(req, visitorName).split('.');
@@ -116,13 +118,13 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
         store.audit('login', 'ok', now()); store.db.exec('COMMIT');
       } catch (e) { store.db.exec('ROLLBACK'); throw e; }
       setCookie(res, sessionName, sid, 12 * 3600);
-      return json(res, 200, { login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled });
+      return json(res, 200, { login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled, socialLoginEnabled });
     }
     if (path.startsWith('/api/admin/')) {
       const s = session(req);
       if (!['GET', 'HEAD'].includes(req.method)) csrf(req, s);
       if (await accounts.adminRoute(req, res, url)) return;
-      if (req.method === 'GET' && path === '/api/admin/session') return json(res, 200, { login: owner().login, csrf: s.csrf, totpEnabled: !!owner().totp, expires: s.expires, idleMinutes: 30, accountsEnabled });
+      if (req.method === 'GET' && path === '/api/admin/session') return json(res, 200, { login: owner().login, csrf: s.csrf, totpEnabled: !!owner().totp, expires: s.expires, idleMinutes: 30, accountsEnabled, socialLoginEnabled });
       if (req.method === 'POST' && path === '/api/admin/logout') {
         store.run('DELETE FROM sessions WHERE id=?', s.id); store.audit('logout', 'ok', now()); setCookie(res, sessionName, '', 0); return json(res, 200, { ok: true });
       }
@@ -224,7 +226,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     }
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
-    if (accountsEnabled && ['/studio', '/profile', '/projects'].includes(pagePath) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
+    if (accountsEnabled && (pagePath === '/profile' || !guestEditingEnabled && ['/studio', '/projects'].includes(pagePath)) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
     let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile','/projects'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
     if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some(s => s.startsWith('.'))) deny(404, 'Не найдено.');
     const target = resolve(dist, '.' + (decoded === '/' ? '/index.html' : decoded));

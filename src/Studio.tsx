@@ -13,8 +13,8 @@ import './editor/tools.css';
 import './home-formats.css';
 
 type Intent = { kind:'create'|'resume'|'open'; brief?:string; id?:string; mode?:Mode; ratio?:Ratio };
-const canEdit=(session:Session|null)=>!!session?.user||session?.accountsEnabled===false;
-const accountKey=(session:Session|null)=>session?.user?.id||(session?.accountsEnabled===false?'guest-local':null);
+const canEdit=(session:Session|null)=>!!session?.user||(session?.accountsEnabled===false||session?.guestEditingEnabled===true);
+const accountKey=(session:Session|null)=>session?.user?.id||((session?.accountsEnabled===false||session?.guestEditingEnabled===true)?'guest-local':null);
 type State={screen:'home'|'editor'|'profile'|'projects';theme:'light'|'dark';mode:Mode;ratio:Ratio;project:Project|null;projects:Project[];error:string;session:Session|null;checking:boolean;auth:boolean;authMode:'register'|'login'};
 export default class Studio extends React.Component<Record<string,never>,State>{
  state:State={screen:'home',theme:'light',mode:'video',ratio:'16:9',project:null,projects:[],error:'',session:null,checking:true,auth:false,authMode:'register'};
@@ -31,9 +31,9 @@ export default class Studio extends React.Component<Record<string,never>,State>{
    if(this.disposed)return;await this.adopt(session);
    if(canEdit(session)&&this.intent)this.runIntent();
    else if(session.user&&['/profile','/projects'].includes(location.pathname))this.navigate('profile');
-   else if(session.accountsEnabled===false&&['/profile','/projects'].includes(location.pathname))this.navigate('projects');
+   else if(canEdit(session)&&['/projects',...(session.accountsEnabled===false?['/profile']:[])].includes(location.pathname))this.navigate('projects');
    else if(session.accountsEnabled!==false&&!session.user&&(auth||['/profile','/projects','/studio'].includes(location.pathname)))this.setState({auth:true,authMode:auth==='register'?'register':'login'});
-   if(session.accountsEnabled!==false&&q.get('authError'))this.setState({error:'Соцсеть не подтвердила вход. Попробуйте снова или используйте почту и пароль.',auth:true,authMode:'login'});
+   if(session.accountsEnabled!==false&&q.get('authError'))this.setState({error:'Не удалось войти. Используйте почту и пароль.',auth:true,authMode:'login'});
    if(location.search)history.replaceState({},'',location.pathname);
   }).catch(e=>{if(!this.disposed)this.setState({checking:false,error:e.message});});
  }
@@ -61,8 +61,8 @@ export default class Studio extends React.Component<Record<string,never>,State>{
  }
  private syncStatus=(event:Event)=>{const status=this.host?.querySelector('.pe-status');if(status)status.textContent=String((event as CustomEvent).detail||'');};
  private navigate=(screen:State['screen'])=>{history.pushState({},'',screen==='home'?'/':screen==='editor'?'/studio':screen==='projects'?'/projects':'/profile');this.setState({screen});window.scrollTo({top:0,behavior:'instant'});};
- private onPop=()=>{if(location.pathname==='/studio')void this.authorize({kind:'resume'});else if(['/profile','/projects'].includes(location.pathname))this.openAccount();else this.setState({screen:'home'});};
- private recheck=()=>{if(this.refreshBusy||this.state.checking||this.disposed)return;this.refreshBusy=true;void getSession().then(s=>{if(!s.user&&this.state.session?.user)this.expired();else if(accountKey(s)!==accountKey(this.state.session)||s.accountsEnabled!==this.state.session?.accountsEnabled)void this.adopt(s);}).catch(()=>{}).finally(()=>{this.refreshBusy=false;});};
+ private onPop=()=>{if(location.pathname==='/studio')void this.authorize({kind:'resume'});else if(location.pathname==='/projects'&&!this.state.session?.user&&canEdit(this.state.session))this.setState({screen:'projects'});else if(['/profile','/projects'].includes(location.pathname))this.openAccount();else this.setState({screen:'home'});};
+ private recheck=()=>{if(this.refreshBusy||this.state.checking||this.disposed)return;this.refreshBusy=true;void getSession().then(s=>{if(!s.user&&this.state.session?.user)this.expired();else if(accountKey(s)!==accountKey(this.state.session)||s.accountsEnabled!==this.state.session?.accountsEnabled||s.guestEditingEnabled!==this.state.session?.guestEditingEnabled)void this.adopt(s);}).catch(()=>{}).finally(()=>{this.refreshBusy=false;});};
  private expired=()=>{if(this.disposed)return;if(this.state.session?.accountsEnabled===false){this.pending=[];this.intent=null;void getSession().then(s=>this.adopt(s)).then(()=>this.navigate('home')).catch(e=>this.setState({error:e.message}));return;}this.editor?.dispose();this.editor=null;this.revision++;acceptSession({user:null,csrf:'',providers:this.state.session?.providers||[]});this.intent={kind:'resume'};this.setState({session:null,screen:'home',project:null,projects:[],auth:true,authMode:'login',error:'Сеанс завершён. Войдите снова.'});void getSession().then(session=>{if(!this.disposed)this.setState({session});}).catch(()=>{});};
  private rememberIntent(){try{if(this.intent)sessionStorage.setItem('pokadrovo.auth.intent',JSON.stringify(this.intent));else sessionStorage.removeItem('pokadrovo.auth.intent');}catch{}}
  private authorize=async(intent:Intent)=>{
@@ -85,6 +85,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
  private toggleTheme=()=>this.setState(s=>{const theme=s.theme==='light'?'dark':'light';try{localStorage.setItem('pokadrovo-theme-v2',theme);}catch{}return {theme};});
  private persistEditor(){if(this.editor){const p=this.editor.project;try{saveProject(p);}catch{}this.setState(s=>({project:p,projects:[p,...s.projects.filter(x=>x.id!==p.id)]}));}}
  private openAccount=()=>{if(this.state.checking){void getSession().then(s=>this.adopt(s)).then(()=>this.openAccount()).catch(e=>this.setState({checking:false,error:e.message}));return;}this.persistEditor();if(this.state.session?.accountsEnabled===false&&!this.state.session?.user){this.navigate('projects');}else if(this.state.session?.user){this.navigate('profile');}else this.setState({auth:true,authMode:'register'});};
+ private openSignIn=()=>{this.persistEditor();this.setState({auth:true,authMode:'login',error:''});};
  private closeAuth=()=>this.setState({auth:false,error:''});
  private authenticated=(s:Session)=>{void this.adopt(s).then(()=>{this.setState({auth:false,error:''});this.runIntent();});};
  private signOut=()=>{void flushProjectSaves().then(()=>logout()).then(async s=>{this.pending=[];this.intent=null;this.rememberIntent();await this.adopt(s);this.navigate('home');}).catch(e=>{if(e.status===401)this.expired();else this.setState({error:e.message});});};
@@ -92,9 +93,9 @@ export default class Studio extends React.Component<Record<string,never>,State>{
  private restoreLegacy=()=>{if(this.state.session?.user?.role!=='owner'||!confirm('Добавить в аккаунт владельца проекты, сохранённые в этом браузере до регистрации?'))return;try{const projects=importOwnerLegacy();this.setState({projects,error:'Старые локальные проекты добавлены владельцу.'});}catch(e){this.setState({error:(e as Error).message});}};
  render(){const s=this.state,user=s.session?.user;return <>
   {s.screen==='home'?<div key="home" className="ps-shell" data-theme={s.theme}>
-   <AiHome guestMode={s.checking||s.session?.accountsEnabled===false&&!user} theme={s.theme} onToggleTheme={this.toggleTheme} onCreate={this.create} onContinue={this.resume} onImport={this.attach} onOpenProject={this.openProject} account={user?{id:user.id,name:user.name,role:user.role}:null} onAccount={this.openAccount} projects={s.projects.map(p=>({id:p.id,name:p.name,count:p.clips.length,modified:p.modified}))}/>
+   <AiHome guestMode={s.checking||!user&&canEdit(s.session)} registrationEnabled={s.session?.accountsEnabled===true} onSignIn={this.openSignIn} theme={s.theme} onToggleTheme={this.toggleTheme} onCreate={this.create} onContinue={this.resume} onImport={this.attach} onOpenProject={this.openProject} account={user?{id:user.id,name:user.name,role:user.role}:null} onAccount={this.openAccount} projects={s.projects.map(p=>({id:p.id,name:p.name,count:p.clips.length,modified:p.modified}))}/>
    <HomeFormats mode={s.mode} ratio={s.ratio} onChoose={(mode,ratio)=>this.setState({mode,ratio})} onStart={()=>this.create('')}/>
-  </div>:s.screen==='projects'?<ProjectLibrary projects={s.projects} theme={s.theme} onHome={()=>this.navigate('home')} onNew={()=>this.create('')} onOpen={this.openProject} onImport={()=>this.setState({projects:loadProjects()})}/>:s.screen==='profile'&&user?<><ProfileView user={user} projects={s.projects} theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onEditor={this.resume} onNew={()=>this.create('')} onOpen={this.openProject} onLogout={this.signOut} onUser={this.changedUser}/>{user.role==='owner'&&<button className="au-legacy" onClick={this.restoreLegacy}>Восстановить проекты прежней версии из этого браузера</button>}</>:<><div key="editor" ref={node=>{this.host=node;}}/>{(user||s.session?.accountsEnabled===false)&&<div className="au-editor-account" data-theme={s.theme}><button onClick={this.openAccount}>{user?'Профиль · '+user.name:'Мои проекты'}</button></div>}</>}
+  </div>:s.screen==='projects'?<ProjectLibrary projects={s.projects} theme={s.theme} onHome={()=>this.navigate('home')} onNew={()=>this.create('')} onOpen={this.openProject} onImport={()=>this.setState({projects:loadProjects()})}/>:s.screen==='profile'&&user?<><ProfileView user={user} projects={s.projects} theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onEditor={this.resume} onNew={()=>this.create('')} onOpen={this.openProject} onLogout={this.signOut} onUser={this.changedUser}/>{user.role==='owner'&&<button className="au-legacy" onClick={this.restoreLegacy}>Восстановить проекты прежней версии из этого браузера</button>}</>:<><div key="editor" ref={node=>{this.host=node;}}/>{canEdit(s.session)&&<div className="au-editor-account" data-theme={s.theme}><button onClick={this.openAccount}>{user?'Профиль · '+user.name:s.session?.accountsEnabled?'Создать аккаунт':'Мои проекты'}</button></div>}</>}
   {s.error&&!s.auth&&<button className="au-shell-notice" onClick={()=>this.setState({error:''})} title="Закрыть сообщение" role="status">{s.error} ×</button>}
   {s.auth&&s.session?.accountsEnabled!==false&&<AuthDialog session={s.session} theme={s.theme} initialMode={s.authMode} error={s.error} onClose={this.closeAuth} onSuccess={this.authenticated}/>}
  </>;}

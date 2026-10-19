@@ -89,9 +89,8 @@ test('owner can change login and password together; old credentials stop working
 test('clean install exposes no social credentials and no unauthenticated private documents', () => using(async f => {
   const guest = f.client(); const session = await guest('/api/account/session');
   assert.equal(session.data.user, null);
-  assert.deepEqual(session.data.providers.map(p => p.id).sort(), ['facebook', 'google', 'instagram']);
-  assert.ok(session.data.providers.every(p => p.ready === false));
-  assert.ok(session.data.providers.find(p => p.id === 'instagram').professionalOnly);
+  assert.deepEqual(session.data.providers, []);
+  assert.equal(session.data.socialLoginEnabled, false);
   assert.equal((await guest('/api/admin/oauth')).status, 401);
   assert.equal((await guest('/api/account/projects')).status, 401);
   for (const path of ['/.pokadrovo-private/master.key', '/.pokadrovo-private/owner.sqlite', '/server/security.mjs'])

@@ -15,7 +15,7 @@ before(async()=>{encoded=await hashPassword(password);});
 async function fixture(extra={}){
  const dir=mkdtempSync(join(tmpdir(),'pk-accounts-'));mkdirSync(join(dir,'dist'));writeFileSync(join(dir,'dist/index.html'),'<!doctype html><title>Test</title>');
  let time=Date.now();const origin=extra.origin||'http://localhost:5173';
- const app=createApp({accountsEnabled:true,origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),now:()=>time,...extra});
+ const app=createApp({accountsEnabled:true,socialLoginEnabled:true,guestEditingEnabled:false,origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),now:()=>time,...extra});
  app.store.run('INSERT INTO owner(id,login,password,created) VALUES(1,?,?,?)','owner',encoded,time);
  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
  const clients=[];
@@ -83,3 +83,34 @@ test('guest mode keeps owner login, encrypted AI settings and owner project stor
  assert.equal((await c.request('/api/account/projects')).body.projects.length,1);
  const shell=await c.request('/krest0208!!!');assert.equal(shell.status,200);assert.match(shell.raw,/Подключение нейросети/);
 },{accountsEnabled:false}));
+
+test('email-only registration needs no display name and keeps guest editing separate from private APIs',()=>using(async f=>{
+ const c=f.client(),r=await c.init();
+ assert.equal(r.body.accountsEnabled,true);assert.equal(r.body.guestEditingEnabled,true);assert.equal(r.body.socialLoginEnabled,false);assert.deepEqual(r.body.providers,[]);
+ for(const path of ['/studio','/projects','/%73tudio'])assert.equal((await c.request(path)).status,200,path);
+ assert.equal((await c.request('/profile')).status,303);
+ assert.equal((await c.request('/api/account/projects')).status,401);
+ const registered=await c.request('/api/account/register',{method:'POST',data:{email:'  EDITOR@EXAMPLE.TEST  ',password,confirmPassword:password,acceptPrivacy:true}});
+ assert.equal(registered.status,201,registered.raw);assert.equal(registered.body.user.name,'Автор');assert.equal(registered.body.user.email,'editor@example.test');assert.equal(registered.body.user.role,'user');
+ assert.deepEqual(registered.body.providers,[]);assert.equal(registered.body.guestEditingEnabled,true);
+ assert.equal((await c.request('/profile')).status,200);
+ assert.equal((await c.request('/api/account/projects',{method:'PUT',data:{project:documentOf('email-project')}})).status,200);
+ await c.request('/api/account/logout',{method:'POST',data:{}});await c.init();
+ assert.equal((await c.request('/api/account/projects')).status,401);
+ assert.equal((await c.request('/studio')).status,200);
+ assert.equal((await c.request('/api/account/login',{method:'POST',data:{email:'editor@example.test',password}})).status,200);
+ assert.equal((await c.request('/api/account/projects')).body.projects[0].id,'email-project');
+},{socialLoginEnabled:false,guestEditingEnabled:true}));
+
+test('email-only mode blocks configured third-party sign-in, callbacks and owner provider settings',()=>using(async f=>{
+ f.store.run('UPDATE oauth_config SET client_id=?,secret=?,version=?,enabled=1,updated=1','configured',f.store.seal('synthetic-secret'),'v23.0');
+ const guest=f.client();assert.deepEqual((await guest.init()).body.providers,[]);
+ for(const provider of ['google','facebook','instagram']){
+  assert.equal((await guest.request('/api/account/oauth/'+provider,{method:'POST',data:{}})).status,404);
+  assert.equal((await guest.request('/auth/'+provider+'/callback?state=fake&code=fake')).status,404);
+ }
+ const admin=f.client();await admin.admin();const s=await admin.request('/api/admin/session');assert.equal(s.body.socialLoginEnabled,false);
+ assert.equal((await admin.request('/api/admin/oauth')).status,404);
+ assert.equal((await admin.request('/api/admin/oauth',{method:'PUT',data:{provider:'google',enabled:true,password}})).status,404);
+ assert.equal(f.store.get('SELECT count(*) n FROM users').n,0);assert.equal(f.store.get('SELECT count(*) n FROM oauth_states').n,0);
+},{socialLoginEnabled:false,guestEditingEnabled:true,oauthFetch:()=>{throw Error('Must not contact a provider');}}));

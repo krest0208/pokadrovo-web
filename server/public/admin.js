@@ -25,7 +25,7 @@
   }
   async function unlocked(data) {
     owner = data; csrf = data.csrf; $('login-screen').hidden = true; app.hidden = false;
-    document.querySelector('[data-view="oauth"]').hidden = data.accountsEnabled === false;
+    document.querySelector('[data-view="oauth"]').hidden = data.socialLoginEnabled !== true;
     text($('owner-name'), data.login); $('login-form').reset(); armIdle();
     await switchView('overview');
   }
