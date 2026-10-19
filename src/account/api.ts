@@ -1,8 +1,8 @@
 export type User = { id:string; name:string; email:string|null; emailVerified:boolean; role:'user'|'owner'; created:number; passwordSet:boolean };
 export type Provider = { id:'google'|'facebook'|'instagram'; ready:boolean; professionalOnly:boolean; note:string };
-export type Session = { user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean; guestEditingEnabled?:boolean; socialLoginEnabled?:boolean };
+export type Session = { user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean; guestEditingEnabled?:boolean; socialLoginEnabled?:boolean; adminPath?:string };
 let active:Session|null=null;
-export class AccountError extends Error { constructor(message:string,public status:number){super(message);} }
+export class AccountError extends Error { constructor(message:string,public status:number,public totpRequired=false){super(message);} }
 export const currentUser=()=>active?.user||null;
 export const storageScope=()=>active?.user?.id||(active?.accountsEnabled===false||active?.guestEditingEnabled===true?'guest-local':null);
 export function acceptSession(session:Session){active=session;return session;}
@@ -17,12 +17,12 @@ export async function request<T=Record<string,unknown>>(path:string,method='GET'
  let value:Record<string,unknown>;try{value=await response.json();}catch{throw new AccountError('Сервис регистрации временно недоступен. Попробуйте ещё раз позже.',503);}
  if(!response.ok){
   if(response.status===401&&!['/login','/register'].includes(path))window.dispatchEvent(new Event('pokadrovo:session-expired'));
-  throw new AccountError(typeof value.error==='string'?value.error:'Не удалось выполнить запрос.',response.status);
+  throw new AccountError(typeof value.error==='string'?value.error:'Не удалось выполнить запрос.',response.status,value.totpRequired===true);
  }
  return value as T;
 }
 export async function getSession(){return acceptSession(await request<Session>('/session'));}
-export async function signIn(email:string,password:string){return acceptSession(await request<Session>('/login','POST',{email,password}));}
+export async function signIn(email:string,password:string,code?:string){return acceptSession(await request<Session>('/login','POST',{email,password,code}));}
 export async function register(email:string,password:string,confirmPassword:string,acceptPrivacy:boolean){return acceptSession(await request<Session>('/register','POST',{email,password,confirmPassword,acceptPrivacy}));}
 export async function logout(){await request('/logout','POST',{});active=null;return getSession();}
 export async function socialLogin(provider:Provider['id']){const result=await request<{url:string}>('/oauth/'+provider,'POST',{});const url=new URL(result.url);if(url.protocol!=='https:'||!['accounts.google.com','www.facebook.com','www.instagram.com'].includes(url.hostname))throw Error('Некорректный адрес входа.');window.location.assign(url.href);}

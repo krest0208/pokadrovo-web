@@ -11,6 +11,7 @@ export type AiHomeProps = {
   theme: "light" | "dark";
   account?: { id:string;name:string;role:string } | null;
   onAccount?: () => void;
+  onAdmin?: () => void;
   guestMode?: boolean;
   registrationEnabled?: boolean;
   onSignIn?: () => void;
@@ -203,6 +204,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
         <nav className={`pkh-nav ${menuOpen ? "is-open" : ""}`} aria-label={t.menu}>
           <button type="button" onClick={() => this.scrollTo("pkh-method")}>{t.navWorkflow}</button>
           <button type="button" onClick={() => this.scrollTo("pkh-projects")}>{t.navProjects}</button>
+          {this.props.account?.role==='owner'&&this.props.onAdmin&&<button type="button" onClick={this.props.onAdmin}>Админ-панель</button>}
           {this.props.registrationEnabled&&!this.props.account&&<button type="button" onClick={this.props.onSignIn}>Войти</button>}
         </nav>
         <div className="pkh-header-right">

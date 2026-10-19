@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {createRequire} from 'node:module';
+import {build} from 'esbuild';
+const b=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import AiHome from './src/AiHome';import {ProfileView} from './src/account/AccountViews';const noop=()=>{};export function home(role){return renderToStaticMarkup(React.createElement(AiHome,{theme:'light',account:role?{id:role,name:'Test',role}:null,onAccount:noop,onAdmin:noop,registrationEnabled:true,guestMode:!role,onToggleTheme:noop,onCreate:noop,onContinue:noop,onImport:noop,onOpenProject:noop,projects:[]}));}export function profile(role){return renderToStaticMarkup(React.createElement(ProfileView,{user:{id:role,name:'Test',role,email:'example@example.test',created:Date.now(),passwordSet:true},projects:[],theme:'light',onTheme:noop,onHome:noop,onEditor:noop,onNew:noop,onOpen:noop,onLogout:noop,onUser:noop,onAdmin:noop}));}`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-dom/server'],loader:{'.css':'empty'}});
+const m={exports:{}};vm.runInNewContext(b.outputFiles[0].text,{module:m,exports:m.exports,require:createRequire(import.meta.url),process,console});
+test('admin navigation is absent for guests and ordinary users even if given an admin handler',()=>{for(const role of [null,'user'])assert.doesNotMatch(m.exports.home(role),/>Админ-панель</);assert.doesNotMatch(m.exports.profile('user'),/Админ-панель/);});
+test('authenticated owner gets admin navigation on the homepage and in the profile',()=>{assert.match(m.exports.home('owner'),/>Админ-панель</);assert.match(m.exports.profile('owner'),/Админ-панель/);});

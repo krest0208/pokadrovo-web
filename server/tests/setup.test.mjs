@@ -37,7 +37,8 @@ test('terminal setup generates a usable random password once and never replaces 
     assert.equal(typeof password, 'string');
     store = openStore(directory);
     const owner = store.get('SELECT * FROM owner WHERE id=1');
-    assert.equal(owner.login, 'krest0208');
+    assert.match(owner.login, /^pkadmin-[A-Za-z0-9_-]{20}$/);
+    assert.ok(result.stdout.includes(owner.login));
     assert.equal(await checkPassword(password, owner.password), true);
     assert.equal(owner.password.includes(password), false);
     store.run('UPDATE owner SET totp=? WHERE id=1', store.seal('existing-second-factor'));

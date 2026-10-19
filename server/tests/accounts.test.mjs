@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { createApp } from '../app.mjs';
-import { hashPassword, token, digest } from '../security.mjs';
+import { hashPassword, token, digest, newTotpSecret, totp } from '../security.mjs';
 import { authorizeUrl, createOAuthClient } from '../oauth.mjs';
 
 const password = 'test-only-' + token();let encoded;
@@ -117,15 +117,41 @@ test('email-only mode blocks configured third-party sign-in, callbacks and owner
 
 test('direct mode ignores forwarded IPs when applying authentication rate limits',()=>using(async f=>{
  const c=f.client();await c.init();
- for(let i=1;i<=12;i++)assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':'203.0.113.'+i},data:{email:'invalid'}})).status,400);
- assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':'198.51.100.10'},data:{email:'invalid'}})).status,429);
+ for(let i=1;i<=12;i++)assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':'203.0.113.'+i},data:{email:''}})).status,401);
+ assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':'198.51.100.10'},data:{email:''}})).status,429);
 },{socialLoginEnabled:false,trustLoopbackProxy:false}));
 
 test('explicit local-proxy mode separates visitors without accepting forwarded chains',()=>using(async f=>{
- const c=f.client();await c.init();const attempt=address=>c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':address},data:{email:'invalid'}});
- for(let i=0;i<12;i++)assert.equal((await attempt('203.0.113.10')).status,400);
- assert.equal((await attempt('203.0.113.10')).status,429);assert.equal((await attempt('203.0.113.11')).status,400);
- for(let i=0;i<12;i++)assert.equal((await attempt('203.0.113.10, 198.51.100.20')).status,400);
+ const c=f.client();await c.init();const attempt=address=>c.request('/api/account/login',{method:'POST',headers:{'X-Forwarded-For':address},data:{email:''}});
+ for(let i=0;i<12;i++)assert.equal((await attempt('203.0.113.10')).status,401);
+ assert.equal((await attempt('203.0.113.10')).status,429);assert.equal((await attempt('203.0.113.11')).status,401);
+ for(let i=0;i<12;i++)assert.equal((await attempt('203.0.113.10, 198.51.100.20')).status,401);
  assert.equal((await attempt('203.0.113.12, 198.51.100.21')).status,429);
  assert.equal((await attempt('not-an-ip')).status,429);
 },{socialLoginEnabled:false,trustLoopbackProxy:true}));
+
+test('website login gives only the real owner an admin link and a protected owner session',()=>using(async f=>{
+ const c=f.client();await c.init();
+ assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-CSRF-Token':'forged'},data:{email:'owner',password}})).status,403);
+ const wrong=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password:'wrong'}});assert.equal(wrong.status,401);assert.equal(wrong.body.adminPath,undefined);
+ const r=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password}});
+ assert.equal(r.status,200,r.raw);assert.equal(r.body.user.role,'owner');assert.equal(r.body.adminPath,'/krest0208!!!');assert.ok(r.headers['set-cookie'].some(v=>v.startsWith('pk-owner-local=')&&v.includes('HttpOnly')&&v.includes('SameSite=Strict')));
+ assert.equal((await c.init()).body.adminPath,'/krest0208!!!');assert.equal((await c.request('/api/admin/overview')).status,200);
+ const ordinary=f.client(),created=await ordinary.signup('normal@example.test');assert.equal(created.status,201);assert.equal(created.body.user.role,'user');assert.equal(created.body.adminPath,undefined);assert.equal((await ordinary.init()).body.adminPath,undefined);assert.equal((await ordinary.request('/api/admin/overview')).status,401);
+ await c.request('/api/account/logout',{method:'POST',data:{}});assert.equal((await c.init()).body.adminPath,undefined);assert.equal((await c.request('/api/admin/overview')).status,401);
+},{socialLoginEnabled:false,guestEditingEnabled:true}));
+
+test('website owner login clears an earlier user session and expires with the owner session',()=>using(async f=>{
+ const c=f.client(),initial=await c.init(),publicCsrf=initial.body.csrf;await c.signup();c.setCsrf(publicCsrf);
+ const r=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password}});assert.equal(r.status,200,r.raw);assert.equal(f.store.get('SELECT count(*) n FROM user_sessions').n,0);
+ f.advance(30*60000+1);const expired=await c.init();assert.equal(expired.body.user,null);assert.equal(expired.body.adminPath,undefined);assert.equal((await c.request('/api/admin/users')).status,401);
+},{socialLoginEnabled:false,guestEditingEnabled:true}));
+
+test('website owner login preserves TOTP and only reveals its challenge after the correct password',()=>using(async f=>{
+ const secret=newTotpSecret();f.store.run('UPDATE owner SET totp=? WHERE id=1',f.store.seal(secret));const c=f.client();await c.init();
+ const wrong=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password:'wrong'}});assert.equal(wrong.status,401);assert.equal(wrong.body.totpRequired,undefined);
+ const challenge=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password}});assert.equal(challenge.status,401);assert.equal(challenge.body.totpRequired,true);assert.equal((await c.init()).body.user,null);assert.equal((await c.request('/api/admin/users')).status,401);
+ const code=totp(secret,Math.floor(f.now()/30000));assert.equal((await c.request('/api/account/login',{method:'POST',data:{email:'owner',password,code}})).body.user.role,'owner');
+ const other=f.client();await other.init();assert.equal((await other.request('/api/account/login',{method:'POST',data:{email:'owner',password,code}})).status,401);
+ assert.equal(f.store.unseal(f.store.get('SELECT totp FROM owner WHERE id=1').totp),secret);
+},{socialLoginEnabled:false,guestEditingEnabled:true}));

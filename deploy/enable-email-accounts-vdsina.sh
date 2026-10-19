@@ -17,14 +17,14 @@ systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_DA
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru'
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_HOST=127.0.0.1'
 systemctl is-active --quiet pokadrovo.service
-pk_files=(server/accounts.mjs server/app.mjs server/standalone.mjs server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/layered-copy.ts)
+pk_files=(server/setup.mjs server/accounts.mjs server/app.mjs server/standalone.mjs server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/layered-copy.ts)
 for pk_file in "${pk_files[@]}"; do
   [[ -f "$pk_source/$pk_file" && -f "$pk_app/$pk_file" && ! -L "$pk_app/$pk_file" ]] || exit 1
 done
 cd "$pk_source"
 npm ci --no-audit --no-fund
 install -d -m 0700 .deploy-test-tmp
-TMPDIR="$pk_source/.deploy-test-tmp" NODE_OPTIONS=--max-old-space-size=384 node --test --test-concurrency=1 server/tests/*.test.mjs tests/guest-storage.test.mjs
+TMPDIR="$pk_source/.deploy-test-tmp" NODE_OPTIONS=--max-old-space-size=384 node --test --test-concurrency=1 server/tests/*.test.mjs tests/guest-storage.test.mjs tests/admin-navigation.test.mjs
 NODE_OPTIONS=--max-old-space-size=512 npm exec -- tsc --noEmit
 NODE_OPTIONS=--max-old-space-size=512 npm exec -- vite build
 install -d -m 0700 /opt/pokadrovo/backups

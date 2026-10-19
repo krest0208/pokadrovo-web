@@ -64,7 +64,37 @@ export function createApp(options = {}) {
     if (!fresh || !equal(fresh.password, o.password)) deny(401, 'Credentials changed. Sign in again.');
     return fresh;
   }
-const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
+  async function authenticateOwner(req, res, data, publicEntry = false) {
+    sameOrigin(req);
+    const o = owner(); if (!o) deny(503, 'Владелец ещё не настроен. Запустите npm run admin:setup в терминале сервера.');
+    const limit = store.consume('login:' + ip(req), 8, 15 * 60000, now());
+    const globalLimit = store.consume('login-global', 30, 15 * 60000, now());
+    if (!limit || !globalLimit) { res.setHeader('Retry-After', '900'); deny(429, 'Слишком много попыток. Подождите 15 минут.'); }
+    const valid = await verify(data.password, o.password);
+    const latest = owner();
+    const unchanged = latest && equal(latest.password, o.password) && equal(latest.totp, o.totp) && equal(latest.login, o.login);
+    if (publicEntry && valid && unchanged && equal(data.login, o.login) && o.totp && !data.code) {
+      const challenge = new HttpError(401, 'Введите код из приложения-аутентификатора.');
+      challenge.totpRequired = true; throw challenge;
+    }
+    let step = null;
+    if (o.totp && valid && unchanged) step = verifyTotp(store.unseal(o.totp), data.code, now(), latest.last_step);
+    if (!valid || !unchanged || !equal(data.login, o.login) || (o.totp && step === null)) {
+      store.audit('login_failed', 'denied', now()); deny(401, publicEntry ? 'Неверная почта, логин или пароль.' : 'Неверный логин, пароль или код подтверждения.');
+    }
+    const sid = token(), csrfToken = token();
+    store.db.exec('BEGIN IMMEDIATE');
+    try {
+      // One owner, one active browser session. A new login revokes all earlier sessions.
+      store.run('DELETE FROM sessions');
+      store.run('INSERT INTO sessions(id,csrf,created,last_seen,expires) VALUES(?,?,?,?,?)', digest(sid), csrfToken, now(), now(), now() + 12 * 3600000);
+      if (step !== null) store.run('UPDATE owner SET last_step=? WHERE id=1', step);
+      store.audit('login', 'ok', now()); store.db.exec('COMMIT');
+    } catch (e) { store.db.exec('ROLLBACK'); throw e; }
+    setCookie(res, sessionName, sid, 12 * 3600);
+    return { login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled, socialLoginEnabled };
+  }
+const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, ownerPath: OWNER_PATH, ownerLogin: (req, res, data) => authenticateOwner(req, res, { login: data.email, password: data.password, code: data.code }, true), reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
     revokeOwner(req, res) { const s = session(req); store.run('DELETE FROM sessions WHERE id=?', s.id); setCookie(res, sessionName, '', 0); }
   });  function visitor(req) {
     const [id, signature] = cookie(req, visitorName).split('.');
@@ -94,33 +124,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
     if (await accounts.route(req, res, url)) return;
-    if (req.method === 'POST' && path === '/api/admin/login') {
-      sameOrigin(req);
-      const data = await body(req);
-      const o = owner(); if (!o) deny(503, 'Владелец ещё не настроен. Запустите npm run admin:setup в терминале сервера.');
-      const limit = store.consume('login:' + ip(req), 8, 15 * 60000, now());
-      const globalLimit = store.consume('login-global', 30, 15 * 60000, now());
-      if (!limit || !globalLimit) { res.setHeader('Retry-After', '900'); deny(429, 'Слишком много попыток. Подождите 15 минут.'); }
-      const valid = await verify(data.password, o.password);
-      const latest = owner();
-      const unchanged = latest && equal(latest.password, o.password) && equal(latest.totp, o.totp) && equal(latest.login, o.login);
-      let step = null;
-      if (o.totp && valid && unchanged) step = verifyTotp(store.unseal(o.totp), data.code, now(), latest.last_step);
-      if (!valid || !unchanged || !equal(data.login, o.login) || (o.totp && step === null)) {
-        store.audit('login_failed', 'denied', now()); deny(401, 'Неверный логин, пароль или код подтверждения.');
-      }
-      const sid = token(), csrfToken = token();
-      store.db.exec('BEGIN IMMEDIATE');
-      try {
-        // One owner, one active browser session. A new login revokes all earlier sessions.
-        store.run('DELETE FROM sessions');
-        store.run('INSERT INTO sessions(id,csrf,created,last_seen,expires) VALUES(?,?,?,?,?)', digest(sid), csrfToken, now(), now(), now() + 12 * 3600000);
-        if (step !== null) store.run('UPDATE owner SET last_step=? WHERE id=1', step);
-        store.audit('login', 'ok', now()); store.db.exec('COMMIT');
-      } catch (e) { store.db.exec('ROLLBACK'); throw e; }
-      setCookie(res, sessionName, sid, 12 * 3600);
-      return json(res, 200, { login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled, socialLoginEnabled });
-    }
+    if (req.method === 'POST' && path === '/api/admin/login') return json(res, 200, await authenticateOwner(req, res, await body(req)));
     if (path.startsWith('/api/admin/')) {
       const s = session(req);
       if (!['GET', 'HEAD'].includes(req.method)) csrf(req, s);
@@ -249,7 +253,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     res.setHeader('X-Frame-Options', 'DENY'); res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
-    void route(req, res).catch(error => { if (res.headersSent || res.destroyed) return; json(res, error instanceof HttpError ? error.status : 500, { error: error instanceof HttpError ? error.message : 'Ошибка сервера. Подробности не публикуются.' }); });
+    void route(req, res).catch(error => { if (res.headersSent || res.destroyed) return; json(res, error instanceof HttpError ? error.status : 500, { error: error instanceof HttpError ? error.message : 'Ошибка сервера. Подробности не публикуются.', ...(error instanceof HttpError && error.totpRequired === true ? { totpRequired: true } : {}) }); });
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
   store.cleanup(now()); const housekeeping = setInterval(() => { store.cleanup(now()); accounts.cleanup(); }, 300000); housekeeping.unref();

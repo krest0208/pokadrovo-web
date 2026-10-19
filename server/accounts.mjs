@@ -11,7 +11,7 @@ const sidOk = value => /^[\w-]{43}$/.test(value);
 const projectIdOk = value => typeof value === 'string' && /^[\w.-]{1,120}$/.test(value);
 const profile = row => ({ id: row.id, name: row.name, email: row.email, emailVerified: !!row.email_verified, role: 'user', created: row.created, passwordSet: !!row.password });
 
-export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
+export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, ownerPath, ownerLogin, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE COLLATE NOCASE, name TEXT NOT NULL, password TEXT, email_verified INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, last_login INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active');
     CREATE TABLE IF NOT EXISTS identities(provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(provider,subject));
@@ -99,7 +99,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
     cleanup();
     if (req.method === 'GET' && path === '/api/account/session') {
       const a = session(req, false); const csrf = a?.csrf || (accountsEnabled ? anonymousCsrf(req, res) : '');
-      json(res, 200, { user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled }); return true;
+      json(res, 200, { user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled, ...(a?.owner ? { adminPath: ownerPath } : {}) }); return true;
     }
     if (!socialLoginEnabled && (path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Этот способ входа отключён. Используйте почту и пароль.');
     if (!accountsEnabled && (['/api/account/register', '/api/account/login'].includes(path) || path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Регистрация и вход посетителей отключены. Монтажёр доступен без аккаунта.');
@@ -107,8 +107,16 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
       publicMutation(req); limit(req, 'user-auth');
       if (!store.consume('user-auth-global', 100, 15 * 60000, now())) deny(429, 'Попробуйте войти позднее.');
       const data = await body(req), email = emailOf(data.email);
-      if (!email) deny(400, 'Введите корректный адрес почты.');
+      if (path.endsWith('/login') && owner() && typeof data.email === 'string' && equal(data.email.trim(), owner()?.login)) {
+        const result = await ownerLogin(req, res, { ...data, email: data.email.trim() });
+        const oldSession = cookie(req, sessionName);
+        if (sidOk(oldSession)) store.run('DELETE FROM user_sessions WHERE id=?', digest(oldSession));
+        appendCookie(res, sessionName, '', 0, secure);
+        const o = owner();
+        json(res, 200, { ...result, user: { id: 'owner', name: o.login, email: null, emailVerified: false, role: 'owner', created: o.created, passwordSet: true }, providers: providers(), guestEditingEnabled, adminPath: ownerPath }); return true;
+      }
       if (path.endsWith('/register')) {
+        if (!email) deny(400, 'Введите корректный адрес почты.');
         const name = data.name === undefined ? 'Автор' : nameOf(data.name); if (name.length < 2) deny(400, 'Имя должно содержать не менее двух символов.');
         try { validatePassword(data.password); } catch (e) { deny(400, e.message); }
         if (!equal(data.password, data.confirmPassword)) deny(400, 'Пароли не совпадают.');
@@ -120,12 +128,13 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
         store.audit('user_registered', 'ok', now());
         json(res, 201, startSession(res, store.get('SELECT * FROM users WHERE id=?', id))); return true;
       }
-      const u = store.get('SELECT * FROM users WHERE email=?', email);
+      if (typeof data.email !== 'string' || !data.email.trim() || data.email.length > 254) deny(401, 'Неверная почта, логин или пароль.');
+      const u = email ? store.get('SELECT * FROM users WHERE email=?', email) : null;
       // A dummy derived hash avoids a fast user-enumeration path.
       const dummy = 'scrypt$131072$8$1$' + '0'.repeat(32) + '$' + '0'.repeat(128);
       const valid = await passwordJob(() => checkPassword(data.password, u?.password || dummy));
       const fresh = u ? store.get('SELECT * FROM users WHERE id=?', u.id) : null;
-      if (!valid || !fresh || fresh.status !== 'active' || !equal(fresh.password, u.password)) { store.audit('user_login_failed', 'denied', now()); deny(401, 'Неверная почта или пароль.'); }
+      if (!valid || !fresh || fresh.status !== 'active' || !equal(fresh.password, u.password)) { store.audit('user_login_failed', 'denied', now()); deny(401, 'Неверная почта, логин или пароль.'); }
       store.audit('user_login', 'ok', now()); json(res, 200, startSession(res, fresh)); return true;
     }
     if (req.method === 'POST' && path.startsWith('/api/account/oauth/')) {
