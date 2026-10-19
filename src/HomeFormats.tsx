@@ -25,7 +25,7 @@ export default class HomeFormats extends React.Component<Props,{mounted:boolean;
  render(){if(!this.state.mounted||!this.target)return null;
   const choose=(mode:Mode,ratio:Ratio,id:string)=>{this.props.onChoose(mode,ratio);this.setState({selected:id});};
   return createPortal(<section className="ph" aria-labelledby="ph-title">
-   <header><div><span className="ph-kicker">{'ВАШЕ ВИДЕО. ВАША ПЛОЩАДКА.'}</span><h2 id="ph-title">{'Одна идея. Любой экран.'}</h2><p>{'Выберите формат нового проекта. Без автопубликации и подключения аккаунтов.'}</p></div>
+   <header><div><span className="ph-kicker">{'ВАШЕ ВИДЕО. ВАША ПЛОЩАДКА.'}</span><h2 id="ph-title">{'Одна идея. Любой экран.'}</h2><p>{'Для Reels, большого экрана или ленты. Выберите площадку — размер кадра уже настроен.'}</p></div>
    <div className="ph-modes" role="group" aria-label={t.regular+' / Reels'}><button type="button" aria-pressed={this.props.mode==='video'} onClick={()=>choose('video','16:9','')}>{t.regular}<small>16:9</small></button><button type="button" aria-pressed={this.props.mode==='reels'} onClick={()=>choose('reels','9:16','')}>{t.reels}<small>9:16</small></button></div></header>
    <div className="ph-platforms">{platforms.map(([name,type,mode,ratio,glyph])=><button type="button" key={name+type} className={this.state.selected===name+type?'chosen':''} onClick={()=>choose(mode,ratio,name+type)} aria-pressed={this.state.selected===name+type}>
     <span className={'ph-icon '+glyph}><PlatformIcon kind={glyph}/></span><span><strong>{name}</strong><small>{type}</small></span><b>{ratio}</b>
