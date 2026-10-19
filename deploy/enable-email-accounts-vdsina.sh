@@ -17,14 +17,13 @@ systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_DA
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru'
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_HOST=127.0.0.1'
 systemctl is-active --quiet pokadrovo.service
-pk_files=(shared/coin-pricing.json src/HomeShowcase.tsx src/PlatformIcon.tsx src/assets.d.ts src/home/redesign.css src/home/assets/coastal-story.webp src/ai-home.css src/HomeFormats.tsx src/home-formats.css tsconfig.json server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/yandex.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/BrandMark.tsx src/brand.ts src/brand.css src/layered-copy.ts src/editor/editor.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css public/favicon.svg public/pokadrovo-logo.svg public/pokadrovo-animated.svg)
+pk_files=(.dockerignore Dockerfile ASSET-CREDITS.md docs/HOMEPAGE-REDESIGN.md server/tests/ai.test.mjs tests/admin-navigation.test.mjs tests/standalone.test.mjs tools/build-chat-preview.mjs tools/package-release.py deploy/enable-email-accounts-vdsina.sh deploy/update-design-vdsina.sh shared/coin-pricing.json src/HomeShowcase.tsx src/PlatformIcon.tsx src/assets.d.ts src/home/redesign.css src/home/assets/coastal-story.webp src/ai-home.css src/HomeFormats.tsx src/home-formats.css tsconfig.json server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/yandex.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/BrandMark.tsx src/brand.ts src/brand.css src/layered-copy.ts src/editor/editor.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css public/favicon.svg public/pokadrovo-logo.svg public/pokadrovo-animated.svg)
 pk_existing=()
 pk_new=()
 for pk_file in "${pk_files[@]}"; do
   [[ -f "$pk_source/$pk_file" && ! -L "$pk_app/$pk_file" ]] || exit 1
   if [[ -f "$pk_app/$pk_file" ]]; then pk_existing+=("$pk_file");
-  elif [[ "$pk_file" == shared/coin-pricing.json || "$pk_file" == src/HomeShowcase.tsx || "$pk_file" == src/PlatformIcon.tsx || "$pk_file" == src/assets.d.ts || "$pk_file" == src/home/redesign.css || "$pk_file" == src/home/assets/coastal-story.webp || "$pk_file" == server/ai.mjs || "$pk_file" == server/yandex.mjs || "$pk_file" == src/editor/omni.ts || "$pk_file" == src/brand.ts || "$pk_file" == src/brand.css || "$pk_file" == public/pokadrovo-animated.svg ]]; then pk_new+=("$pk_file");
-  else exit 1; fi
+  else pk_new+=("$pk_file"); fi
 done
 cd "$pk_source"
 npm ci --no-audit --no-fund
