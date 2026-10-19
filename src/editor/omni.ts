@@ -5,12 +5,12 @@ export interface MediaAnalysis {
  clipId:string;assetId:string;duration:number;summary:string;speech:string;audio:string;
  events:{from:number;to:number;visual:string;audio:string;speech:string}[];limitations:string[];
 }
-export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summary:string;usage:{inputTokens:number|null;outputTokens:number|null};}
+export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summary:string;usage:{inputTokens:number|null;outputTokens:number|null};billing?:{chargedCoins:number;remainingCoins:number|null};}
 
 /** Credentials and provider URLs never enter the browser. Context stays in this editor session. */
 export class OmniAiProvider implements AiProvider {
  readonly name='Покадрово AI';
- readonly modes=[{id:'reels-trial',label:'Reels · бесплатная проба'},{id:'yandex-edit',label:'Монтаж · тариф готовится'}] as const;
+ readonly modes=[{id:'reels-trial',label:'Reels · подарочные монеты'},{id:'yandex-edit',label:'Монтаж · тариф готовится'}] as const;
  constructor(public service:AiService='reels-trial'){}
  get supportsMedia(){return this.service==='reels-trial';}
  setService(service:AiService){this.service=service;}

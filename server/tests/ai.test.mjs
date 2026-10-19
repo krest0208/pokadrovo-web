@@ -202,9 +202,9 @@ test('Free trial is opt-in, binds one Reels and three requests, survives restart
     assert.equal((await user('/api/ai/edit-plan','POST',analyze(),{'X-PK-Account':'owner'})).status,409);
     assert.equal((await user('/api/ai/edit-plan','POST',analyze(),{'X-CSRF-Token':'wrong'})).status,403);
     const first=analyze(); const a=await user('/api/ai/edit-plan','POST',first); assert.equal(a.status,200,a.raw);
-    assert.deepEqual(a.data.access,{kind:'free_trial',customerChargeMinor:0,tariffConfigured:false}); assert.equal(a.data.trial.remaining,2); assert.equal(a.data.trial.requiresMedia,false);
+    assert.deepEqual(a.data.access,{kind:'free_trial',customerChargeMinor:0,tariffConfigured:false}); assert.equal(a.data.trial.remaining,2); assert.equal(a.data.billing.chargedCoins,1); assert.equal(a.data.billing.remainingCoins,2); assert.equal(a.data.billing.rubPerCoin,null); assert.equal(a.data.billing.paymentsEnabled,false); assert.equal(a.data.trial.requiresMedia,false);
     const start=f.app.store.get('SELECT * FROM ai_trial_usage WHERE account_id=?',id); assert.equal(start.expires-start.started,7*86400000);
-    assert.equal((await user('/api/ai/edit-plan','POST',first)).status,409);
+    assert.equal((await user('/api/ai/edit-plan','POST',first)).status,409); assert.equal((await user('/api/ai/status')).data.billing.remainingCoins,2);
     const other=analyze();other.request.projectId='p2';other.request.project.id='p2';
     assert.equal((await user('/api/ai/edit-plan','POST',other)).status,402); assert.equal(calls,1);
     await f.restart(); assert.equal((await user('/api/ai/status')).data.trial.remaining,2);
@@ -216,7 +216,7 @@ test('Free trial is opt-in, binds one Reels and three requests, survives restart
     const second=await register(f,'second@example.test'); assert.equal((await second.user('/api/ai/status')).data.trial.remaining,3);
     assert.equal((await second.user('/api/ai/edit-plan','POST',analyze(),{'X-PK-Account':id})).status,409);
     assert.equal((await second.user('/api/ai/edit-plan','POST',analyze())).status,200); assert.equal(calls,4);
-    const rows=f.app.store.all('SELECT account_id,customer_charge_minor,access_kind FROM ai_runs');
+    const rows=f.app.store.all('SELECT account_id,customer_charge_minor,access_kind,coin_charge FROM ai_runs'); assert.ok(rows.every(r=>r.coin_charge===1));
     assert.ok(rows.every(r=>r.customer_charge_minor===0&&r.access_kind==='free_trial')); assert.ok(rows.some(r=>r.account_id===second.id));
   } finally { await f.close(); }
 });
@@ -226,7 +226,7 @@ test('Provider failures refund trial requests while retaining daily attempt boun
   try {
     await f.configure({trialEnabled:true});const {user}=await register(f);
     const failed=await user('/api/ai/edit-plan','POST',analyze());assert.equal(failed.status,502);assert.ok(!failed.raw.includes('upstream secret'));
-    assert.equal((await user('/api/ai/status')).data.trial.remaining,3);assert.equal(f.app.store.get('SELECT count(*) AS n FROM ai_trial_usage').n,0);
+    assert.equal((await user('/api/ai/status')).data.trial.remaining,3);assert.equal((await user('/api/ai/status')).data.billing.remainingCoins,3);assert.equal(f.app.store.get('SELECT coin_charge FROM ai_runs').coin_charge,0);assert.equal(f.app.store.get('SELECT count(*) AS n FROM ai_trial_usage').n,0);
     fail=false; const other=analyze();other.request.projectId='p2';other.request.project.id='p2';assert.equal((await user('/api/ai/edit-plan','POST',other)).status,200);
     fail=true;
     for(let i=0;i<4;i++){const next=analyze();next.request.projectId='p2';next.request.project.id='p2';assert.equal((await user('/api/ai/edit-plan','POST',next)).status,502);}
@@ -271,4 +271,36 @@ test('AI journal migration preserves earlier pilot records and unrelated provide
     assert.equal(row.input_tokens,123);assert.equal(row.output_tokens,45);assert.equal(row.account_id,'owner');assert.equal(row.access_kind,'owner_test');assert.equal(row.customer_charge_minor,0);
     assert.equal(f.app.store.get('SELECT secret FROM settings').secret,secret);
   } finally { await f.close(); }
+});
+
+
+test('Coin cost is server-owned, owners are exempt, and paid modes stay closed without a rate', async () => {
+  let calls=0; const f=await fixture(async()=>{calls++;return response({analysis:analysis(),summary:'Готово',operations:[]});});
+  try {
+    await f.configure({trialEnabled:true}); const {user}=await register(f);
+    const guest=await f.client()('/api/ai/status');assert.equal(guest.data.billing.remainingCoins,0);
+    const before=await user('/api/ai/status');assert.equal(before.data.billing.remainingCoins,3);assert.equal(before.data.billing.purchaseAvailable,false);
+    const spoof={...analyze(),coinCost:0,balance:99999,owner:true};const first=await user('/api/ai/edit-plan','POST',spoof);
+    assert.equal(first.status,200,first.raw);assert.equal(first.data.billing.chargedCoins,1);assert.equal(first.data.billing.remainingCoins,2);
+    const owner=await f.owner('/api/ai/edit-plan','POST',analyze());assert.equal(owner.status,200,owner.raw);assert.equal(owner.data.billing.chargedCoins,0);assert.equal(owner.data.billing.remainingCoins,null);
+    const ownRows=f.app.store.all("SELECT coin_charge FROM ai_runs WHERE account_id='owner'");assert.ok(ownRows.every(r=>r.coin_charge===0));
+    const paid=await user('/api/ai/status?service=yandex-edit');assert.equal(paid.data.billing.requestCostCoins,null);assert.equal(paid.data.available,false);
+    const locked=await user('/api/ai/edit-plan','POST',{...analyze(),service:'yandex-edit',coinCost:1,balance:1000});assert.equal(locked.status,402);assert.equal(calls,2);
+    assert.equal((await user('/api/ai/status')).data.billing.remainingCoins,2);
+  } finally {await f.close();}
+});
+
+test('Interrupted coin reservations are restored once on restart without refunding completed work', async () => {
+  const f=await fixture(async()=>response({analysis:analysis(),summary:'Готово',operations:[]}));
+  try {
+    await f.configure({trialEnabled:true});const {user,id}=await register(f);
+    const completed=await user('/api/ai/edit-plan','POST',analyze());assert.equal(completed.status,200,completed.raw);
+    f.app.store.run('UPDATE ai_trial_usage SET used=used+1 WHERE account_id=?',id);
+    f.app.store.run("INSERT INTO ai_runs(request_id,at,result,model,account_id,mode,access_kind,coin_charge,project_id) VALUES(?,?,'started',?,?,'reels-trial','free_trial',1,?)",'interrupted-test',Date.now(),OMNI_MODEL,id,'p1');
+    assert.equal((await user('/api/ai/status')).data.billing.remainingCoins,1);
+    await f.restart();assert.equal((await user('/api/ai/status')).data.billing.remainingCoins,2);
+    assert.equal(f.app.store.get("SELECT coin_charge FROM ai_runs WHERE result='ok'").coin_charge,1);
+    assert.equal(f.app.store.get("SELECT result FROM ai_runs WHERE request_id='interrupted-test'").result,'interrupted');
+    await f.restart();assert.equal((await user('/api/ai/status')).data.billing.remainingCoins,2);
+  } finally {await f.close();}
 });

@@ -1,281 +1,50 @@
-import * as React from "react";
-import BrandMark from "./BrandMark";
-import { copy as t } from "./layered-copy";
-import { frames } from "./layered-assets";
-import "./ai-home.css";
-import { HomeScrollMotion } from "./home-scroll";
-import "./home-scroll.css";
+import * as React from 'react';
+import BrandMark from './BrandMark';
+import { copy as t } from './layered-copy';
+import { HeroStory, ProcessGallery, Shot, Timeline, Coin, Arrow } from './HomeShowcase';
+import './ai-home.css';
+import coinPricing from '../shared/coin-pricing.json';
 
-type RecentProject = { id: string; name: string; count: number; modified: number };
-export type AiHomeProps = {
-  theme: "light" | "dark";
-  account?: { id:string;name:string;role:string } | null;
-  onAccount?: () => void;
-  onAdmin?: () => void;
-  guestMode?: boolean;
-  registrationEnabled?: boolean;
-  onSignIn?: () => void;
-  onToggleTheme: () => void;
-  onCreate: (prompt: string) => void;
-  onContinue: () => void;
-  onImport: (files: FileList | null, prompt: string) => void;
-  onOpenProject: (id: string) => void;
-  projects: RecentProject[];
-};
-type State = {
-  prompt: string; scene: number; step: number;
-  menuOpen: boolean; mediaOpen: boolean;
-  files: FileList | null; error: string; draftSaved: boolean;
-};
-type Glyph = "arrow" | "up" | "paperclip" | "moon" | "sun" | "layers" | "close" | "check" | "folder" | "menu" | "plus" | "chevron";
-const paths: Record<Glyph, string> = {
-  arrow: "M4 12h15m-6-6 6 6-6 6", up: "M5 19 19 5M5 5h14v14",
-  paperclip: "m8 13 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9",
-  moon: "M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z",
-  sun: "M12 3V1m0 22v-2M3 12H1m22 0h-2M5 5 3.5 3.5M20.5 20.5 19 19M5 19l-1.5 1.5M20.5 3.5 19 5M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0",
-  layers: "m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4",
-  close: "m6 6 12 12M6 18 18 6", check: "m5 12 5 5L20 7",
-  folder: "M3 6h7l2 3h9v11H3V6Z", menu: "M4 7h16M4 12h16M4 17h16",
-  plus: "M12 5v14M5 12h14", chevron: "m8 4 8 8-8 8"
-};
-function Icon({ name, size = 18 }: { name: Glyph; size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
-}
-const shots = [
-  { image: frames.launch, label: t.frameLaunch, number: "001", time: "00:00:04" },
-  { image: frames.portrait, label: t.framePortrait, number: "002", time: "00:00:11" },
-  { image: frames.universe, label: t.frameUniverse, number: "003", time: "00:00:18" }
+type RecentProject={id:string;name:string;count:number;modified:number};
+export type AiHomeProps={theme:'light'|'dark';account?:{id:string;name:string;role:string}|null;onAccount?:()=>void;onAdmin?:()=>void;guestMode?:boolean;registrationEnabled?:boolean;onSignIn?:()=>void;onToggleTheme:()=>void;onCreate:(prompt:string)=>void;onContinue:()=>void;onImport:(files:FileList|null,prompt:string)=>void;onOpenProject:(id:string)=>void;projects:RecentProject[]};
+type State={prompt:string;scene:number;menuOpen:boolean;files:FileList|null;error:string};
+const navigation=[['pkh-main','Главная'],['pkh-method','Как это работает'],['pkh-features','Возможности'],['pkh-pricing','Тарифы'],['pkh-faq','Вопросы']];
+const packs=coinPricing.packages;
+const faq=[
+ ['Что уже можно делать в студии?','Добавлять свои видео и фото, собирать последовательность, обрезать фрагменты, менять скорость, работать со звуком и титрами. Для начала откройте редактор в браузере.'],
+ ['Как работает монтаж с ИИ?','Вы описываете задачу, а ИИ предлагает проверяемый план правок. План применяется только после вашего подтверждения. Анализ видео и звука предусмотрен в режиме Reels до 60 секунд; его доступность зависит от подключения сервиса.'],
+ ['За что списываются монеты?','Монеты — единицы оплаты ИИ-запросов. Для пробного Reels подготовлены 3 подарочные монеты: по одной за успешный запрос, в одном проекте в течение 7 дней с первого запуска. Пробный доступ откроется после запуска ИИ. Покупка пакетов пока недоступна.'],
+ ['Можно ли изменить предложенный монтаж?','Да. Вы можете принять план, внести свои изменения или отменить правки. Последнее слово всегда за вами.'],
+ ['Куда попадают мои исходники?','Медиа для ручного монтажа остаются на вашем устройстве. Отправка выбранного файла ИИ-провайдеру требует отдельного согласия в студии.'],
+ ['Сколько стоит одна монета?','Курс к рублю и окончательные тарифы ещё готовятся. На странице показана предварительная структура пакетов. Оплата и автоматические списания денег не подключены.']
 ];
-const stepContent = [
-  { title: t.stepOne, body: t.stepOneCopy },
-  { title: t.stepTwo, body: t.stepTwoCopy },
-  { title: t.stepThree, body: t.stepThreeCopy }
-];
-
-/**
- * Replaces AiHome only. All seven existing editor callback contracts are unchanged.
- * No API calls, external assets, new dependencies or video-generation claims.
- */
-export default class AiHome extends React.Component<AiHomeProps, State> {
-  state: State = { prompt: "", scene: 0, step: 0,
-    menuOpen: false, mediaOpen: false, files: null, error: "", draftSaved: false };
-  private root: HTMLDivElement | null = null;
-  private stage: HTMLDivElement | null = null;
-  private textarea: HTMLTextAreaElement | null = null;
-  private fileInput: HTMLInputElement | null = null;
-  private dialog: HTMLDivElement | null = null;
-  private lastFocus: HTMLElement | null = null;
-  private frame = 0;
-  private saveTimer: ReturnType<typeof setTimeout> | null = null;
-  private urls: string[] = [];
-  private mediaUrl = "";
-  private mediaKind: "image" | "video" = "image";
-  private motionQuery: MediaQueryList | null = null;
-  private motion: HomeScrollMotion | null = null;
-
-  componentDidMount() {
-    this.motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    try {
-      const prompt = localStorage.getItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest")) || "";
-      this.setState({ prompt: prompt.slice(0, 1600) });
-    } catch { /* Private browsing may disable persistence; editing still works. */ }
-    document.addEventListener("keydown", this.onKey);
-    this.motionQuery.addEventListener("change", this.onMotionPreference);
-    if (this.root) this.motion = new HomeScrollMotion(this.root, {
-      reduced: this.reduced,
-      blocked: () => this.state.mediaOpen,
-      heroHasFiles: () => !!this.state.files?.length,
-      nextFrame: () => this.setState(previous => ({ scene: (previous.scene + 1) % shots.length })),
-      nextStep: () => this.setState(previous => ({ step: (previous.step + 1) % stepContent.length }))
-    });
-  }
-  componentDidUpdate(_previousProps: AiHomeProps, previousState: State) {
-    if (_previousProps.account?.id !== this.props.account?.id) {
-      try { this.setState({prompt:localStorage.getItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest")) || "", files:null}); } catch {}
-    }
-    if (previousState.mediaOpen !== this.state.mediaOpen || previousState.files !== this.state.files) {
-      this.motion?.refresh();
-    }
-  }
-  private onMotionPreference = () => {
-    if (this.reduced()) this.resetPointer();
-    this.forceUpdate(() => this.motion?.refresh());
-  };
-  componentWillUnmount() {
-    this.motion?.dispose();
-    this.motionQuery?.removeEventListener("change", this.onMotionPreference);
-    document.removeEventListener("keydown", this.onKey);
-    cancelAnimationFrame(this.frame);
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.urls.forEach(url => URL.revokeObjectURL(url));
-  }
-  private reduced = () => !!this.motionQuery?.matches;
-  private onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      if (this.state.mediaOpen) this.closeMedia();
-      this.setState({ menuOpen: false });
-    }
-    if (event.key === "Tab" && this.state.mediaOpen && this.dialog) {
-      const elements = Array.from(this.dialog.querySelectorAll<HTMLElement>("button, a[href], [tabindex='0']"));
-      const first = elements[0], last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
-  };
-  private scrollTo = (id: string) => {
-    this.setState({ menuOpen: false });
-    this.root?.querySelector(`#${id}`)?.scrollIntoView({ behavior: this.reduced() ? "auto" : "smooth", block: "start" });
-  };
-  private focusIdea = () => {
-    this.root?.querySelector(".pkh-composer")?.scrollIntoView({ behavior: this.reduced() ? "auto" : "smooth", block: "center" });
-    this.textarea?.focus({ preventScroll: true });
-  };
-  private setPrompt = (prompt: string) => {
-    this.setState({ prompt: prompt.slice(0, 1600), draftSaved: false });
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      try { localStorage.setItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest"), this.state.prompt); this.setState({ draftSaved: true }); }
-      catch { /* No persistence claim when storage is unavailable. */ }
-    }, 350);
-  };
-  private choosePrompt = (prompt: string) => { this.setPrompt(prompt); this.focusIdea(); };
-  private onPointer = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!this.stage || this.reduced()) return;
-    const rect = this.stage.getBoundingClientRect();
-    const x = Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1));
-    const y = Math.max(-1, Math.min(1, (event.clientY - rect.top) / rect.height * 2 - 1));
-    cancelAnimationFrame(this.frame);
-    this.frame = requestAnimationFrame(() => {
-      this.stage?.style.setProperty("--mx", `${(x * 8).toFixed(2)}px`);
-      this.stage?.style.setProperty("--my", `${(y * 6).toFixed(2)}px`);
-    });
-  };
-  private resetPointer = () => {
-    cancelAnimationFrame(this.frame);
-    this.stage?.style.setProperty("--mx", "0px");
-    this.stage?.style.setProperty("--my", "0px");
-  };
-  private onFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.currentTarget.files;
-    if (!files?.length) return;
-    if (Array.from(files).some(file => !/^(video|image)\//.test(file.type))) {
-      this.setState({ error: t.unsupported }); event.currentTarget.value = ""; return;
-    }
-    this.urls.forEach(url => URL.revokeObjectURL(url)); this.urls = [];
-    this.mediaUrl = URL.createObjectURL(files[0]); this.urls.push(this.mediaUrl);
-    this.mediaKind = files[0].type.startsWith("video/") ? "video" : "image";
-    this.setState({ files, error: "" });
-  };
-  private clearFiles = () => {
-    this.urls.forEach(url => URL.revokeObjectURL(url)); this.urls = []; this.mediaUrl = "";
-    if (this.fileInput) this.fileInput.value = "";
-    this.setState({ files: null, error: "" });
-  };
-  private create = (event?: React.FormEvent) => {
-    event?.preventDefault();
-    try { localStorage.setItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest"), this.state.prompt); } catch {}
-    if (this.state.files?.length) this.props.onImport(this.state.files, this.state.prompt.trim());
-    else this.props.onCreate(this.state.prompt.trim());
-  };
-  private openMedia = () => {
-    this.lastFocus = document.activeElement as HTMLElement | null;
-    this.setState({ mediaOpen: true }, () => this.dialog?.querySelector<HTMLButtonElement>("button")?.focus());
-  };
-  private closeMedia = () => {
-    this.setState({ mediaOpen: false }, () => this.lastFocus?.focus());
-  };
-
-  render() {
-    const { theme, onToggleTheme, onContinue, projects, onOpenProject } = this.props;
-    const { prompt, scene, step, menuOpen, files, error, mediaOpen } = this.state;
-    const chosen = shots[scene];
-    const previewImage = files?.length && this.mediaKind === "image" ? this.mediaUrl : chosen.image;
-    return <div className="pkh" data-theme={theme} data-motion={this.reduced() ? "off" : "on"} ref={node => { this.root = node; }}>
-      <header className="pkh-header">
-        <button className="pkh-brand" type="button" aria-label={t.brand} onClick={() => this.scrollTo("pkh-main")}><BrandMark size={38} animated/><span>{t.brand}<small>AI VIDEO STUDIO</small></span></button>
-        <nav className={`pkh-nav ${menuOpen ? "is-open" : ""}`} aria-label={t.menu}>
-          <button type="button" onClick={() => this.scrollTo("pkh-method")}>{t.navWorkflow}</button>
-          <button type="button" onClick={() => this.scrollTo("pkh-projects")}>{t.navProjects}</button>
-          {this.props.account?.role==='owner'&&this.props.onAdmin&&<button type="button" onClick={this.props.onAdmin}>Админ-панель</button>}
-          {this.props.registrationEnabled&&!this.props.account&&<button type="button" onClick={this.props.onSignIn}>Войти</button>}
-        </nav>
-        <div className="pkh-header-right">
-          <button className="pkh-theme" type="button" aria-label={theme === "light" ? t.themeDark : t.themeLight} title={theme === "light" ? t.themeDark : t.themeLight} onClick={onToggleTheme}><Icon name={theme === "light" ? "moon" : "sun"}/></button>
-<button className="pkh-editor-link" type="button" onClick={this.props.onAccount || onContinue}><Icon name={this.props.account || this.props.guestMode ? 'folder' : 'plus'} size={15}/><span>{this.props.account ? 'Мой профиль' : this.props.registrationEnabled ? 'Создать аккаунт' : 'Мои проекты'}</span><Icon name="arrow" size={16}/></button>
-          <button className="pkh-menu" type="button" aria-label={t.menu} aria-expanded={menuOpen} onClick={() => this.setState({ menuOpen: !menuOpen })}><Icon name={menuOpen ? "close" : "menu"}/></button>
-        </div>
-      </header>
-
-      <main id="pkh-main">
-        <section className="pkh-hero" aria-labelledby="pkh-heading">
-
-          <div className="pkh-hero-copy" data-scroll-scene="intro">
-            <p className="pkh-eyebrow"><span className="pkh-cross"/>{t.eyebrow}</p>
-            <h1 id="pkh-heading">{t.headline1}<br/><span className="pkh-heading-selected">{t.headline2}<i className="pkh-selection-corner a"/><i className="pkh-selection-corner b"/><i className="pkh-selection-corner c"/><i className="pkh-selection-corner d"/></span></h1>
-            <p className="pkh-lead">{t.lead}</p>
-            <div className="pkh-short-note"><span className="pkh-hand-line" aria-hidden="true"/>{t.caption}</div>
-          </div>
-
-          <div className="pkh-stage" data-scroll-scene="hero" style={{ "--layer-depth": 0 } as React.CSSProperties} ref={node => { this.stage = node; }} onMouseMove={this.onPointer} onMouseLeave={this.resetPointer}>
-            <span className="pkh-ghost-title" aria-hidden="true">FRAME</span>
-            <div className="pkh-frame-outline" aria-hidden="true"><span>SEQUENCE / 001</span><i/><b/></div>
-            <div className="pkh-blue-print" aria-hidden="true"><span>POKADROVO</span><strong>BEYOND<br/>THE FRAME.</strong><i>STORY FIRST.</i></div>
-            <div className="pkh-acetate-sheet" aria-hidden="true"><span>DIRECTOR'S CUT</span><i/><b>STORY / 001</b></div>
-            <figure className="pkh-main-frame">
-              <div className="pkh-frame-top"><span>{t.projectBadge}</span><span>{chosen.number} / 003</span></div>
-              <button type="button" className="pkh-image-action" onClick={this.openMedia} aria-label={t.previewAlt}>
-                {files?.length && this.mediaKind === "video" ? <video muted playsInline preload="metadata" src={this.mediaUrl} /> : <img key={files?.length ? this.mediaUrl : chosen.number} src={previewImage} alt={t.previewAlt} draggable={false} decoding="async"/>}
-                <span className="pkh-frame-overlay"><small>{t.sceneKind}</small><strong>{files?.length ? files[0].name : t.sceneTitle}</strong></span>
-                <span className="pkh-frame-open"><Icon name="up" size={21}/></span>
-              </button>
-              <figcaption><span>{t.sceneNote}</span><b>{chosen.time}</b></figcaption>
-            </figure>
-            <figure className="pkh-portrait-card" aria-hidden="true"><span className="pkh-tape"/><img src={frames.portrait} alt="" draggable={false}/><figcaption><b>002</b><span>{t.framePortrait}</span><i>24 / 36</i></figcaption></figure>
-            <div className="pkh-note-paper"><span className="pkh-paper-pin"/><span className="pkh-note-cap">{t.noteTitle}</span><p>{t.noteText}</p><span className="pkh-note-sign">{t.noteSign}<span className="pkh-mini-arrow" aria-hidden="true"/></span></div>
-            <div className="pkh-contact-strip" aria-label={t.selectFrame}>{shots.map((shot, index) => <button key={shot.number} type="button" className={scene === index ? "is-selected" : ""} onClick={() => this.setState({ scene: index })} aria-label={`${t.selectFrame}: ${shot.label}`} aria-pressed={scene === index}><span className="pkh-film-perf"/><img src={shot.image} alt=""/><span className="pkh-strip-label">{shot.number}<i>{shot.label}</i></span></button>)}<span className="pkh-strip-time" aria-hidden="true">00 : 00 : 18</span></div>
-          </div>
-
-          <div className="pkh-composer-wrap" data-scroll-scene="brief">
-            <div className="pkh-composer-underlay" aria-hidden="true"><span>BRIEF / 001</span></div>
-            <form className="pkh-composer" onSubmit={this.create}>
-              <div className="pkh-composer-top"><label htmlFor="pkh-idea">{t.briefLabel}</label><span>YOUR DIRECTOR'S NOTE</span></div>
-              <textarea ref={node => { this.textarea = node; }} id="pkh-idea" maxLength={1600} rows={3} value={prompt} placeholder={t.briefPlaceholder} onChange={event => this.setPrompt(event.currentTarget.value)}/>
-              {files?.length ? <div className="pkh-files"><span><Icon name="layers" size={13}/>{t.files}: {files.length}</span><b title={Array.from(files).map(f => f.name).join(", ")}>{Array.from(files).map(f => f.name).join(", ")}</b><button type="button" title={t.clearFiles} aria-label={t.clearFiles} onClick={this.clearFiles}><Icon name="close" size={14}/></button></div> : null}
-              <div className="pkh-composer-bottom"><input ref={node => { this.fileInput = node; }} type="file" accept="video/*,image/*" multiple hidden onChange={this.onFiles}/><button className="pkh-attach" type="button" onClick={() => this.fileInput?.click()}><Icon name="paperclip" size={16}/>{files?.length ? t.attachMore : t.attach}</button><span className="pkh-char-count">{prompt.length}/1600</span><button className="pkh-submit" type="submit">{t.create}<Icon name="arrow" size={18}/></button></div>
-              {error && <p className="pkh-error" role="alert">{error}</p>}
-            </form>
-            <div className="pkh-presets"><span>{t.tryLabel}</span>{[{ label: t.presetTravel, prompt: t.promptTravel }, { label: t.presetProduct, prompt: t.promptProduct }, { label: t.presetShort, prompt: t.promptShort }].map(preset => <button key={preset.label} type="button" onClick={() => this.choosePrompt(preset.prompt)}>{preset.label}<Icon name="up" size={12}/></button>)}</div>
-            <p className="pkh-honest-note">{t.disclaimer}</p>
-          </div>
-          <div className="pkh-hero-bottom"><span><i/>{t.statusCurrent}</span><span>{t.local}</span><span>MAKE THE CUT.</span></div>
-        </section>
-
-        <section className="pkh-method" data-scroll-scene="process" id="pkh-method" aria-labelledby="pkh-method-title">
-          <div className="pkh-method-left"><div className="pkh-section-id"><span>THE PROCESS</span><i/></div><h2 id="pkh-method-title">{t.workflowTitle1}<br/><span>{t.workflowTitle2}</span></h2><p className="pkh-section-lead">{t.workflowLead}</p>
-            <div className="pkh-steps" role="tablist" aria-orientation="vertical" aria-label={t.navWorkflow}>{stepContent.map((item, index) => <button type="button" role="tab" id={`pkh-step-${index}`} aria-controls="pkh-method-panel" aria-selected={step === index} tabIndex={step === index ? 0 : -1} onKeyDown={event => { let next = index; if(event.key === "ArrowDown" || event.key === "ArrowRight") next = (index + 1) % stepContent.length; else if(event.key === "ArrowUp" || event.key === "ArrowLeft") next = (index + stepContent.length - 1) % stepContent.length; else if(event.key === "Home") next = 0; else if(event.key === "End") next = stepContent.length - 1; else return; event.preventDefault(); this.setState({ step: next }, () => this.root?.querySelector<HTMLButtonElement>(`#pkh-step-${next}`)?.focus()); }} className={step === index ? "is-active" : ""} key={item.title} onClick={() => this.setState({ step: index })}><span>0{index + 1}</span><div><strong>{item.title}</strong>{step === index && <p>{item.body}</p>}</div><Icon name="up" size={18}/></button>)}</div>
-            <button className="pkh-method-cta" type="button" onClick={onContinue}>{t.openEditor}<Icon name="arrow" size={17}/></button>
-          </div>
-          <div className={`pkh-method-art step-${step}`} id="pkh-method-panel" role="tabpanel" aria-labelledby={`pkh-step-${step}`}>
-            <span className="pkh-cut-guide vertical" aria-hidden="true"/><span className="pkh-cut-guide horizontal" aria-hidden="true"/>
-            <div className="pkh-sheet-back" aria-hidden="true"><span>POKADROVO / NOTES</span><i/><i/><i/></div>
-            <div className="pkh-director-sheet"><span className="pkh-sheet-fold"/><div className="pkh-sheet-heading"><BrandMark size={25}/><span>{t.sheetPlan}</span><b>0{step + 1}</b></div><h3>{stepContent[step].title}</h3><p>{stepContent[step].body}</p><div className="pkh-sheet-list">{[t.sheetBegin,t.sheetMiddle,t.sheetEnd].map((line,index) => <div key={line}><span>{index === step ? <Icon name="check" size={13}/> : `0${index+1}`}</span><b>{line}</b><i/></div>)}</div><span className="pkh-sheet-sign">{t.noteSign}</span></div>
-            <div className="pkh-mini-film"><img key={step} src={shots[step].image} alt={shots[step].label} decoding="async"/><span><Icon name="layers" size={13}/>{shots[step].number}<i>{shots[step].label}</i></span></div>
-            <div className="pkh-index-label" aria-hidden="true">STORY / NOT JUST EFFECTS</div>
-          </div>
-        </section>
-
-        <section className="pkh-vision" data-scroll-scene="vision" aria-labelledby="pkh-vision-title">
-          <div className="pkh-vision-paper"><span className="pkh-section-id">{t.visionEyebrow}</span><h2 id="pkh-vision-title">{t.visionTitle}</h2><p>{t.visionCopy}</p><small>{t.visionStatus}</small></div>
-          <div className="pkh-roadmap">{[{ title:t.roadmap1, body:t.roadmap1text },{ title:t.roadmap2, body:t.roadmap2text },{ title:t.roadmap3, body:t.roadmap3text }].map((item,index) => <article key={item.title}><span>0{index+1}</span><div><h3>{item.title}</h3><p>{item.body}</p></div><b>{t.planned}</b></article>)}</div>
-        </section>
-
-        <section className="pkh-recent" data-scroll-scene="projects" id="pkh-projects" aria-labelledby="pkh-recent-title"><div className="pkh-recent-heading"><h2 id="pkh-recent-title">{t.recentTitle}</h2><Icon name="folder" size={23}/></div>{projects.length ? <div className="pkh-project-list">{projects.slice(0,4).map(project => <button type="button" key={project.id} onClick={() => onOpenProject(project.id)}><BrandMark size={31}/><span><strong>{project.name}</strong><small>{project.count} {t.clips} / {new Date(project.modified).toLocaleDateString("ru-RU")}</small></span><Icon name="up" size={17}/></button>)}</div> : <div className="pkh-no-projects"><p>{this.props.account || this.props.guestMode ? 'Ваш первый ролик начинается здесь.' : 'Войдите, чтобы открыть свои проекты.'}</p><button className="pkh-method-cta" type="button" onClick={onContinue}>{this.props.account || this.props.guestMode ? 'Создать проект' : 'Войти и открыть проекты'}<Icon name="arrow" size={16}/></button></div>}</section>
-
-        <section className="pkh-faq" data-scroll-scene="faq"><h2>{t.faqTitle}</h2><div>{[{ q:t.faqQuestion1, a:t.faqAnswer1 },{ q:t.faqQuestion2, a:t.faqAnswer2 },{ q:t.faqQuestion3, a:t.faqAnswer3 }].map(item => <details key={item.q}><summary>{item.q}<Icon name="plus" size={17}/></summary><p>{item.a}</p></details>)}</div></section>
-      </main>
-      <footer className="pkh-footer" data-scroll-scene="footer"><div><BrandMark size={29}/><span>{t.brand}</span></div><p>{t.footerTag}</p><span>{t.footerNote}</span></footer>
-
-      {mediaOpen && <div className="pkh-modal-shade" onClick={event => { if (event.target === event.currentTarget) this.closeMedia(); }}><div className="pkh-media-dialog" ref={node => { this.dialog = node; }} role="dialog" aria-modal="true" aria-labelledby="pkh-media-caption"><button className="pkh-modal-close" type="button" aria-label={t.close} onClick={this.closeMedia}><Icon name="close" size={22}/></button>{files?.length && this.mediaKind === "video" ? <video src={this.mediaUrl} controls playsInline/> : <img src={previewImage} alt={t.previewAlt}/>}<div><span id="pkh-media-caption">{files?.length ? files[0].name : `${t.sceneTitle} / ${chosen.label}`}</span><button type="button" onClick={() => { this.setState({ mediaOpen: false }, () => this.choosePrompt(t.promptTravel)); }}>{t.chooseMood}<Icon name="arrow" size={15}/></button></div></div></div>}
-    </div>;
-  }
+export default class AiHome extends React.Component<AiHomeProps,State>{
+ state:State={prompt:'',scene:0,menuOpen:false,files:null,error:''};
+ private root:HTMLDivElement|null=null;private input:HTMLInputElement|null=null;private textarea:HTMLTextAreaElement|null=null;private saveTimer:ReturnType<typeof setTimeout>|null=null;
+ componentDidMount(){this.restore();document.addEventListener('keydown',this.key);}
+ componentDidUpdate(previous:AiHomeProps){if(previous.account?.id!==this.props.account?.id){if(this.saveTimer)clearTimeout(this.saveTimer);this.restore();this.setState({files:null,error:''});if(this.input)this.input.value='';}}
+ componentWillUnmount(){document.removeEventListener('keydown',this.key);if(this.saveTimer)clearTimeout(this.saveTimer);}
+ private key=(e:KeyboardEvent)=>{if(e.key==='Escape')this.setState({menuOpen:false});};
+ private restore(){try{this.setState({prompt:(localStorage.getItem('pokadrovo.home.brief.v3:'+(this.props.account?.id||'guest'))||'').slice(0,1600)});}catch{}}
+ private save=(prompt:string)=>{try{localStorage.setItem('pokadrovo.home.brief.v3:'+(this.props.account?.id||'guest'),prompt);}catch{}};
+ private setPrompt=(prompt:string)=>{this.setState({prompt:prompt.slice(0,1600)});if(this.saveTimer)clearTimeout(this.saveTimer);this.saveTimer=setTimeout(()=>this.save(this.state.prompt),350);};
+ private scrollTo=(id:string)=>{this.setState({menuOpen:false});this.root?.querySelector('#'+id)?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});};
+ private focusIdea=()=>{this.scrollTo('pkh-start');this.textarea?.focus({preventScroll:true});};
+ private create=(event?:React.FormEvent)=>{event?.preventDefault();this.save(this.state.prompt);if(this.state.files?.length)this.props.onImport(this.state.files,this.state.prompt.trim());else this.props.onCreate(this.state.prompt.trim());};
+ private onFiles=(event:React.ChangeEvent<HTMLInputElement>)=>{const files=event.currentTarget.files;if(!files?.length)return;if(Array.from(files).some(file=>! /^(video|image)\//.test(file.type))){this.setState({error:'Выберите видео или изображения.'});event.currentTarget.value='';return;}this.setState({files,error:''});};
+ render(){const {theme,account,projects,onContinue}=this.props;const {prompt,scene,menuOpen,files,error}=this.state;
+ return <div className="pkh" data-theme={theme} ref={node=>{this.root=node;}}>
+ <header className="pkh-header"><a className="pkh-brand" href="#pkh-main" aria-label="Покадрово — главная"><BrandMark size={38} animated/><span>покадрово</span></a><nav className={`pkh-nav ${menuOpen?'is-open':''}`} aria-label="Основная навигация">{navigation.slice(1).map(([id,label])=><a key={id} href={'#'+id} onClick={()=>this.setState({menuOpen:false})}>{label}</a>)}{account?.role==='owner'&&this.props.onAdmin&&<button type="button" onClick={this.props.onAdmin}>Админ-панель</button>}<button className="pk-mobile-theme" type="button" onClick={this.props.onToggleTheme}>{theme==='light'?'Тёмная тема':'Светлая тема'}</button></nav><div className="pkh-header-right"><button className="pkh-theme" type="button" onClick={this.props.onToggleTheme} aria-label={theme==='light'?'Тёмная тема':'Светлая тема'}>{theme==='light'?'☾':'☀'}</button>{!account&&this.props.registrationEnabled&&<button className="pkh-signin" type="button" onClick={this.props.onSignIn}>Войти</button>}<button className="pk-button pk-button-small" type="button" onClick={account?this.props.onAccount||onContinue:this.focusIdea}>{account?'Мой профиль':'Начать монтаж'}<span aria-hidden="true">↗</span></button><button className="pkh-menu" type="button" aria-label="Меню" aria-expanded={menuOpen} onClick={()=>this.setState({menuOpen:!menuOpen})}>{menuOpen?'×':'☰'}</button></div></header>
+ <main id="pkh-main"><section className="pkh-hero" aria-labelledby="pkh-heading"><div className="pk-hero-copy"><p className="pk-kicker"><span/>Ваша история начинается с кадра</p><h1 id="pkh-heading">Вы снимаете.<br/><span>История складывается.</span></h1><p className="pk-hero-lead">Соберите ролик из своих кадров, найдите нужный ритм и доведите детали. Монтажная студия с ИИ-помощником — прямо в браузере.</p><div className="pk-hero-actions"><button className="pk-button" type="button" onClick={this.focusIdea}>Собрать свой ролик <span aria-hidden="true">↗</span></button><a href="#pkh-method" className="pk-text-link">Посмотреть, как это работает <span aria-hidden="true">↓</span></a></div></div><HeroStory scene={scene} onScene={scene=>this.setState({scene})}/></section>
+ <div id="pkh-formats-slot"/>
+ <ProcessGallery/>
+ <section id="pkh-features" className="pk-section pk-features" aria-labelledby="pk-features-title"><div className="pk-section-heading"><p className="pk-kicker">Возможности</p><h2 id="pk-features-title">Меньше рутины.<br/><span>Больше вашего почерка.</span></h2></div><div className="pk-feature-grid"><article className="pk-feature-large"><div className="pk-feature-image"><Shot index={1}><span>Каждому кадру — своё место.</span></Shot><Timeline/></div><h3>Монтаж, который остаётся вашим</h3><p>Порядок кадров, точные склейки, скорость и формат. Собирайте историю так, как её видите.</p></article><article><div className="pk-feature-sound"><span className="pk-feature-symbol">♪</span><div className="pk-sound-bars" aria-hidden="true">{Array.from({length:25},(_,i)=><i key={i} style={{height:16+i*13%59}}/>)}</div><strong>Слышно то, что важно.</strong></div><h3>Живой звук и музыка</h3><p>Добавляйте свои аудиодорожки и настраивайте громкость под каждый момент.</p></article><article><div className="pk-feature-type"><Shot index={5}/><strong>Поймать<br/><em>момент.</em></strong><span>Текст в вашем стиле</span></div><h3>Слова, которые попадают в кадр</h3><p>Заголовки, подписи и финальный акцент. Выбирайте шрифт, размер и время появления.</p></article></div></section>
+ <section id="pkh-start" className="pk-section pk-start" aria-labelledby="pk-start-title"><div><p className="pk-kicker">Попробуйте на своих кадрах</p><h2 id="pk-start-title">Что будем<br/><span>монтировать?</span></h2><p>Начните с идеи. Файлы можно добавить сейчас или уже в студии.</p></div><form className="pkh-composer" onSubmit={this.create}><label htmlFor="pkh-idea">Опишите ваш ролик</label><textarea ref={node=>{this.textarea=node;}} id="pkh-idea" maxLength={1600} rows={4} value={prompt} placeholder="Поездка к морю на 30 секунд. Начать с общего плана, оставить звук волн и добавить название в первом кадре…" onChange={event=>this.setPrompt(event.currentTarget.value)}/><div className="pk-presets">{[['Поездка',t.promptTravel],['Продукт',t.promptProduct],['Короткий ролик',t.promptShort]].map(([label,value])=><button type="button" key={label} onClick={()=>this.setPrompt(value)}>{label}</button>)}</div>{files?.length? <div className="pkh-files"><span>{files.length} файлов</span><strong>{Array.from(files).map(f=>f.name).join(', ')}</strong><button type="button" aria-label="Убрать файлы" onClick={()=>{this.setState({files:null});if(this.input)this.input.value='';}}>×</button></div>:null}<div className="pk-composer-actions"><input ref={node=>{this.input=node;}} type="file" accept="video/*,image/*" multiple hidden onChange={this.onFiles}/><button className="pk-attach" type="button" onClick={()=>this.input?.click()}>＋ {files?.length?'Заменить файлы':'Добавить кадры'}</button><button className="pk-button" type="submit">Открыть студию <span aria-hidden="true">↗</span></button></div>{error&&<p className="pk-error" role="alert">{error}</p>}<p className="pk-composer-note">Описание сохранится в проекте. ИИ-запрос запускается отдельно в студии.</p></form></section>
+ <section id="pkh-pricing" className="pk-section pk-pricing" aria-labelledby="pk-pricing-title"><div className="pk-section-heading"><p className="pk-kicker">Тарифы</p><h2 id="pk-pricing-title">Идеи — ваши.<br/><span>Генерации — за монеты.</span></h2><p>Один баланс для ИИ-запросов. Ниже — предварительные пакеты; стоимость в рублях объявим перед запуском оплаты.</p></div><div className="pk-pack-grid">{packs.map((pack,i)=><article key={pack.name} className={i===1?'pk-pack is-featured':'pk-pack'}><span className="pk-pack-name">{pack.name}</span><div className="pk-pack-amount"><Coin size={36}/><strong>{pack.coins.toLocaleString('ru-RU')}</strong></div><span className="pk-pack-unit">монет в пакете</span><p>{pack.description}</p><div className="pk-pack-line"/><ul><li>ИИ-запросы с баланса</li><li>Правки под вашим контролем</li><li>Общий баланс для проектов</li></ul><span className="pk-pack-soon">Скоро · покупка пока недоступна</span></article>)}</div><div className="pk-trial-strip"><Coin size={48}/><div><h3>Начните с подарочных монет</h3><p>Для пробного Reels подготовлены 3 монеты: один успешный ИИ-запрос — одна монета. Один проект до 60 секунд, 7 дней с первого запуска. Проба откроется вместе с ИИ-сервисом.</p></div><button className="pk-button" type="button" onClick={this.focusIdea}>Открыть студию <span aria-hidden="true">↗</span></button></div><p className="pk-pricing-note">Пакеты предварительные. Курс монеты к рублю и цены остальных ИИ-режимов ещё не утверждены. Оплата не подключена.</p></section>
+ <section id="pkh-projects" className="pk-section pk-recent" aria-labelledby="pk-recent-title"><div className="pk-inline-heading"><h2 id="pk-recent-title">Ваши истории продолжаются.</h2><button className="pk-text-link" type="button" onClick={onContinue}>Мои проекты ↗</button></div>{projects.length?<div className="pk-project-list">{projects.slice(0,4).map(project=><button type="button" key={project.id} onClick={()=>this.props.onOpenProject(project.id)}><BrandMark size={36}/><span><strong>{project.name}</strong><small>{project.count} клипов · {new Date(project.modified).toLocaleDateString('ru-RU')}</small></span><span aria-hidden="true">↗</span></button>)}</div>:<div className="pk-empty-projects"><p>{account||this.props.guestMode?'Здесь появятся ваши проекты. Начните с первого ролика.':'Войдите, чтобы открыть свои проекты.'}</p><button className="pk-button" type="button" onClick={onContinue}>{account||this.props.guestMode?'Создать проект':'Войти и открыть проекты'} <span aria-hidden="true">↗</span></button></div>}</section>
+ <section id="pkh-faq" className="pk-section pk-faq" aria-labelledby="pk-faq-title"><div><p className="pk-kicker">Ответы по делу</p><h2 id="pk-faq-title">Перед первым<br/><span>«готово».</span></h2></div><div>{faq.map(([question,answer])=><details key={question}><summary>{question}<span aria-hidden="true">＋</span></summary><p>{answer}</p></details>)}</div></section>
+ <section id="pkh-final" className="pk-section pk-final"><div><p className="pk-kicker">Есть кадры? Есть история.</p><h2>Пора собрать<br/>её воедино.</h2><button className="pk-button" type="button" onClick={this.focusIdea}>Начать монтаж <span aria-hidden="true">↗</span></button></div><div className="pk-final-fan" aria-hidden="true"><Shot index={0}/><Shot index={2}/><Shot index={5}/></div></section>
+ </main><footer className="pkh-footer"><div className="pk-footer-top"><div className="pk-footer-brand"><a href="#pkh-main" className="pkh-brand"><BrandMark size={42}/><span>покадрово</span></a><p>Монтажная студия в браузере.<br/>Из ваших кадров — в вашу историю.</p><a href="#pkh-start" className="pk-footer-domain">pokadrovo.ru ↗</a></div><nav aria-label="Разделы сайта"><h3>Покадрово</h3>{navigation.map(([id,label])=><a key={id} href={'#'+id}>{label}</a>)}<a href="#pkh-final">Начать монтаж</a></nav><nav aria-label="Инструменты"><h3>В студии</h3><a href="#pkh-features">Монтаж видео</a><a href="#pkh-features">Звук и музыка</a><a href="#pkh-features">Текст и титры</a><a href="#pkh-formats">Форматы площадок</a><a href="#pkh-method">Монтаж с ИИ</a></nav><nav aria-label="Аккаунт и информация"><h3>Ваше пространство</h3><button type="button" onClick={onContinue}>Мои проекты</button><button type="button" onClick={this.props.onAccount||onContinue}>{account?'Мой профиль':'Регистрация и вход'}</button><a href="#pkh-pricing">Монеты и пакеты</a><a href="#pkh-start">Задание на монтаж</a><a href="#pkh-projects">Последние проекты</a>{account?.role==='owner'&&this.props.onAdmin&&<button type="button" onClick={this.props.onAdmin}>Админ-панель</button>}</nav></div><div className="pk-footer-bottom"><span>© {new Date().getFullYear()} Покадрово</span><span>Снимайте больше. Монтируйте проще.</span><a href="#pkh-main">Наверх ↑</a></div></footer>
+ </div>;
+ }
 }

@@ -1,10 +1,11 @@
+import coinPricing from '../shared/coin-pricing.json' with { type: 'json' };
 import { HttpError, body, deny, json } from './http.mjs';
 import { equal } from './security.mjs';
 import { createYandex } from './yandex.mjs';
 
 export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 12 * 1024 * 1024, dailyRequests: 12 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
-export const TRIAL_RULES = Object.freeze({ projects: 1, requests: 3, days: 7 });
+export const TRIAL_RULES = Object.freeze({ projects: 1, requests: coinPricing.trialCoins / coinPricing.reelsRequestCoins, days: 7 });
 const MAX_BODY = Math.ceil(AI_LIMITS.maxBytes / 3) * 4 + 300000;
 const idOk = x => typeof x === 'string' && /^[\w.-]{1,120}$/.test(x);
 const finite = x => typeof x === 'number' && Number.isFinite(x);
@@ -178,7 +179,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
     CREATE TABLE IF NOT EXISTS ai_trial_usage(account_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       project_id TEXT NOT NULL, started INTEGER NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, successes INTEGER NOT NULL DEFAULT 0, media_analyzed INTEGER NOT NULL DEFAULT 0);`);
   const columns = new Set(store.all('PRAGMA table_info(ai_runs)').map(c => c.name));
-  for (const [name, declaration] of Object.entries({ account_id: "TEXT NOT NULL DEFAULT 'owner'", mode: "TEXT NOT NULL DEFAULT 'reels-trial'", access_kind: "TEXT NOT NULL DEFAULT 'owner_test'", customer_charge_minor: 'INTEGER NOT NULL DEFAULT 0' })) {
+  for (const [name, declaration] of Object.entries({ account_id: "TEXT NOT NULL DEFAULT 'owner'", mode: "TEXT NOT NULL DEFAULT 'reels-trial'", access_kind: "TEXT NOT NULL DEFAULT 'owner_test'", customer_charge_minor: 'INTEGER NOT NULL DEFAULT 0', coin_charge: 'INTEGER NOT NULL DEFAULT 0', project_id: 'TEXT' })) {
     if (!columns.has(name)) store.db.exec(`ALTER TABLE ai_runs ADD COLUMN ${name} ${declaration}`);
   }
   const meta = key => store.get('SELECT value FROM meta WHERE key=?', key)?.value || '';
@@ -189,6 +190,12 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
     const row = trialRow(auth), expired = !!row && row.expires <= now();
     return { rules: TRIAL_RULES, projectId: row?.project_id || null, remaining: auth?.owner ? null : expired ? 0 : Math.max(0, TRIAL_RULES.requests - (row?.used || 0)),
       expires: row?.expires || null, expired, requiresMedia: !auth?.owner && !row?.media_analyzed };
+  }
+  function coinState(auth, service) {
+    const trial = trialState(auth);
+    return { unit: coinPricing.unit, requestCostCoins: service === 'reels-trial' ? coinPricing.reelsRequestCoins : coinPricing.yandexRequestCoins,
+      giftCoins: coinPricing.trialCoins, remainingCoins: auth?.owner ? null : auth ? trial.remaining * coinPricing.reelsRequestCoins : 0,
+      rubPerCoin: null, paymentsEnabled: false, packages: coinPricing.packages, ownerExempt: !!auth?.owner, purchaseAvailable: false };
   }
   function state() {
     const c = settings(), endpoint = meta('ai_endpoint'), enabled = meta('ai_enabled') === '1';
@@ -212,7 +219,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
       reason: !owner ? 'Тариф платного монтажа готовится. Списания и оплата пока недоступны.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите Яндекс для тестов администратора.' : 'Тест Яндекса без списаний в Покадрово. Расходы API оплачивает владелец.', requiresMedia: false };
     return { available: q.configured && q.enabled && (owner || trialEnabled() && trial.remaining > 0), requiresMedia: trial.requiresMedia,
       reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Тест Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
-        : !q.configured || !q.enabled || !trialEnabled() ? 'Бесплатная проба Reels пока не открыта.' : trial.expired ? 'Срок бесплатной пробы закончился.' : !trial.remaining ? 'Запросы бесплатной пробы использованы. Платный тариф готовится.' : `Бесплатная проба: осталось ${trial.remaining} из ${TRIAL_RULES.requests} запросов для одного Reels до 60 секунд.` };
+        : !q.configured || !q.enabled || !trialEnabled() ? 'Бесплатная проба Reels пока не открыта.' : trial.expired ? 'Срок бесплатной пробы закончился.' : !trial.remaining ? 'Запросы бесплатной пробы использованы. Платный тариф готовится.' : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Успешный запрос — ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
   }
   function reserveTrial(auth, r, media) {
     if (auth.owner) return null;
@@ -233,6 +240,15 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
     store.run('UPDATE ai_trial_usage SET used=max(0,used-1) WHERE account_id=? AND project_id=?', reservation.accountId, reservation.projectId);
     store.run('DELETE FROM ai_trial_usage WHERE account_id=? AND successes=0 AND used=0', reservation.accountId);
   }
+  // A restart must release held gift coins exactly once. Old runs without a project binding are left intact.
+  store.db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const pending of store.all("SELECT request_id,account_id,project_id FROM ai_runs WHERE result='started' AND coin_charge>0 AND project_id IS NOT NULL")) {
+      refundTrial({ accountId: pending.account_id, projectId: pending.project_id });
+      store.run("UPDATE ai_runs SET result='interrupted',coin_charge=0 WHERE request_id=?", pending.request_id);
+    }
+    store.db.exec('COMMIT');
+  } catch (error) { store.db.exec('ROLLBACK'); throw error; }
   async function route(req, res, url) {
     const path = url.pathname;
     if (req.method === 'GET' && path === '/api/ai/status') {
@@ -242,8 +258,8 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
       json(res, 200, { ...selected, service, ownerOnly: service === 'yandex-edit', freeTrialRequiresAccount: true,
         owner: !!auth?.owner, configured: !!auth?.owner && (service === 'yandex-edit' ? y.configured : q.configured),
         verified: !!auth?.owner && (service === 'yandex-edit' ? y.verified : q.verified), model: auth?.owner ? service === 'yandex-edit' ? y.c.model : OMNI_MODEL : undefined,
-        limits: AI_LIMITS, trial: trialState(auth), tariffConfigured: false, paymentsEnabled: false,
-        modes: ['reels-trial', 'yandex-edit'].map(id => ({ id, label: id === 'reels-trial' ? 'Reels · бесплатная проба' : 'Монтаж · тариф готовится', ...modeStatus(auth, id) })) }); return true;
+        limits: AI_LIMITS, trial: trialState(auth), billing: coinState(auth, service), tariffConfigured: false, paymentsEnabled: false,
+        modes: ['reels-trial', 'yandex-edit'].map(id => ({ id, label: id === 'reels-trial' ? 'Reels · подарочные монеты' : 'Монтаж · тариф готовится', ...modeStatus(auth, id) })) }); return true;
     }
     if (req.method !== 'POST' || path !== '/api/ai/edit-plan') return false;
     const auth = session(req); sameOrigin(req);
@@ -294,7 +310,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
         if (service === 'reels-trial') reservation = reserveTrial({ ...auth, req }, r, media);
         if (!store.consume('ai-pilot:' + new Date(now()).toISOString().slice(0, 10), AI_LIMITS.dailyRequests, 86400000, now())) deny(429, 'Общий пробный лимит: 12 запросов в сутки. Обновление — в 03:00 по Москве.');
         requestId = r.requestId;
-        store.run('INSERT INTO ai_runs(request_id,at,result,model,media_seconds,account_id,mode,access_kind,customer_charge_minor) VALUES(?,?,?,?,?,?,?,?,0)', requestId, now(), 'started', service === 'yandex-edit' ? y.c.model : q.c.model, media?.duration ?? null, auth.key, service, auth.owner ? 'owner_test' : 'free_trial');
+        store.run('INSERT INTO ai_runs(request_id,at,result,model,media_seconds,account_id,mode,access_kind,customer_charge_minor,coin_charge,project_id) VALUES(?,?,?,?,?,?,?,?,0,?,?)', requestId, now(), 'started', service === 'yandex-edit' ? y.c.model : q.c.model, media?.duration ?? null, auth.key, service, auth.owner ? 'owner_test' : 'free_trial', auth.owner ? 0 : coinPricing.reelsRequestCoins, r.projectId);
         store.db.exec('COMMIT');
       } catch (error) { store.db.exec('ROLLBACK'); requestId = undefined; reservation = null; throw error; }
       let response;
@@ -323,18 +339,27 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
       const fresh = session(req), current = settings();
       if (fresh.key !== auth.key || fresh.owner !== auth.owner || !equal(fresh.csrf, auth.csrf)) deny(409, 'Сеанс изменился. Результат не применяется.');
       if (service === 'yandex-edit' ? !yandex.current(y) : current.updated !== q.c.updated || current.provider !== q.c.provider || current.model !== q.c.model || !equal(current.secret, q.c.secret) || state().endpoint !== q.endpoint || !state().enabled || !auth.owner && !trialEnabled()) deny(409, 'Настройки изменились. Результат не применяется.');
-      store.run('UPDATE ai_runs SET result=?,input_tokens=?,output_tokens=? WHERE request_id=?', 'ok', usage.inputTokens, usage.outputTokens, requestId);
-      if (reservation) store.run('UPDATE ai_trial_usage SET successes=successes+1,media_analyzed=max(media_analyzed,?) WHERE account_id=?', Number(!!analysis), auth.key);
+      store.db.exec('BEGIN IMMEDIATE');
+      try {
+        store.run('UPDATE ai_runs SET result=?,input_tokens=?,output_tokens=? WHERE request_id=?', 'ok', usage.inputTokens, usage.outputTokens, requestId);
+        if (reservation) store.run('UPDATE ai_trial_usage SET successes=successes+1,media_analyzed=max(media_analyzed,?) WHERE account_id=?', Number(!!analysis), auth.key);
+        store.db.exec('COMMIT');
+      } catch (settleError) { store.db.exec('ROLLBACK'); throw settleError; }
       if (service === 'yandex-edit') yandex.verified(y); else put('ai_verified', current.updated);
       store.audit('ai_request', 'ok', now());
       json(res, 200, { plan, analysis, summary: planError || value.summary, usage,
-        access: { kind: auth.owner ? 'owner_test' : 'free_trial', customerChargeMinor: 0, tariffConfigured: false }, trial: trialState(auth) });
+        access: { kind: auth.owner ? 'owner_test' : 'free_trial', customerChargeMinor: 0, tariffConfigured: false }, billing: { ...coinState(auth, service), chargedCoins: auth.owner ? 0 : coinPricing.reelsRequestCoins }, trial: trialState(auth) });
     } catch (error) {
-      if (requestId) { store.run('UPDATE ai_runs SET result=? WHERE request_id=?', 'failed', requestId); refundTrial(reservation); store.audit('ai_request', 'failed', now()); }
+      if (requestId) {
+        store.db.exec('BEGIN IMMEDIATE');
+        try { store.run('UPDATE ai_runs SET result=?,coin_charge=0 WHERE request_id=?', 'failed', requestId); refundTrial(reservation); store.db.exec('COMMIT'); }
+        catch (refundError) { store.db.exec('ROLLBACK'); throw refundError; }
+        store.audit('ai_request', 'failed', now());
+      }
       throw error instanceof HttpError ? error : new HttpError(502, 'Не удалось завершить анализ. Монтаж не изменён.');
     } finally { clearTimeout(timer); req.off('aborted', abort); res.off('close', abort); active = false; }
     return true;
   }
   return { route, adminState, saveConfig, yandex,
-    usage: () => store.all('SELECT at,result,model,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor FROM ai_runs ORDER BY at DESC LIMIT 20') };
+    usage: () => store.all('SELECT at,result,model,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor,coin_charge FROM ai_runs ORDER BY at DESC LIMIT 20') };
 }

@@ -7,7 +7,7 @@ const root=fileURLToPath(new URL('..',import.meta.url));
 const output=resolve(process.argv[2]||resolve(root,'../pokadrovo-preview.html'));
 const assets=resolve(root,'src/editor/assets.ts'),api=resolve(root,'src/account/api.ts');
 const previewAssets=resolve(root,'src/preview/assets.ts');
-const result=await build({absWorkingDir:root,entryPoints:['src/preview/main.tsx'],bundle:true,minify:true,write:false,outfile:'.compiled/preview/app.js',format:'iife',target:'es2022',metafile:true,define:{'process.env.NODE_ENV':'"production"'},plugins:[{
+const result=await build({absWorkingDir:root,entryPoints:['src/preview/main.tsx'],bundle:true,minify:true,write:false,outfile:'.compiled/preview/app.js',format:'iife',target:'es2022',metafile:true,loader:{'.webp':'dataurl'},define:{'process.env.NODE_ENV':'"production"'},plugins:[{
   name:'isolated-chat-preview',setup(b){
     b.onResolve({filter:/\?raw$/},args=>({path:resolve(args.resolveDir,args.path.slice(0,-4)),namespace:'preview-raw'}));
     b.onLoad({filter:/.*/,namespace:'preview-raw'},async args=>{
@@ -48,7 +48,7 @@ if(process.argv.includes('--ai-settings'))template=template.replace('id="pokadro
 const html=template.replace('/* PREVIEW_STYLES */',()=>css.replace(/<\/style/gi,'<\\/style')).replace('/* PREVIEW_SCRIPT */',()=>script.replace(/<\/script/gi,'<\\/script'));
 if(/<!doctype\s|<\s*(?:html|head|body)(?:\s|>)/i.test(html))throw Error('A full document leaked into the inline fragment.');
 if((html.match(/<script\b/gi)||[]).length!==1)throw Error('Unexpected embedded script marker.');
-if(Buffer.byteLength(html)>1000000)throw Error('Preview exceeds 1 MB.');
+if(Buffer.byteLength(html)>1000000)throw Error(`Preview exceeds 1 MB (${Buffer.byteLength(html)} bytes).`);
 await writeFile(output,html);
 await mkdir(resolve(root,'.compiled/preview'),{recursive:true});
 await writeFile(resolve(root,'.compiled/preview/meta.json'),JSON.stringify(result.metafile));

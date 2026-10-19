@@ -35,7 +35,7 @@ export class AiPanel {
     <label>Исходник из проекта<select class="pe-ai-media-source" aria-label="Файл для анализа"></select></label>
     <label class="pe-ai-consent"><input type="checkbox" class="pe-ai-media-consent"/> Разрешаю передать выбранный файл целиком, включая звук, в Qwen через Alibaba Cloud для анализа.</label>
     <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button>
-    <p class="pe-ai-note pe-ai-billing-note">Бесплатная проба: один проект Reels, до трёх запросов в течение семи дней с первого запуска. На сервере Покадрово файл не сохраняется.</p></section>
+    <p class="pe-ai-note pe-ai-billing-note">Подарочный баланс: 3 монеты. Успешный ИИ-запрос — 1 монета; один Reels и 7 дней с первого запуска. На сервере Покадрово файл не сохраняется.</p></section>
     <button type="button" class="pe-ai-cancel" data-ai="cancel" hidden>Отменить запрос</button>
     <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Кнопка станет доступна после подключения сервиса. Сейчас можно сохранить задание; автоматический монтаж не запускается.'}</p>
     <button type="button" class="pe-ai-save" data-ai="save">Сохранить задание в проекте</button>
@@ -67,7 +67,7 @@ export class AiPanel {
      this.available=status.available;this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
      if(provider.service==='reels-trial'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
      this.node.querySelector('.pe-ai-connection span')!.textContent=reason;
-     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Тест администратора без списаний в Покадрово. Запросы к провайдерам оплачивает владелец сайта. Общий предел — 12 запросов в сутки.':'Бесплатно в рамках пробы: один Reels и до трёх запросов за семь дней с первого запуска. Неудачный анализ возвращает запрос в пробу. Общие ограничения доступности сохраняются.';
+     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Тест администратора без списаний в Покадрово. Запросы к провайдерам оплачивает владелец сайта. Общий предел — 12 запросов в сутки.':provider.service==='yandex-edit'?'Стоимость режима будет указана в монетах. Тариф ещё готовится; покупка и списания пока недоступны.':`Подарочный баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. Один Reels, 7 дней с первого запуска. При ошибке монета возвращается. Покупка пока не открыта.`;
     }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
     finally{if(!this.disposed&&generation===this.statusGeneration)this.refresh();}
   }
@@ -165,7 +165,7 @@ export class AiPanel {
         const result=raw as OmniResult;
         if(result.analysis){this.analysis=result.analysis;this.renderAnalysis();}
         this.plan=result.plan===null?null:this.validatePlan(result.plan,request);
-        const usage=result.usage;const tokens=Number.isSafeInteger(usage?.inputTokens)&&Number.isSafeInteger(usage?.outputTokens)?` Токены: вход ${usage.inputTokens}, выход ${usage.outputTokens}.`:'';
+        const charge=result.billing;const tokens=charge?.chargedCoins?` Списано монет: ${charge.chargedCoins}. Осталось: ${charge.remainingCoins ?? 0}.`:'';
         this.say((this.plan?'Результат готов. Проверьте план перед применением.':result.summary||'Анализ готов. Монтаж не изменён.')+tokens);
       }else{this.plan=this.validatePlan(raw,request);this.say('Проверьте план перед применением.');}
       this.renderPlan();

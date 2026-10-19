@@ -17,13 +17,13 @@ systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_DA
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru'
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_HOST=127.0.0.1'
 systemctl is-active --quiet pokadrovo.service
-pk_files=(server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/yandex.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/BrandMark.tsx src/brand.ts src/brand.css src/layered-copy.ts src/editor/editor.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css public/favicon.svg public/pokadrovo-logo.svg public/pokadrovo-animated.svg)
+pk_files=(shared/coin-pricing.json src/HomeShowcase.tsx src/PlatformIcon.tsx src/assets.d.ts src/home/redesign.css src/home/assets/coastal-story.webp src/ai-home.css src/HomeFormats.tsx src/home-formats.css tsconfig.json server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/yandex.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/BrandMark.tsx src/brand.ts src/brand.css src/layered-copy.ts src/editor/editor.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css public/favicon.svg public/pokadrovo-logo.svg public/pokadrovo-animated.svg)
 pk_existing=()
 pk_new=()
 for pk_file in "${pk_files[@]}"; do
   [[ -f "$pk_source/$pk_file" && ! -L "$pk_app/$pk_file" ]] || exit 1
   if [[ -f "$pk_app/$pk_file" ]]; then pk_existing+=("$pk_file");
-  elif [[ "$pk_file" == server/ai.mjs || "$pk_file" == server/yandex.mjs || "$pk_file" == src/editor/omni.ts || "$pk_file" == src/brand.ts || "$pk_file" == src/brand.css || "$pk_file" == public/pokadrovo-animated.svg ]]; then pk_new+=("$pk_file");
+  elif [[ "$pk_file" == shared/coin-pricing.json || "$pk_file" == src/HomeShowcase.tsx || "$pk_file" == src/PlatformIcon.tsx || "$pk_file" == src/assets.d.ts || "$pk_file" == src/home/redesign.css || "$pk_file" == src/home/assets/coastal-story.webp || "$pk_file" == server/ai.mjs || "$pk_file" == server/yandex.mjs || "$pk_file" == src/editor/omni.ts || "$pk_file" == src/brand.ts || "$pk_file" == src/brand.css || "$pk_file" == public/pokadrovo-animated.svg ]]; then pk_new+=("$pk_file");
   else exit 1; fi
 done
 cd "$pk_source"
@@ -52,7 +52,7 @@ trap pk_rollback ERR
 systemctl stop pokadrovo.service
 # Consistent root-only disaster-recovery copy, including the database and key.
 tar -C /var/lib -czf "$pk_backup/private.tar.gz" pokadrovo
-for pk_file in "${pk_files[@]}"; do install -m 0644 "$pk_file" "$pk_app/$pk_file"; done
+for pk_file in "${pk_files[@]}"; do install -d -m 0755 "$(dirname "$pk_app/$pk_file")"; install -m 0644 "$pk_file" "$pk_app/$pk_file"; done
 # Keep prior hashed assets for browser tabs that are already open.
 cp -a dist/assets/. "$pk_app/dist/assets/"
 install -m 0644 dist/favicon.svg "$pk_app/dist/favicon.svg"
@@ -82,7 +82,7 @@ done
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/session | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const a=JSON.parse(s);if(!a.accountsEnabled||!a.guestEditingEnabled||a.socialLoginEnabled||a.providers.length||a.user)process.exit(1);console.log("Email registration enabled; social sign-in disabled; guest editing available.");'
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/studio) == 200 ]]
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/projects) == 401 ]]
-curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/ai/status | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const a=JSON.parse(s);if(a.available||!a.freeTrialRequiresAccount||a.limits.maxDuration!==60||a.modes.some(m=>m.available))process.exit(1);console.log("Qwen trial and Yandex prepared; guests cannot start model calls.");'
+curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/ai/status | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const a=JSON.parse(s);if(a.available||!a.freeTrialRequiresAccount||a.limits.maxDuration!==60||a.modes.some(m=>m.available)||a.billing.unit!=="coin"||a.billing.rubPerCoin!==null||a.billing.paymentsEnabled)process.exit(1);console.log("Qwen trial and Yandex prepared; guests cannot start model calls.");'
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -X POST -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/oauth/google) == 404 ]]
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/ | cmp - dist/index.html
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/favicon.svg | cmp - dist/favicon.svg

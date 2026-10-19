@@ -10,6 +10,7 @@ ENV NODE_ENV=production POKADROVO_PORT=5173 POKADROVO_DATA_DIR=/data
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
+COPY --from=build /app/shared ./shared
 RUN rm -rf server/tests && mkdir /data && chown node:node /data && chmod 700 /data
 USER node
 EXPOSE 5173

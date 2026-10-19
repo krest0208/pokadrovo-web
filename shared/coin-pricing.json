@@ -1,0 +1,13 @@
+{
+  "unit": "coin",
+  "reelsRequestCoins": 1,
+  "trialCoins": 3,
+  "yandexRequestCoins": null,
+  "rubPerCoin": null,
+  "paymentsEnabled": false,
+  "packages": [
+    { "name": "Старт", "coins": 100, "description": "Для первых роликов и знакомства со студией." },
+    { "name": "Автор", "coins": 500, "description": "Для регулярного контента и новых идей." },
+    { "name": "Студия", "coins": 1500, "description": "Для большого потока роликов и частых правок." }
+  ]
+}

@@ -12,6 +12,8 @@
 !public/**
 !server/
 !server/**
+!shared/
+!shared/**
 !tools/
 !tools/**
 !tests/

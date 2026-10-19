@@ -9,7 +9,7 @@ root = Path(__file__).resolve().parents[1]
 output = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else root.parent / 'Pokadrovo-unified.zip'
 if not (root / 'dist/index.html').is_file():
     raise SystemExit('Run npm run build before packaging.')
-directories = ['dist', 'src', 'public', 'server', 'tools', 'tests', 'docs', 'deploy']
+directories = ['dist', 'src', 'public', 'server', 'shared', 'tools', 'tests', 'docs', 'deploy']
 names = ['package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.ts',
          'Dockerfile', '.dockerignore', 'compose.yaml', 'compose.domain.yaml', '.env.example',
          'start-local.sh', 'start-local.bat', 'start-standalone.sh', 'start-standalone.bat']

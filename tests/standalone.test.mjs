@@ -26,6 +26,7 @@ function launch(directory, port, accountsEnabled = false) {
 function delivery() {
   const directory = mkdtempSync(join(tmpdir(), 'pk standalone '));
   cpSync(join(root, 'server'), join(directory, 'server'), { recursive: true });
+  cpSync(join(root, 'shared'), join(directory, 'shared'), { recursive: true });
   mkdirSync(join(directory, 'tools'));
   cpSync(join(root, 'tools/start-standalone.mjs'), join(directory, 'tools/start-standalone.mjs'));
   cpSync(join(root, 'dist'), join(directory, 'dist'), { recursive: true });
