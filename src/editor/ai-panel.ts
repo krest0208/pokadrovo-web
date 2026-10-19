@@ -1,6 +1,7 @@
-import { clone } from './model';
+import { clone, clock } from './model';
 import { download } from './assets';
-import { AiPlan, AiRequest, createAiRequest, validateAiPlan, applyAiPlan } from './ai';
+import { AiPlan, AiRequest, AiMedia, createAiRequest, validateAiPlan, applyAiPlan } from './ai';
+import type { MediaAnalysis, OmniResult } from './omni';
 import type { ToolPort } from './tool-port';
 
 const esc=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -16,19 +17,29 @@ export class AiPanel {
   private node:HTMLElement;private input:HTMLTextAreaElement;private request:AiRequest|null=null;
   private plan:AiPlan|null=null;private abort:AbortController|null=null;private generation=0;
   private projectId:string;private previous:HTMLElement|null=null;private disposed=false;
+  private available:boolean;private checking=false;private connectionAbort=new AbortController();
+  private mediaClipId='';private analysis:MediaAnalysis|null=null;
   constructor(private port:ToolPort){
+    this.available=!!port.provider&&!port.provider.getStatus;
     this.projectId=port.project().id;
     this.node=document.createElement('aside');this.node.className='pe-ai-panel';this.node.hidden=true;
     this.node.ariaLabel='Задание для ИИ-монтажёра';
     this.node.innerHTML=`<header><div><span class="pe-ai-symbol">✦</span><strong>Покадрово AI<small>Ваш замысел. Ваш контроль.</small></strong></div><button type="button" data-ai="close" aria-label="Закрыть панель ИИ">×</button></header>
-    <div class="pe-ai-scroll"><div class="pe-ai-connection"><i></i><span>${port.provider?'Подключён: '+esc(port.provider.name):'Нейросеть пока не подключена'}</span></div>
+    <div class="pe-ai-scroll"><div class="pe-ai-connection"><i></i><span>${port.provider?(port.provider.getStatus?'Проверяем настройки ':'Подключён: ')+esc(port.provider.name):'Нейросеть пока не подключена'}</span></div>
     <label for="pe-ai-prompt">Как смонтировать видео?</label><textarea id="pe-ai-prompt" maxlength="4000" rows="6" placeholder="Опишите задачу: какие кадры оставить, какой темп и настроение нужны…"></textarea>
     <div class="pe-ai-presets">${examples.map((s,i)=>`<button type="button" data-ai="example-${i}">${['Темп и звук','Вертикальный ролик','Убрать лишнее'][i]}</button>`).join('')}</div>
     <p class="pe-ai-context"></p><button type="button" class="pe-ai-submit" data-ai="request">✦ Смонтировать с помощью ИИ</button>
+    <section class="pe-ai-media" ${port.provider?.supportsMedia?'':'hidden'}><h3>Разобрать видео и звук</h3>
+    <p>Для первой пробы выберите исходник MP4 со звуком или WAV: до 60 секунд и 12 МБ. Анализируется весь выбранный файл.</p>
+    <label>Исходник из проекта<select class="pe-ai-media-source" aria-label="Файл для анализа"></select></label>
+    <label class="pe-ai-consent"><input type="checkbox" class="pe-ai-media-consent"/> Разрешаю передать выбранный файл целиком, включая звук, в Qwen через Alibaba Cloud для анализа.</label>
+    <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button>
+    <p class="pe-ai-note">Запросы платные по тарифу провайдера. Пробный лимит — 12 запросов в сутки для владельца. На сервере Покадрово файл не сохраняется.</p></section>
     <button type="button" class="pe-ai-cancel" data-ai="cancel" hidden>Отменить запрос</button>
-    <p class="pe-ai-note">${port.provider?'Сервис получит задание и структуру проекта. Видео и аудиофайлы автоматически не отправляются.':'Кнопка станет доступна после подключения сервиса. Сейчас можно сохранить задание; автоматический монтаж не запускается.'}</p>
+    <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Кнопка станет доступна после подключения сервиса. Сейчас можно сохранить задание; автоматический монтаж не запускается.'}</p>
     <button type="button" class="pe-ai-save" data-ai="save">Сохранить задание в проекте</button>
     <div class="pe-ai-feedback" role="status"></div>
+    <section class="pe-ai-analysis" hidden></section>
     <section class="pe-ai-plan"><h3>План монтажа</h3><p>Здесь появятся правки. Они применяются только после вашего подтверждения.</p></section>
     <details class="pe-ai-dev"><summary>Подготовка подключения</summary><p>Для разработки интеграции: выгрузите запрос, затем загрузите ответ по протоколу Pokadrovo Edit Plan v1.</p><button type="button" data-ai="download">Скачать JSON-запрос</button><button type="button" data-ai="import">Загрузить JSON-план</button><input type="file" accept=".json,application/json" class="pe-ai-plan-file" hidden/></details>
     </div>`;
@@ -37,13 +48,24 @@ export class AiPanel {
     this.input.addEventListener('input',this.draft);
     this.node.addEventListener('click',this.click);
     this.node.addEventListener('keydown',this.key);
-    this.node.querySelector('input')!.addEventListener('change',this.importFile);
+    this.node.querySelector('.pe-ai-plan-file')!.addEventListener('change',this.importFile);
+    this.node.querySelector('.pe-ai-media-source')!.addEventListener('change',this.mediaChange);
+    this.node.querySelector('.pe-ai-media-consent')!.addEventListener('change',this.mediaChange);
     port.root.append(this.node);this.refresh();
+    void this.checkConnection();
   }
   get open(){return !this.node.hidden;}
-  show(){this.previous=document.activeElement as HTMLElement;this.node.hidden=false;this.refresh();this.input.focus({preventScroll:true});}
+  show(){this.previous=document.activeElement as HTMLElement;this.node.hidden=false;this.refresh();this.input.focus({preventScroll:true});void this.checkConnection();}
   close(){this.saveBrief();this.node.hidden=true;this.previous?.isConnected&&this.previous.focus({preventScroll:true});}
   private say(s:string,error=false){const n=this.node.querySelector<HTMLElement>('.pe-ai-feedback')!;n.textContent=s;n.classList.toggle('error',error);}
+  private async checkConnection(){
+    const provider=this.port.provider;if(!provider?.getStatus||this.checking||this.disposed)return;
+    this.checking=true;
+    try{const status=await provider.getStatus(this.connectionAbort.signal);if(this.disposed)return;this.available=status.available;this.node.querySelector('.pe-ai-connection span')!.textContent=status.reason;}
+    catch(error){if(!this.disposed){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
+    finally{this.checking=false;if(!this.disposed)this.refresh();}
+  }
+  private mediaChange=(event:Event)=>{const select=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;if(event.target===select&&select.value!==this.mediaClipId)this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked=false;this.mediaClipId=select.value;this.refresh();};
   private readDraft(){
     this.input.value=this.port.project().brief;
     try{const saved=localStorage.getItem('pokadrovo.ai.draft.'+this.projectId);if(saved!==null)this.input.value=saved.slice(0,4000);}catch{}
@@ -59,10 +81,18 @@ export class AiPanel {
     if(this.port.project().id!==this.projectId){
       this.abort?.abort();this.generation++;this.abort=null;this.request=null;this.plan=null;
       this.projectId=this.port.project().id;this.readDraft();this.renderPlan();
+      this.analysis=null;this.mediaClipId='';this.renderAnalysis();
     }
     const p=this.port.project(),selected=this.port.selected();
     this.node.querySelector('.pe-ai-context')!.textContent=`${p.clips.length} видео/фото · ${p.audio.length} аудио · ${p.ratio}${selected?' · клип выбран':''}`;
-    (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!!this.abort||this.port.busy();
+    (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!this.available||!!this.abort||this.port.busy();
+    const source=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;
+    const clips=[...p.clips,...p.audio].filter(c=>c.kind!=='image'&&this.port.assets.has(c.assetId));
+    if(!clips.some(c=>c.id===this.mediaClipId)){this.mediaClipId=clips.find(c=>c.id===selected?.id)?.id||clips[0]?.id||'';this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked=false;}
+    source.innerHTML=clips.length?clips.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${esc(clock(c.duration))}</option>`).join(''):'<option value="">Сначала добавьте файл в проект</option>';
+    source.value=this.mediaClipId;source.disabled=!!this.abort;
+    const consent=this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!;consent.disabled=!!this.abort;
+    this.node.querySelector<HTMLButtonElement>('[data-ai="analyze"]')!.disabled=!this.port.provider?.supportsMedia||!this.available||!!this.abort||this.port.busy()||!this.mediaClipId||!consent.checked;
     (this.node.querySelector('[data-ai="import"]') as HTMLButtonElement).disabled=!this.request||!!this.abort;
     this.node.querySelector<HTMLElement>('[data-ai="cancel"]')!.hidden=!this.abort;
   }
@@ -73,6 +103,7 @@ export class AiPanel {
     if(action.startsWith('example-')){this.input.value=examples[Number(action.slice(8))];this.draft();this.input.focus();return;}
     if(action==='save'){this.saveBrief();this.say('Задание сохранено. Нейросеть не запускалась.');return;}
     if(action==='request'){void this.send();return;}
+    if(action==='analyze'){void this.send(true);return;}
     if(action==='cancel'){this.cancel();return;}
     if(action==='download'){void this.downloadRequest();return;}
     if(action==='import'){this.node.querySelector<HTMLInputElement>('.pe-ai-plan-file')!.click();return;}
@@ -90,16 +121,39 @@ export class AiPanel {
     const request=await createAiRequest(this.port.project(),this.input.value,this.port.cursor(),this.port.selected());
     this.request=request;this.plan=null;this.renderPlan();this.refresh();return request;
   }
-  private async send(){
+  private async prepareMedia():Promise<AiMedia>{
+    if(!this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked)throw Error('Подтвердите отправку файла в Qwen.');
+    const p=this.port.project(),clip=[...p.clips,...p.audio].find(c=>c.id===this.mediaClipId),asset=clip&&this.port.assets.get(clip.assetId);
+    if(!clip||!asset)throw Error('Выберите исходник из проекта.');
+    if(asset.duration>60||asset.blob.size>12*1024*1024)throw Error('Для первой пробы нужен отдельный исходник до 60 секунд и 12 МБ. Обрезка на таймлайне не уменьшает отправляемый исходник.');
+    const video=clip.kind==='video',mime=video?'video/mp4':'audio/wav';
+    if(video?!(/\.mp4$/i.test(asset.name)||asset.blob.type==='video/mp4'):!(/\.wav$/i.test(asset.name)||['audio/wav','audio/x-wav','audio/wave'].includes(asset.blob.type)))throw Error('Для пробы используйте MP4-видео или WAV-аудио.');
+    this.port.pause();
+    const bytes=new Uint8Array(await asset.blob.arrayBuffer());let binary='';
+    for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+    return {clipId:clip.id,assetId:clip.assetId,mime,data:btoa(binary)};
+  }
+  private async send(withMedia=false){
     if(!this.port.provider){this.saveBrief();this.say('Нейросеть не подключена. Задание сохранено.',true);return;}
     if(this.abort)return;
+    if(!this.available){this.say('Сначала настройте подключение в админ-панели.',true);void this.checkConnection();return;}
     const gen=++this.generation;
     try{
       const request=await this.build();if(this.disposed||gen!==this.generation)return;
-      this.abort=new AbortController();this.refresh();this.say('Ожидаем план от сервиса…');
-      const raw=await this.port.provider.createPlan(request,this.abort.signal);
+      this.abort=new AbortController();this.refresh();this.say(withMedia?'Подготавливаем выбранный файл…':'Ожидаем план от сервиса…');
+      const media=withMedia?await this.prepareMedia():undefined;
+      if(this.disposed||gen!==this.generation||this.abort.signal.aborted)return;
+      this.say(withMedia?'Qwen анализирует изображение, речь и звуки. Это может занять до 90 секунд…':'Ожидаем план от сервиса…');
+      const raw=await this.port.provider.createPlan(request,this.abort.signal,media);
       if(this.disposed||gen!==this.generation)return;
-      this.plan=validateAiPlan(raw,request);this.renderPlan();this.say('Проверьте план перед применением.');
+      if(raw&&typeof raw==='object'&&'plan' in raw&&'analysis' in raw){
+        const result=raw as OmniResult;
+        if(result.analysis){this.analysis=result.analysis;this.renderAnalysis();}
+        this.plan=result.plan===null?null:validateAiPlan(result.plan,request);
+        const usage=result.usage;const tokens=Number.isSafeInteger(usage?.inputTokens)&&Number.isSafeInteger(usage?.outputTokens)?` Токены: вход ${usage.inputTokens}, выход ${usage.outputTokens}.`:'';
+        this.say((this.plan?'Результат готов. Проверьте план перед применением.':result.summary||'Анализ готов. Монтаж не изменён.')+tokens);
+      }else{this.plan=validateAiPlan(raw,request);this.say('Проверьте план перед применением.');}
+      this.renderPlan();
     }catch(e){if(!this.disposed&&gen===this.generation)this.say(e instanceof Error?e.message:String(e),true);}
     finally{if(!this.disposed&&gen===this.generation){this.abort=null;this.refresh();}}
   }
@@ -126,6 +180,11 @@ export class AiPanel {
     if(!this.plan){node.innerHTML='<h3>План монтажа</h3><p>Здесь появятся правки. Они применяются только после вашего подтверждения.</p>';return;}
     node.innerHTML=`<h3>План: ${this.plan.operations.length} действий</h3><p>${esc(this.plan.summary)}</p><ol>${this.plan.operations.map(o=>`<li><strong>${esc(names[o.type])}</strong><small>${esc('id' in o?o.id:'value' in o?o.value:o.type==='caption'?o.text:'На таймлайне')}</small></li>`).join('')}</ol><div><button type="button" data-ai="apply">Применить план</button><button type="button" data-ai="reject">Отклонить</button></div><small>Все правки можно отменить одним действием.</small>`;
   }
+  private renderAnalysis(){
+    const node=this.node.querySelector<HTMLElement>('.pe-ai-analysis')!;node.hidden=!this.analysis;if(!this.analysis)return;
+    const a=this.analysis;
+    node.innerHTML=`<h3>Что происходит в исходнике</h3><p>${esc(a.summary)}</p><h4>Речь</h4><p>${esc(a.speech||'Разборчивой речи не обнаружено.')}</p><h4>Звуки и музыка</h4><p>${esc(a.audio||'Описание звуков не получено.')}</p><p class="pe-ai-note">Таймкоды ниже относятся к исходному файлу ${esc(this.port.assets.get(a.assetId)?.name||'')}. Это оценка модели: проверьте её перед монтажом.</p><ol>${a.events.map(e=>`<li><strong>${esc(clock(e.from))}–${esc(clock(e.to))}</strong><p>${esc(e.visual)}</p><p>${esc(e.audio)}</p>${e.speech?`<p>Речь: ${esc(e.speech)}</p>`:''}</li>`).join('')}</ol>${a.limitations.length?`<h4>Что требует проверки</h4><ul>${a.limitations.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}`;
+  }
   private async apply(){
     if(!this.request||!this.plan||this.port.busy())return;
     const current=this.port.project(),request=this.request,plan=this.plan;
@@ -138,9 +197,10 @@ export class AiPanel {
     }catch(e){this.say(e instanceof Error?e.message:String(e),true);}
   }
   dispose(){
-    this.disposed=true;this.generation++;this.abort?.abort();this.draft();
+    this.disposed=true;this.generation++;this.abort?.abort();this.connectionAbort.abort();this.draft();
     this.input.removeEventListener('input',this.draft);this.node.removeEventListener('click',this.click);
-    this.node.removeEventListener('keydown',this.key);this.node.querySelector('input')!.removeEventListener('change',this.importFile);
+    this.node.removeEventListener('keydown',this.key);this.node.querySelector('.pe-ai-plan-file')!.removeEventListener('change',this.importFile);
+    this.node.querySelector('.pe-ai-media-source')!.removeEventListener('change',this.mediaChange);this.node.querySelector('.pe-ai-media-consent')!.removeEventListener('change',this.mediaChange);
     this.node.remove();
   }
 }

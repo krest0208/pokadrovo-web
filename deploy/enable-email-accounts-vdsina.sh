@@ -17,9 +17,14 @@ systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_DA
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_PUBLIC_ORIGIN=https://pokadrovo.ru'
 systemctl show -p Environment --value pokadrovo.service | grep -Fq 'POKADROVO_HOST=127.0.0.1'
 systemctl is-active --quiet pokadrovo.service
-pk_files=(server/setup.mjs server/accounts.mjs server/app.mjs server/standalone.mjs server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/layered-copy.ts)
+pk_files=(server/setup.mjs server/accounts.mjs server/app.mjs server/ai.mjs server/standalone.mjs server/public/admin.html server/public/admin.js src/Studio.tsx src/account/api.ts src/account/AccountViews.tsx src/AiHome.tsx src/layered-copy.ts src/editor/ai.ts src/editor/ai-panel.ts src/editor/omni.ts src/editor/editor.css)
+pk_existing=()
+pk_new=()
 for pk_file in "${pk_files[@]}"; do
-  [[ -f "$pk_source/$pk_file" && -f "$pk_app/$pk_file" && ! -L "$pk_app/$pk_file" ]] || exit 1
+  [[ -f "$pk_source/$pk_file" && ! -L "$pk_app/$pk_file" ]] || exit 1
+  if [[ -f "$pk_app/$pk_file" ]]; then pk_existing+=("$pk_file");
+  elif [[ "$pk_file" == server/ai.mjs || "$pk_file" == src/editor/omni.ts ]]; then pk_new+=("$pk_file");
+  else exit 1; fi
 done
 cd "$pk_source"
 npm ci --no-audit --no-fund
@@ -29,13 +34,14 @@ NODE_OPTIONS=--max-old-space-size=512 npm exec -- tsc --noEmit
 NODE_OPTIONS=--max-old-space-size=512 npm exec -- vite build
 install -d -m 0700 /opt/pokadrovo/backups
 pk_backup="$(mktemp -d /opt/pokadrovo/backups/email-accounts-before-XXXXXXXX)"
-tar -C "$pk_app" -czf "$pk_backup/code.tar.gz" dist "${pk_files[@]}"
+tar -C "$pk_app" -czf "$pk_backup/code.tar.gz" dist "${pk_existing[@]}"
 if [[ -f "$pk_drop" ]]; then cp -a "$pk_drop" "$pk_backup/email-accounts.conf"; fi
 pk_rollback() {
   trap - ERR
   echo "Update failed; restoring code and service settings from $pk_backup" >&2
   systemctl stop pokadrovo.service || true
   tar -C "$pk_app" -xzf "$pk_backup/code.tar.gz"
+  for pk_file in "${pk_new[@]}"; do rm -f -- "$pk_app/$pk_file"; done
   if [[ -f "$pk_backup/email-accounts.conf" ]]; then install -m 0644 "$pk_backup/email-accounts.conf" "$pk_drop"; else rm -f "$pk_drop"; fi
   systemctl daemon-reload
   systemctl start pokadrovo.service
@@ -73,6 +79,7 @@ done
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/session | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const a=JSON.parse(s);if(!a.accountsEnabled||!a.guestEditingEnabled||a.socialLoginEnabled||a.providers.length||a.user)process.exit(1);console.log("Email registration enabled; social sign-in disabled; guest editing available.");'
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/studio) == 200 ]]
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/projects) == 401 ]]
+curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/ai/status | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const a=JSON.parse(s);if(a.available||!a.ownerOnly||a.limits.maxDuration!==60)process.exit(1);console.log("Omni pilot installed; public paid requests disabled.");'
 [[ $(curl --silent -o /dev/null -w '%{http_code}' --max-time 5 -X POST -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/api/account/oauth/google) == 404 ]]
 curl --fail --silent --max-time 5 -H 'Host: pokadrovo.ru' http://127.0.0.1:5173/ | cmp - dist/index.html
 trap - ERR

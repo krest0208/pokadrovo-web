@@ -1,0 +1,46 @@
+import { sessionCsrf } from '../account/api';
+import type { AiMedia, AiProvider, AiRequest } from './ai';
+
+export interface MediaAnalysis {
+ clipId:string;assetId:string;duration:number;summary:string;speech:string;audio:string;
+ events:{from:number;to:number;visual:string;audio:string;speech:string}[];limitations:string[];
+}
+export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summary:string;usage:{inputTokens:number|null;outputTokens:number|null};}
+
+/** Credentials and provider URLs never enter the browser. Context stays in this editor session. */
+export class OmniAiProvider implements AiProvider {
+ readonly name='Qwen Omni · пробный режим';readonly supportsMedia=true;
+ private context:{projectId:string;analysis:MediaAnalysis}|null=null;
+ async getStatus(signal?:AbortSignal){
+  const r=await fetch('/api/ai/status',{credentials:'same-origin',redirect:'error',signal,headers:{Accept:'application/json'}});
+  if(!r.ok)throw Error('Не удалось проверить подключение ИИ.');
+  const s=await r.json();if(typeof s.available!=='boolean'||typeof s.reason!=='string')throw Error('Некорректный статус ИИ.');
+  return {available:s.available,reason:s.reason};
+ }
+ async createPlan(request:AiRequest,signal:AbortSignal,media?:AiMedia):Promise<OmniResult>{
+  const controller=new AbortController(),abort=()=>controller.abort();
+  if(signal.aborted)throw new DOMException('Запрос отменён','AbortError');
+  signal.addEventListener('abort',abort,{once:true});const timer=setTimeout(abort,100000);
+  let context:MediaAnalysis|null=null;
+  if(this.context?.projectId===request.projectId){
+   const a=this.context.analysis;
+   if([...request.project.clips,...request.project.audio].some(c=>c.id===a.clipId&&c.assetId===a.assetId))context=a;
+  }
+  try{
+   const response=await fetch('/api/ai/edit-plan',{method:'POST',credentials:'same-origin',redirect:'error',signal:controller.signal,
+    headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':sessionCsrf()},
+    body:JSON.stringify({request,media,mediaConsent:!!media,context:media?null:context})});
+   if(!response.body||!response.headers.get('content-type')?.includes('application/json'))throw Error('Сервис ИИ вернул неожиданный ответ.');
+   const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
+   try{while(true){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>512000)throw Error('Ответ ИИ слишком большой.');chunks.push(r.value);}}
+   finally{await reader.cancel().catch(()=>{});}
+   const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}
+   const result=JSON.parse(new TextDecoder().decode(bytes));
+   if(!response.ok)throw Error(typeof result.error==='string'?result.error:`Сервис ИИ недоступен (${response.status}).`);
+   if(!result||typeof result!=='object'||!('plan' in result)||!('analysis' in result)||typeof result.summary!=='string')throw Error('Некорректный результат ИИ.');
+   if(result.analysis)this.context={projectId:request.projectId,analysis:result.analysis};
+   return result as OmniResult;
+  }catch(error){if(controller.signal.aborted)throw Error('Запрос отменён или завершился по времени. Повторно он автоматически не отправляется.');throw error;}
+  finally{clearTimeout(timer);signal.removeEventListener('abort',abort);}
+ }
+}

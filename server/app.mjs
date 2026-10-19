@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAccounts } from './accounts.mjs';
+import { createAi } from './ai.mjs';
 import { OWNER_PATH } from './owner-route.mjs';
 import { HttpError, deny, cookie, json, body } from './http.mjs';
 import { openStore, token, digest, equal, checkPassword, hashPassword, newTotpSecret, verifyTotp } from './security.mjs';
@@ -100,6 +101,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     const [id, signature] = cookie(req, visitorName).split('.');
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
+  const ai = createAi({ store, now, settings, session: accounts.session, sameOrigin, request: options.aiFetch });
   function overview(days) {
     const to = new Date(now()).toISOString().slice(0, 10), from = new Date(now() - (days - 1) * DAY).toISOString().slice(0, 10);
     const start = Date.parse(from + 'T00:00:00Z');
@@ -114,7 +116,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     return { from, to, timezone: 'UTC', startedAt: Number(store.get('SELECT value FROM meta WHERE key=?', 'started').value), series,
       metrics: { pageRequests: sum('page_requests'), uniqueBrowsers: unique, visits: sum('site_view'), editorOpens: sum('editor_open'), projects, projectSaves: sum('project_saved'), exports: sum('export_completed'), aiRequests: sum('ai_request') },
       breakdown: { devices: store.all("SELECT device label,count(DISTINCT visitor) count FROM events WHERE kind='site_view' AND at>=? AND at<=? GROUP BY device", start, now()), modes: store.all("SELECT mode label,count(*) count FROM events WHERE kind='editor_open' AND at>=? AND at<=? GROUP BY mode", start, now()), formats: store.all("SELECT format label,count(*) count FROM events WHERE kind='export_completed' AND at>=? AND at<=? GROUP BY format", start, now()) },
-      users: accounts.userMetrics(days), integrations: { users: accountsEnabled, payments: false, aiProvider: false },
+      users: accounts.userMetrics(days), integrations: { users: accountsEnabled, payments: false, aiProvider: ai.adminState().connected },
       notes: ['Счётчик запросов включает обновления страницы и ботов. Это не число людей.', 'События и приблизительные уникальные браузеры учитываются только с согласия пользователя. DNT/GPC отключают события.', 'Данные начинаются с запуска этого сервера. История старого хостинга не импортирована.', 'Клиентские события не являются биллингом: их можно блокировать или подделывать.', 'Экспорт означает подготовленный файл и отправку на скачивание, а не подтверждённую загрузку в соцсеть.'] };
   }
   async function route(req, res) {
@@ -124,6 +126,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
     if (await accounts.route(req, res, url)) return;
+    if (await ai.route(req, res, path)) return;
     if (req.method === 'POST' && path === '/api/admin/login') return json(res, 200, await authenticateOwner(req, res, await body(req)));
     if (path.startsWith('/api/admin/')) {
       const s = session(req);
@@ -139,12 +142,13 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
       }
       if (req.method === 'GET' && path === '/api/admin/audit') return json(res, 200, { items: store.all('SELECT at,action,result FROM audit ORDER BY id DESC LIMIT 100') });
       if (req.method === 'GET' && path === '/api/admin/settings') {
-        const c = settings(); return json(res, 200, { provider: c.provider, model: c.model, keyConfigured: !!c.secret, updated: c.updated, analyticsEnabled: !!c.analytics, connected: false });
+        const c = settings(); return json(res, 200, { provider: c.provider, model: c.model, keyConfigured: !!c.secret, updated: c.updated, analyticsEnabled: !!c.analytics, ...ai.adminState() });
       }
+      if (req.method === 'GET' && path === '/api/admin/ai/usage') return json(res, 200, { items: ai.usage() });
       if (req.method === 'PUT' && path === '/api/admin/settings') {
         const data = await body(req); await reauth(req, data);
         const old = settings();
-        if (!['openai', 'anthropic', 'google', 'custom'].includes(data.provider) || typeof data.model !== 'string' || !/^[\w./:-]{0,120}$/.test(data.model)) deny(400, 'Проверьте провайдера и имя модели.');
+        if (!['openai', 'anthropic', 'google', 'custom', 'qwen'].includes(data.provider) || typeof data.model !== 'string' || !/^[\w./:-]{0,120}$/.test(data.model)) deny(400, 'Проверьте провайдера и имя модели.');
         if (typeof data.analyticsEnabled !== 'boolean') deny(400, 'Некорректная настройка аналитики.');
         let secret = old.secret;
         if (data.removeKey === true) secret = null;
@@ -152,9 +156,12 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
           if (typeof data.apiKey !== 'string' || !/^[\x21-\x7e]{12,4096}$/.test(data.apiKey)) deny(400, 'Ключ должен содержать 12–4096 символов без пробелов и переносов строк.');
           secret = store.seal(data.apiKey);
         } else if (data.provider !== old.provider && old.secret) deny(400, 'Для другого провайдера укажите новый ключ или удалите прежний.');
-        store.run('UPDATE settings SET provider=?,model=?,secret=?,updated=?,analytics=? WHERE id=1', data.provider, data.model, secret, now(), Number(data.analyticsEnabled));
+        const saveAi = ai.saveConfig(data, { provider: data.provider, model: data.model, secret });
+        store.db.exec('BEGIN IMMEDIATE');
+        try { store.run('UPDATE settings SET provider=?,model=?,secret=?,updated=?,analytics=? WHERE id=1', data.provider, data.model, secret, now(), Number(data.analyticsEnabled)); saveAi(); store.db.exec('COMMIT'); }
+        catch (error) { store.db.exec('ROLLBACK'); throw error; }
         store.audit(data.removeKey ? 'api_key_removed' : 'settings_updated', 'ok', now());
-        return json(res, 200, { ok: true, keyConfigured: !!secret, connected: false });
+        return json(res, 200, { ok: true, keyConfigured: !!secret, ...ai.adminState() });
       }
       if (req.method === 'POST' && path === '/api/admin/password') {
         const data = await body(req); await reauth(req, data);

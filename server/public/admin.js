@@ -11,7 +11,7 @@
     csrf = ''; owner = null; settings = null; clearTimeout(idleTimer);
     app.hidden = true; $('login-screen').hidden = false; text($('login-error'), message);
     $('login-form').elements.password.value = ''; $('login-form').elements.code.value = '';
-    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body']) $(id).replaceChildren();
+    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage']) $(id).replaceChildren();
     for (const form of app.querySelectorAll('form')) form.reset();
     text($('totp-secret'), ''); $('totp-confirm').hidden = true;
   }
@@ -117,14 +117,28 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
   async function loadSettings() {
     settings = await request('/settings'); if (!owner) return;
     const form = $('settings-form'); form.elements.provider.value = settings.provider; form.elements.model.value = settings.model;
+    form.elements.endpoint.value = settings.endpoint || ''; form.elements.aiEnabled.checked = settings.aiEnabled;
     form.elements.apiKey.value = ''; form.elements.password.value = ''; form.elements.removeKey.checked = false; form.elements.analyticsEnabled.checked = settings.analyticsEnabled;
     text($('key-status'), settings.keyConfigured ? 'Ключ сохранён на сервере' : 'Ключ не указан');
-    text($('ai-connection-status'), 'Не подключена');
+    text($('ai-connection-status'), settings.connected ? 'Проверена запросом' : settings.configured && settings.aiEnabled ? 'Готова к пробе' : 'Не включена');
+    text($('ai-connection-note'), settings.connected ? 'Qwen успешно ответил на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели будет проверен первым запросом из редактора.' : 'Для запуска выберите Qwen Omni, укажите ключ и Base URL, затем включите пробный режим.');
+    updateAiFields();
+    const usage = await request('/ai/usage');
+    $('ai-usage').replaceChildren(...(usage.items.length ? usage.items.map(row => element('p', 'field-note', `${new Date(row.at).toLocaleString('ru-RU')} · ${row.result === 'ok' ? 'Готово' : row.result === 'started' ? 'Выполняется' : 'Не завершён'}${row.media_seconds === null ? '' : ' · ' + Math.round(row.media_seconds) + ' сек.'}${row.input_tokens === null ? '' : ' · токены ' + row.input_tokens + ' / ' + row.output_tokens}`)) : [element('p', 'field-note', 'Запросов ещё нет.')]));
   }
+  function updateAiFields() {
+    const form = $('settings-form'), qwen = form.elements.provider.value === 'qwen';
+    form.elements.endpoint.disabled = !qwen; form.elements.endpoint.required = qwen;
+    form.elements.aiEnabled.disabled = !qwen; if (!qwen) form.elements.aiEnabled.checked = false;
+  }
+  $('settings-form').elements.provider.addEventListener('change', () => {
+    const form = $('settings-form'); if (form.elements.provider.value === 'qwen') form.elements.model.value = 'qwen3.8-omni-flash'; updateAiFields();
+  });
   bindForm('settings-form', async (data, form) => {
     data.analyticsEnabled = form.elements.analyticsEnabled.checked; data.removeKey = form.elements.removeKey.checked;
+    data.aiEnabled = !data.removeKey && form.elements.provider.value === 'qwen' && form.elements.aiEnabled.checked;
     if (data.removeKey && !confirm('Удалить API-ключ с сервера?')) return;
-    await request('/settings', { method: 'PUT', data }); form.reset(); await loadSettings(); notify('Настройки сохранены. Ключ не проверялся у провайдера, ИИ не запускался.');
+    await request('/settings', { method: 'PUT', data }); form.reset(); await loadSettings(); notify('Настройки сохранены. Платный запрос не запускался. Проверка — из ИИ-панели редактора.');
   });
   async function loadSecurity() {
     const session = await request('/session'); if (!owner) return; owner.totpEnabled = session.totpEnabled; $('password-form').elements.newLogin.value = session.login;

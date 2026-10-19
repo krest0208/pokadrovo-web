@@ -4,6 +4,7 @@ export type Session = { user:User|null; csrf:string; providers:Provider[]; accou
 let active:Session|null=null;
 export class AccountError extends Error { constructor(message:string,public status:number,public totpRequired=false){super(message);} }
 export const currentUser=()=>active?.user||null;
+export const sessionCsrf=()=>active?.csrf||'';
 export const storageScope=()=>active?.user?.id||(active?.accountsEnabled===false||active?.guestEditingEnabled===true?'guest-local':null);
 export function acceptSession(session:Session){active=session;return session;}
 export async function request<T=Record<string,unknown>>(path:string,method='GET',data?:unknown):Promise<T>{

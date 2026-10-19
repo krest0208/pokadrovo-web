@@ -1,28 +1,32 @@
 # Pokadrovo Edit Plan v1
 
-The web editor now accepts an optional `AiProvider`. **No provider is configured by default.**
-The AI panel is a prompt/plan interface, not a simulated neural network.
+The web editor accepts an optional `AiProvider`. Owners now receive the `OmniAiProvider`
+adapter, which is unavailable until its server settings are configured and explicitly enabled.
+No key, paid request or media upload is configured by default. See [AI-OMNI-PILOT.md](AI-OMNI-PILOT.md).
 
 ## Connection
 
 ```ts
-import { HttpAiProvider } from './editor/ai';
+import { OmniAiProvider } from './editor/omni';
 
-// After implementing the server endpoint:
+// Studio.tsx does this only for a server-authenticated owner:
 new Editor(host, {
   ...existingOptions,
-  aiProvider: new HttpAiProvider('/api/ai/edit-plan')
+  aiProvider: new OmniAiProvider()
 });
 ```
 
 Keep model API keys on the server, never in `VITE_*`, browser storage or repository files.
-The same-origin endpoint must authenticate the user, check ownership and quotas, limit body size,
-and rate-limit work. It should return JSON, not executable code. The client sends no video/audio
-bytes, Blob URLs, credentials or thumbnails. Its request contains a prompt and a versioned
-project snapshot: file names, asset IDs, clip timings and settings.
+The same-origin endpoint authenticates the owner, validates CSRF and quotas, limits body size,
+and returns JSON, never executable code. The `AiRequest` document contains no video/audio
+bytes, Blob URLs, credentials or thumbnails: only a prompt and versioned project snapshot.
+The Omni HTTP envelope is `{request, media?, mediaConsent?, context?}`. `media` is a separately
+selected MP4 or WAV sent only after explicit consent in the media section. Normal text requests
+do not upload files. This first pilot accepts one complete source file up to 60 seconds / 12 MiB.
 
-This contract alone does not provide semantic video analysis. A future analysis pipeline needs
-explicit media upload/consent, server-side ownership checks, retention rules and a job queue.
+The metadata-only contract alone does not provide semantic video analysis. The Omni media path
+sends the source video with its audio to Qwen and receives source-time scene/audio annotations.
+Long-file analysis still requires segmentation, retained context and a job queue.
 Treat filenames, captions and prompts as untrusted data when constructing model instructions.
 
 ## Request

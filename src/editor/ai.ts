@@ -26,8 +26,11 @@ export interface AiRequest {
 export interface AiPlan { version:1; requestId:string; projectId:string; revision:string; summary:string; operations:Operation[]; }
 export interface AiProvider {
   readonly name:string;
-  createPlan(request:AiRequest,signal:AbortSignal):Promise<unknown>;
+  readonly supportsMedia?:boolean;
+  getStatus?(signal?:AbortSignal):Promise<{available:boolean;reason:string}>;
+  createPlan(request:AiRequest,signal:AbortSignal,media?:AiMedia):Promise<unknown>;
 }
+export interface AiMedia {clipId:string;assetId:string;mime:'video/mp4'|'audio/wav';data:string;}
 const snapshot=(p:Project)=>JSON.stringify(normalizeProject(p));
 /** Change marker, not an authentication token. Apply also compares the complete snapshot. */
 export async function projectRevision(project:Project):Promise<string>{
