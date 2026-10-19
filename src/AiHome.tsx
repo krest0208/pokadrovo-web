@@ -23,18 +23,17 @@ export type AiHomeProps = {
   projects: RecentProject[];
 };
 type State = {
-  prompt: string; scene: number; step: number; expanded: boolean;
-  motionOff: boolean; menuOpen: boolean; mediaOpen: boolean;
-  files: FileList | null; error: string; draftSaved: boolean; depth: number;
+  prompt: string; scene: number; step: number;
+  menuOpen: boolean; mediaOpen: boolean;
+  files: FileList | null; error: string; draftSaved: boolean;
 };
-type Glyph = "arrow" | "up" | "paperclip" | "moon" | "sun" | "layers" | "play" | "pause" | "close" | "check" | "folder" | "menu" | "plus" | "chevron";
+type Glyph = "arrow" | "up" | "paperclip" | "moon" | "sun" | "layers" | "close" | "check" | "folder" | "menu" | "plus" | "chevron";
 const paths: Record<Glyph, string> = {
   arrow: "M4 12h15m-6-6 6 6-6 6", up: "M5 19 19 5M5 5h14v14",
   paperclip: "m8 13 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9",
   moon: "M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z",
   sun: "M12 3V1m0 22v-2M3 12H1m22 0h-2M5 5 3.5 3.5M20.5 20.5 19 19M5 19l-1.5 1.5M20.5 3.5 19 5M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0",
   layers: "m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4",
-  play: "m8 4 12 8L8 20V4Z", pause: "M8 5v14M16 5v14",
   close: "m6 6 12 12M6 18 18 6", check: "m5 12 5 5L20 7",
   folder: "M3 6h7l2 3h9v11H3V6Z", menu: "M4 7h16M4 12h16M4 17h16",
   plus: "M12 5v14M5 12h14", chevron: "m8 4 8 8-8 8"
@@ -58,8 +57,8 @@ const stepContent = [
  * No API calls, external assets, new dependencies or video-generation claims.
  */
 export default class AiHome extends React.Component<AiHomeProps, State> {
-  state: State = { prompt: "", scene: 0, step: 0, expanded: false, motionOff: false,
-    menuOpen: false, mediaOpen: false, files: null, error: "", draftSaved: false, depth: 0 };
+  state: State = { prompt: "", scene: 0, step: 0,
+    menuOpen: false, mediaOpen: false, files: null, error: "", draftSaved: false };
   private root: HTMLDivElement | null = null;
   private stage: HTMLDivElement | null = null;
   private textarea: HTMLTextAreaElement | null = null;
@@ -78,8 +77,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     this.motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     try {
       const prompt = localStorage.getItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest")) || "";
-      const motionOff = localStorage.getItem("pokadrovo.home.motion.v3") === "off";
-      this.setState({ prompt: prompt.slice(0, 1600), motionOff });
+      this.setState({ prompt: prompt.slice(0, 1600) });
     } catch { /* Private browsing may disable persistence; editing still works. */ }
     document.addEventListener("keydown", this.onKey);
     this.motionQuery.addEventListener("change", this.onMotionPreference);
@@ -95,7 +93,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     if (_previousProps.account?.id !== this.props.account?.id) {
       try { this.setState({prompt:localStorage.getItem("pokadrovo.home.brief.v3:" + (this.props.account?.id || "guest")) || "", files:null}); } catch {}
     }
-    if (previousState.motionOff !== this.state.motionOff || previousState.mediaOpen !== this.state.mediaOpen || previousState.files !== this.state.files) {
+    if (previousState.mediaOpen !== this.state.mediaOpen || previousState.files !== this.state.files) {
       this.motion?.refresh();
     }
   }
@@ -111,7 +109,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.urls.forEach(url => URL.revokeObjectURL(url));
   }
-  private reduced = () => this.state.motionOff || !!this.motionQuery?.matches;
+  private reduced = () => !!this.motionQuery?.matches;
   private onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       if (this.state.mediaOpen) this.closeMedia();
@@ -141,12 +139,6 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
     }, 350);
   };
   private choosePrompt = (prompt: string) => { this.setPrompt(prompt); this.focusIdea(); };
-  private toggleMotion = () => {
-    const motionOff = !this.state.motionOff;
-    this.setState({ motionOff });
-    if (motionOff) this.resetPointer();
-    try { localStorage.setItem("pokadrovo.home.motion.v3", motionOff ? "off" : "on"); } catch {}
-  };
   private onPointer = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!this.stage || this.reduced()) return;
     const rect = this.stage.getBoundingClientRect();
@@ -195,7 +187,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
 
   render() {
     const { theme, onToggleTheme, onContinue, projects, onOpenProject } = this.props;
-    const { prompt, scene, step, expanded, motionOff, menuOpen, files, error, mediaOpen, depth } = this.state;
+    const { prompt, scene, step, menuOpen, files, error, mediaOpen } = this.state;
     const chosen = shots[scene];
     const previewImage = files?.length && this.mediaKind === "image" ? this.mediaUrl : chosen.image;
     return <div className="pkh" data-theme={theme} data-motion={this.reduced() ? "off" : "on"} ref={node => { this.root = node; }}>
@@ -224,7 +216,7 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
             <div className="pkh-short-note"><span className="pkh-hand-line" aria-hidden="true"/>{t.caption}</div>
           </div>
 
-          <div className={`pkh-stage ${expanded ? "is-expanded" : ""}`} data-scroll-scene="hero" style={{ "--layer-depth": depth } as React.CSSProperties} ref={node => { this.stage = node; }} onMouseMove={this.onPointer} onMouseLeave={this.resetPointer}>
+          <div className="pkh-stage" data-scroll-scene="hero" style={{ "--layer-depth": 0 } as React.CSSProperties} ref={node => { this.stage = node; }} onMouseMove={this.onPointer} onMouseLeave={this.resetPointer}>
             <span className="pkh-ghost-title" aria-hidden="true">FRAME</span>
             <div className="pkh-frame-outline" aria-hidden="true"><span>SEQUENCE / 001</span><i/><b/></div>
             <div className="pkh-blue-print" aria-hidden="true"><span>POKADROVO</span><strong>BEYOND<br/>THE FRAME.</strong><i>STORY FIRST.</i></div>
@@ -241,7 +233,6 @@ export default class AiHome extends React.Component<AiHomeProps, State> {
             <figure className="pkh-portrait-card" aria-hidden="true"><span className="pkh-tape"/><img src={frames.portrait} alt="" draggable={false}/><figcaption><b>002</b><span>{t.framePortrait}</span><i>24 / 36</i></figcaption></figure>
             <div className="pkh-note-paper"><span className="pkh-paper-pin"/><span className="pkh-note-cap">{t.noteTitle}</span><p>{t.noteText}</p><span className="pkh-note-sign">{t.noteSign}<span className="pkh-mini-arrow" aria-hidden="true"/></span></div>
             <div className="pkh-contact-strip" aria-label={t.selectFrame}>{shots.map((shot, index) => <button key={shot.number} type="button" className={scene === index ? "is-selected" : ""} onClick={() => this.setState({ scene: index })} aria-label={`${t.selectFrame}: ${shot.label}`} aria-pressed={scene === index}><span className="pkh-film-perf"/><img src={shot.image} alt=""/><span className="pkh-strip-label">{shot.number}<i>{shot.label}</i></span></button>)}<span className="pkh-strip-time" aria-hidden="true">00 : 00 : 18</span></div>
-            <div className="pkh-stage-controls"><span className="pkh-autoplay-label">Кадры оживают при прокрутке</span><label className="pkh-depth-control"><span>Глубина</span><input type="range" min="0" max="100" step="1" value={Math.round(depth * 100)} aria-label="Глубина композиции" onChange={event => this.setState({ depth: Number(event.currentTarget.value) / 100, expanded: Number(event.currentTarget.value) > 0 })}/></label><button type="button" className="pkh-layer-toggle" aria-pressed={expanded} onClick={() => this.setState({ expanded: !expanded, depth: expanded ? 0 : 1 })}><Icon name="layers" size={15}/>{expanded ? t.collapse : t.expand}</button><button type="button" className="pkh-motion-toggle" onClick={this.toggleMotion} title={motionOff ? t.resumeMotion : t.pauseMotion} aria-label={motionOff ? t.resumeMotion : t.pauseMotion} aria-pressed={motionOff}><Icon name={motionOff ? "play" : "pause"} size={14}/></button></div>
           </div>
 
           <div className="pkh-composer-wrap" data-scroll-scene="brief">
