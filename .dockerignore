@@ -18,6 +18,8 @@
 !tools/**
 !tests/
 !tests/**
+!deploy/
+!deploy/**
 **/.env
 **/.env.*
 **/.pokadrovo-private/**

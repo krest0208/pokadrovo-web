@@ -1,0 +1,33 @@
+[Unit]
+Description=Install verified Pokadrovo main releases
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=root
+Group=root
+ExecStart=/usr/bin/flock --nonblock /run/pokadrovo-deploy/agent.lock /usr/bin/node /usr/local/lib/pokadrovo-deploy/agent.mjs
+RuntimeDirectory=pokadrovo-deploy
+RuntimeDirectoryMode=0700
+StateDirectory=pokadrovo-deploy
+StateDirectoryMode=0700
+UMask=0077
+RuntimeMaxSec=20min
+TimeoutStopSec=30s
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+ReadOnlyPaths=/var/lib/pokadrovo
+ReadWritePaths=/opt/pokadrovo /var/lib/pokadrovo-deploy /run/pokadrovo-deploy
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=160M
+TasksMax=64
