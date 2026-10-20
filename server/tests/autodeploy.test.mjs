@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { TARGET, successfulRun, isSha, child, inventory, copyFiles, atomicJson, readJson, runCycle, activateRelease, recoverRelease, pruneBackups } from '../../deploy/autodeploy/core.mjs';
 import { githubClient, limitedJson, buildUnitArgs } from '../../deploy/autodeploy/agent.mjs';
-import { buildSteps } from '../../deploy/autodeploy/worker.mjs';
+import { buildSteps, runBuildSteps } from '../../deploy/autodeploy/worker.mjs';
 const sha='a'.repeat(40), other='b'.repeat(40), root=fileURLToPath(new URL('../..',import.meta.url));
 const success={id:42,head_sha:sha,head_branch:'main',event:'push',status:'completed',conclusion:'success',path:'.github/workflows/check-web.yml',head_repository:{full_name:TARGET.repo}};
 function temp(){return mkdtempSync(join(tmpdir(),'pk-autodeploy-'));}
@@ -50,6 +50,30 @@ test('builder has no production paths, root capabilities or writable paths outsi
   for(const expected of ['--property=User=pokadrovo-build','--property=NoNewPrivileges=yes','--property=ProtectSystem=strict','--property=CapabilityBoundingSet=','--property=ReadWritePaths='+source,'--property=KillMode=control-group','--property=BindsTo=pokadrovo-autodeploy.service'])assert.ok(args.includes(expected));
   assert.ok(args.some(x=>x.includes('InaccessiblePaths=/var/lib/pokadrovo /var/lib/pokadrovo-deploy')));
   assert.throws(()=>buildUnitArgs('/var/lib/pokadrovo/source',sha));const steps=buildSteps(root);assert.deepEqual(steps[0][1],['ci','--ignore-scripts','--include=dev','--no-audit','--no-fund']);assert.ok(steps.some(([,a])=>a.includes('server/tests/autodeploy.test.mjs')));
+});
+test('isolated worker finishes every validation step and gives serial tests room on a single CPU',()=>{
+  const directory=temp(),calls=[],messages=[];mkdirSync(join(directory,'server/tests'),{recursive:true});
+  try{
+    runBuildSteps(directory,(command,args,options)=>{calls.push({command,args,options});return {status:0};},message=>messages.push(message));
+    assert.equal(calls.length,7);assert.equal(calls[1].options.timeout,600000);assert.equal(calls[0].options.timeout,240000);
+    assert.ok(calls[1].args.includes('--test-concurrency=1'));assert.ok(calls[1].args.includes('tests/admin-navigation.test.mjs'));
+    assert.ok(calls.at(-1).args.includes('tests/standalone.test.mjs'));
+    for(const {options}of calls){assert.equal(options.cwd,directory);assert.equal(options.env.TMPDIR,join(directory,'.deploy-test-tmp'));assert.equal(options.env.NODE_OPTIONS,'--max-old-space-size=384');}
+    assert.equal(lstatSync(join(directory,'.deploy-test-tmp')).mode&0o777,0o700);
+    assert.ok(messages.some(m=>m.includes('starting server and account tests (limit 600s)')));assert.ok(messages.at(-1).includes('completed standalone tests'));
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+test('isolated worker distinguishes timeouts, failed checks and spawn failures without running later steps',()=>{
+  const cases=[
+    {step:2,result:{status:null,error:Object.assign(Error('timeout'),{code:'ETIMEDOUT'}),signal:'SIGTERM'},message:/timed out during server and account tests after 600s/},
+    {step:3,result:{status:2},message:/failed during TypeScript validation \(exit 2\)/},
+    {step:1,result:{status:null,error:Object.assign(Error('missing'),{code:'ENOENT'})},message:/could not start dependency installation \(ENOENT\)/},
+    {step:4,result:{status:null,signal:'SIGKILL'},message:/failed during Vite production build \(signal SIGKILL\)/}
+  ];
+  for(const scenario of cases){const directory=temp();mkdirSync(join(directory,'server/tests'),{recursive:true});let calls=0;
+    try{assert.throws(()=>runBuildSteps(directory,()=>++calls===scenario.step?scenario.result:{status:0},()=>{}),scenario.message);assert.equal(calls,scenario.step);}
+    finally{rmSync(directory,{recursive:true,force:true});}
+  }
 });
 test('service socket restrictions permit the real Linux network interface check',t=>{
   if(process.platform!=='linux')return t.skip('Linux socket filtering regression');
