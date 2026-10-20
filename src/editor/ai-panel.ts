@@ -30,12 +30,12 @@ export class AiPanel {
     <label for="pe-ai-prompt">Как смонтировать видео?</label><textarea id="pe-ai-prompt" maxlength="4000" rows="6" placeholder="Опишите задачу: какие кадры оставить, какой темп и настроение нужны…"></textarea>
     <div class="pe-ai-presets">${examples.map((s,i)=>`<button type="button" data-ai="example-${i}">${['Темп и звук','Вертикальный ролик','Убрать лишнее'][i]}</button>`).join('')}</div>
     <p class="pe-ai-context"></p><button type="button" class="pe-ai-submit" data-ai="request">✦ Смонтировать с помощью ИИ</button>
-    <section class="pe-ai-media" ${port.provider?.supportsMedia?'':'hidden'}><h3>Разобрать видео и звук</h3>
-    <p>Начните бесплатную пробу с MP4-видео со звуком: до 60 секунд и 12 МБ. После первого анализа также доступен WAV. Анализируется весь выбранный файл.</p>
+    <section class="pe-ai-media" ${port.provider?.supportsMedia?'':'hidden'}><h3 class="pe-ai-media-title">Разобрать исходник</h3>
+    <p class="pe-ai-media-description">MP4 до 60 секунд и 12 МБ. Анализируется весь выбранный файл.</p>
     <label>Исходник из проекта<select class="pe-ai-media-source" aria-label="Файл для анализа"></select></label>
-    <label class="pe-ai-consent"><input type="checkbox" class="pe-ai-media-consent"/> Разрешаю передать выбранный файл целиком, включая звук, в Qwen через Alibaba Cloud для анализа.</label>
-    <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button>
-    <p class="pe-ai-note pe-ai-billing-note">Подарочный баланс: 3 монеты. Успешный ИИ-запрос — 1 монета; один Reels и 7 дней с первого запуска. На сервере Покадрово файл не сохраняется.</p></section>
+    <label class="pe-ai-consent"><input type="checkbox" class="pe-ai-media-consent"/> <span class="pe-ai-consent-copy">Разрешаю отправить выбранный файл провайдеру для анализа.</span></label>
+    <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button></section>
+    <p class="pe-ai-note pe-ai-billing-note">Подарочный баланс: 3 монеты. Успешный ИИ-запрос — 1 монета; один Reels и 7 дней с первого запуска. На сервере Покадрово файл не сохраняется.</p>
     <button type="button" class="pe-ai-cancel" data-ai="cancel" hidden>Отменить запрос</button>
     <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Кнопка станет доступна после подключения сервиса. Сейчас можно сохранить задание; автоматический монтаж не запускается.'}</p>
     <button type="button" class="pe-ai-save" data-ai="save">Сохранить задание в проекте</button>
@@ -65,9 +65,9 @@ export class AiPanel {
     const provider=this.port.provider;if(!provider?.getStatus||this.disposed)return;const generation=++this.statusGeneration;
     try{const status=await provider.getStatus(this.connectionAbort.signal);if(this.disposed||generation!==this.statusGeneration)return;
      this.available=status.available;this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
-     if(provider.service==='reels-trial'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
+     if(provider.service!=='yandex-edit'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
      this.node.querySelector('.pe-ai-connection span')!.textContent=reason;
-     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Тест администратора без списаний в Покадрово. Запросы к провайдерам оплачивает владелец сайта. Общий предел — 12 запросов в сутки.':provider.service==='yandex-edit'?'Стоимость режима будет указана в монетах. Тариф ещё готовится; покупка и списания пока недоступны.':`Подарочный баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. Один Reels, 7 дней с первого запуска. При ошибке монета возвращается. Покупка пока не открыта.`;
+     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Тест администратора без списаний монет. Запрос учитывается в общем лимите выбранного подключения; расходы API несёт сайт.':provider.service==='yandex-edit'?'Стоимость режима будет указана в монетах. Тариф ещё готовится; покупка и списания пока недоступны.':`Подарочный баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. Один Reels, 7 дней с первого запуска. При ошибке монета возвращается. Покупка пока не открыта.`;
     }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
     finally{if(!this.disposed&&generation===this.statusGeneration)this.refresh();}
   }
@@ -96,13 +96,19 @@ export class AiPanel {
     }
     const p=this.port.project(),selected=this.port.selected();
     this.node.querySelector('.pe-ai-context')!.textContent=`${p.clips.length} видео/фото · ${p.audio.length} аудио · ${p.ratio}${selected?' · клип выбран':''}`;
-    const reels=this.port.provider?.service==='reels-trial',validReels=!reels||p.mode==='reels'&&p.ratio==='9:16'&&totalLength(p)<=60;
+    const service=this.port.provider?.service,reels=service==='reels-trial',visual=service==='source-analysis',router=visual||service==='deepseek-edit';
+    const validReels=reels?p.mode==='reels'&&p.ratio==='9:16'&&totalLength(p)<=60:!router||['9:16','16:9'].includes(p.ratio)&&totalLength(p)<=60;
     this.node.querySelector<HTMLSelectElement>('.pe-ai-mode')!.disabled=!!this.abort;
     this.node.querySelector<HTMLElement>('.pe-ai-media')!.hidden=!this.port.provider?.supportsMedia;
-    this.node.querySelector('.pe-ai-mode-note')!.textContent=reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Включите режим Reels в верхней панели редактора и сократите ролик до 60 секунд.'):this.port.provider?.service==='yandex-edit'?'Яндекс получает задание, структуру проекта и предыдущий анализ. Само видео в этом режиме пока не анализируется. Пользовательский тариф готовится.':'';
+    this.node.querySelector('.pe-ai-media-title')!.textContent=visual?'Визуальный разбор и советы':'Разобрать видео и звук';
+    this.node.querySelector('.pe-ai-media-description')!.textContent=visual?'MP4 до 60 секунд и 12 МБ. Модель анализирует изображение; речь и звуковая дорожка не распознаются.':'MP4 до 60 секунд и 12 МБ. После первого анализа доступен WAV. Анализируется весь выбранный файл.';
+    this.node.querySelector('.pe-ai-consent-copy')!.textContent=visual?'Разрешаю передать выбранный файл целиком через OpenRouter выбранной в настройках модели. Звук в этом режиме не анализируется.':'Разрешаю передать выбранный файл целиком, включая звук, в Qwen через Alibaba Cloud для анализа.';
+    this.node.querySelector('[data-ai="analyze"]')!.textContent=visual?'Разобрать исходник и дать советы':'Разобрать файл и предложить монтаж';
+    this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'✦ Подготовить план монтажа';
+    this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Включите режим Reels и сократите ролик до 60 секунд.'):'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Пользовательский тариф готовится.';
     (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!this.available||!!this.abort||this.port.busy()||!validReels||this.requiresMedia;
     const source=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;
-    const clips=[...p.clips,...p.audio].filter(c=>c.kind!=='image'&&this.port.assets.has(c.assetId));
+    const clips=[...p.clips,...p.audio].filter(c=>(visual?c.kind==='video':c.kind!=='image')&&this.port.assets.has(c.assetId));
     if(!clips.some(c=>c.id===this.mediaClipId)){this.mediaClipId=clips.find(c=>c.id===selected?.id)?.id||clips[0]?.id||'';this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked=false;}
     source.innerHTML=clips.length?clips.map(c=>`<option value="${esc(c.id)}">${esc(c.name)} · ${esc(clock(c.duration))}</option>`).join(''):'<option value="">Сначала добавьте файл в проект</option>';
     source.value=this.mediaClipId;source.disabled=!!this.abort;
@@ -137,7 +143,7 @@ export class AiPanel {
     this.request=request;this.plan=null;this.renderPlan();this.refresh();return request;
   }
   private async prepareMedia():Promise<AiMedia>{
-    if(!this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked)throw Error('Подтвердите отправку файла в Qwen.');
+    if(!this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked)throw Error('Подтвердите отправку файла провайдеру.');
     const p=this.port.project(),clip=[...p.clips,...p.audio].find(c=>c.id===this.mediaClipId),asset=clip&&this.port.assets.get(clip.assetId);
     if(!clip||!asset)throw Error('Выберите исходник из проекта.');
     if(asset.duration>60||asset.blob.size>12*1024*1024)throw Error('Для первой пробы нужен отдельный исходник до 60 секунд и 12 МБ. Обрезка на таймлайне не уменьшает отправляемый исходник.');
@@ -154,11 +160,12 @@ export class AiPanel {
     if(!this.available){this.say('Сначала настройте подключение в админ-панели.',true);void this.checkConnection();return;}
     const gen=++this.generation;
     try{
+      if(withMedia&&this.port.provider.service==='source-analysis'&&!this.input.value.trim())this.input.value='Разбери исходник: опиши сцены, предложи начало ролика, последовательность кадров и конкретные улучшения монтажа.';
       const request=await this.build();if(this.disposed||gen!==this.generation)return;
       this.abort=new AbortController();this.refresh();this.say(withMedia?'Подготавливаем выбранный файл…':'Ожидаем план от сервиса…');
       const media=withMedia?await this.prepareMedia():undefined;
       if(this.disposed||gen!==this.generation||this.abort.signal.aborted)return;
-      this.say(withMedia?'Qwen анализирует изображение, речь и звуки. Это может занять до 90 секунд…':'Ожидаем план от сервиса…');
+      this.say(withMedia?(this.port.provider.service==='source-analysis'?'Анализируем изображение и готовим советы. Звук не распознаётся. До 90 секунд…':'Qwen анализирует изображение, речь и звуки. До 90 секунд…'):'Ожидаем план от сервиса…');
       const raw=await this.port.provider.createPlan(request,this.abort.signal,media);
       if(this.disposed||gen!==this.generation)return;
       if(raw&&typeof raw==='object'&&'plan' in raw&&'analysis' in raw){
@@ -198,12 +205,13 @@ export class AiPanel {
   private validatePlan(raw:unknown,request:AiRequest){
     const plan=validateAiPlan(raw,request),next=simulateAiPlan(request.project,plan);
     if(this.port.provider?.service==='reels-trial'&&(next.ratio!=='9:16'||next.mode!=='reels'||totalLength(next)>60.001))throw Error('План выходит за ограничения Reels: нужен формат 9:16 и не более 60 секунд. Монтаж не изменён.');
+    if(['source-analysis','deepseek-edit'].includes(this.port.provider?.service||'')&&(!['9:16','16:9'].includes(next.ratio)||totalLength(next)>60.001))throw Error('Пробный план должен сохранять формат 9:16 или 16:9 и длительность до 60 секунд.');
     return plan;
   }
   private renderAnalysis(){
     const node=this.node.querySelector<HTMLElement>('.pe-ai-analysis')!;node.hidden=!this.analysis;if(!this.analysis)return;
     const a=this.analysis;
-    node.innerHTML=`<h3>Что происходит в исходнике</h3><p>${esc(a.summary)}</p><h4>Речь</h4><p>${esc(a.speech||'Разборчивой речи не обнаружено.')}</p><h4>Звуки и музыка</h4><p>${esc(a.audio||'Описание звуков не получено.')}</p><p class="pe-ai-note">Таймкоды ниже относятся к исходному файлу ${esc(this.port.assets.get(a.assetId)?.name||'')}. Это оценка модели: проверьте её перед монтажом.</p><ol>${a.events.map(e=>`<li><strong>${esc(clock(e.from))}–${esc(clock(e.to))}</strong><p>${esc(e.visual)}</p><p>${esc(e.audio)}</p>${e.speech?`<p>Речь: ${esc(e.speech)}</p>`:''}</li>`).join('')}</ol>${a.limitations.length?`<h4>Что требует проверки</h4><ul>${a.limitations.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}`;
+    node.innerHTML=`<h3>Что происходит в исходнике</h3><p>${esc(a.summary)}</p>${a.scope==='visual'?'<p class="pe-ai-note">Визуальный разбор: звук и речь не анализировались.</p>':`<h4>Речь</h4><p>${esc(a.speech||'Речь не расшифрована.')}</p><h4>Звуки и музыка</h4><p>${esc(a.audio||'Описание звуков не получено.')}</p>`}${a.advice?.length?`<h4>Советы по монтажу</h4><ul>${a.advice.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}<p class="pe-ai-note">Таймкоды ниже относятся к исходному файлу ${esc(this.port.assets.get(a.assetId)?.name||'')}. Это оценка модели: проверьте её перед монтажом.</p><ol>${a.events.map(e=>`<li><strong>${esc(clock(e.from))}–${esc(clock(e.to))}</strong><p>${esc(e.visual)}</p><p>${esc(e.audio)}</p>${e.speech?`<p>Речь: ${esc(e.speech)}</p>`:''}</li>`).join('')}</ol>${a.limitations.length?`<h4>Что требует проверки</h4><ul>${a.limitations.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}`;
   }
   private async apply(){
     if(!this.request||!this.plan||this.port.busy())return;

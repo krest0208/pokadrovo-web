@@ -24,7 +24,7 @@ export interface AiRequest {
   capabilities:typeof AI_CAPABILITIES; fontIds:string[];
 }
 export interface AiPlan { version:1; requestId:string; projectId:string; revision:string; summary:string; operations:Operation[]; }
-export type AiService='reels-trial'|'yandex-edit';
+export type AiService='source-analysis'|'deepseek-edit'|'reels-trial'|'yandex-edit';
 export interface AiStatus {available:boolean;reason:string;requiresMedia?:boolean;owner?:boolean;billing?:{requestCostCoins:number|null;remainingCoins:number|null;giftCoins:number;ownerExempt:boolean};trial?:{projectId:string|null;remaining:number|null;expires:number|null};}
 export interface AiProvider {
   readonly name:string;

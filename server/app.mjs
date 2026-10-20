@@ -116,7 +116,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     return { from, to, timezone: 'UTC', startedAt: Number(store.get('SELECT value FROM meta WHERE key=?', 'started').value), series,
       metrics: { pageRequests: sum('page_requests'), uniqueBrowsers: unique, visits: sum('site_view'), editorOpens: sum('editor_open'), projects, projectSaves: sum('project_saved'), exports: sum('export_completed'), aiRequests: sum('ai_request') },
       breakdown: { devices: store.all("SELECT device label,count(DISTINCT visitor) count FROM events WHERE kind='site_view' AND at>=? AND at<=? GROUP BY device", start, now()), modes: store.all("SELECT mode label,count(*) count FROM events WHERE kind='editor_open' AND at>=? AND at<=? GROUP BY mode", start, now()), formats: store.all("SELECT format label,count(*) count FROM events WHERE kind='export_completed' AND at>=? AND at<=? GROUP BY format", start, now()) },
-      users: accounts.userMetrics(days), integrations: { users: accountsEnabled, payments: false, aiProvider: ai.adminState().connected },
+      users: accounts.userMetrics(days), integrations: { users: accountsEnabled, payments: false, aiProvider: ai.adminState().connected || ai.openrouter.adminState().connected || ai.yandex.adminState().connected },
       notes: ['Счётчик запросов включает обновления страницы и ботов. Это не число людей.', 'События и приблизительные уникальные браузеры учитываются только с согласия пользователя. DNT/GPC отключают события.', 'Данные начинаются с запуска этого сервера. История старого хостинга не импортирована.', 'Клиентские события не являются биллингом: их можно блокировать или подделывать.', 'Экспорт означает подготовленный файл и отправку на скачивание, а не подтверждённую загрузку в соцсеть.'] };
   }
   async function route(req, res) {
@@ -145,6 +145,13 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
         const c = settings(); return json(res, 200, { provider: c.provider, model: c.model, keyConfigured: !!c.secret, updated: c.updated, analyticsEnabled: !!c.analytics, ...ai.adminState() });
       }
       if (req.method === 'GET' && path === '/api/admin/ai/usage') return json(res, 200, { items: ai.usage() });
+      if (req.method === 'GET' && path === '/api/admin/ai/analytics') return json(res, 200, ai.analytics(Number(url.searchParams.get('days') || 7)));
+      if (req.method === 'GET' && path === '/api/admin/ai/openrouter') return json(res, 200, ai.openrouter.adminState());
+      if (req.method === 'GET' && path === '/api/admin/ai/openrouter/catalog') {
+        if (!store.consume('ai-catalog-owner', 2, 60000, now())) deny(429, 'Повторите проверку каталога через минуту.');
+        return json(res, 200, await ai.openrouter.catalog());
+      }
+      if (req.method === 'PUT' && path === '/api/admin/ai/openrouter') { const data = await body(req); await reauth(req, data); return json(res, 200, { ok: true, ...ai.openrouter.save(data) }); }
       if (req.method === 'GET' && path === '/api/admin/ai/yandex') return json(res, 200, ai.yandex.adminState());
       if (req.method === 'PUT' && path === '/api/admin/ai/yandex') { const data = await body(req); await reauth(req, data); return json(res, 200, { ok: true, ...ai.yandex.save(data) }); }
       if (req.method === 'PUT' && path === '/api/admin/settings') {

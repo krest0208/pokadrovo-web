@@ -3,16 +3,16 @@ import type { AiMedia, AiProvider, AiRequest, AiService, AiStatus } from './ai';
 
 export interface MediaAnalysis {
  clipId:string;assetId:string;duration:number;summary:string;speech:string;audio:string;
- events:{from:number;to:number;visual:string;audio:string;speech:string}[];limitations:string[];
+ events:{from:number;to:number;visual:string;audio:string;speech:string}[];limitations:string[];advice?:string[];scope?:'visual'|'audiovisual';
 }
 export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summary:string;usage:{inputTokens:number|null;outputTokens:number|null};billing?:{chargedCoins:number;remainingCoins:number|null};}
 
 /** Credentials and provider URLs never enter the browser. Context stays in this editor session. */
 export class OmniAiProvider implements AiProvider {
  readonly name='Покадрово AI';
- readonly modes=[{id:'reels-trial',label:'Reels · подарочные монеты'},{id:'yandex-edit',label:'Монтаж · тариф готовится'}] as const;
- constructor(public service:AiService='reels-trial'){}
- get supportsMedia(){return this.service==='reels-trial';}
+ readonly modes=[{id:'source-analysis',label:'Разбор исходника · проба'},{id:'deepseek-edit',label:'План монтажа · проба'},{id:'reels-trial',label:'Qwen Omni · видео и звук'},{id:'yandex-edit',label:'Монтаж · тариф готовится'}] as const;
+ constructor(public service:AiService='source-analysis'){}
+ get supportsMedia(){return this.service==='reels-trial'||this.service==='source-analysis';}
  setService(service:AiService){this.service=service;}
  private context:{projectId:string;analysis:MediaAnalysis}|null=null;
  async getStatus(signal?:AbortSignal){
@@ -34,7 +34,7 @@ export class OmniAiProvider implements AiProvider {
   try{
    await flushProjectSaves();
    if(!accountId||currentUser()?.id!==accountId)throw Error('Аккаунт изменился. Откройте проект заново.');
-   if(service==='yandex-edit'&&media)throw Error('В режиме Яндекса исходный файл не отправляется.');
+   if((service==='yandex-edit'||service==='deepseek-edit')&&media)throw Error('В этом режиме исходный файл не отправляется.');
    const response=await fetch('/api/ai/edit-plan',{method:'POST',credentials:'same-origin',redirect:'error',signal:controller.signal,
     headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':sessionCsrf(),'X-PK-Account':accountId},
     body:JSON.stringify({service,request,media,mediaConsent:!!media,context:media?null:context})});

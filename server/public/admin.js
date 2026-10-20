@@ -11,9 +11,9 @@
     csrf = ''; owner = null; settings = null; clearTimeout(idleTimer);
     app.hidden = true; $('login-screen').hidden = false; text($('login-error'), message);
     $('login-form').elements.password.value = ''; $('login-form').elements.code.value = '';
-    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage']) $(id).replaceChildren();
+    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog']) $(id).replaceChildren();
     for (const form of app.querySelectorAll('form')) form.reset();
-    text($('totp-secret'), ''); $('totp-confirm').hidden = true;
+    text($('totp-secret'), ''); $('totp-confirm').hidden = true; text($('ai-quota'), '');
   }
   function armIdle() { clearTimeout(idleTimer); if (owner) idleTimer = setTimeout(() => { void request('/logout', { method: 'POST', data: {} }).catch(() => {}); locked('Сеанс завершён после 30 минут бездействия.'); }, 30 * 60000); }
   document.addEventListener('pointerdown', armIdle, { passive: true }); document.addEventListener('keydown', armIdle);
@@ -124,11 +124,47 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     text($('ai-connection-status'), settings.connected ? 'Проверена запросом' : settings.configured && settings.aiEnabled ? 'Готова к пробе' : 'Не включена');
     text($('ai-connection-note'), settings.connected ? 'Qwen успешно ответил на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели будет проверен первым запросом из редактора.' : 'Для запуска выберите Qwen Omni, укажите ключ и Base URL, затем включите пробный режим.');
     updateAiFields();
-    const usage = await request('/ai/usage');
-    if(!owner)return;
-    $('ai-usage').replaceChildren(...(usage.items.length ? usage.items.map(row => element('p', 'field-note', `${new Date(row.at).toLocaleString('ru-RU')} · ${row.mode === 'yandex-edit' ? 'Яндекс' : 'Qwen'} · ${row.access_kind === 'free_trial' ? 'Бесплатная проба' : 'Тест администратора'} · ${row.result === 'ok' ? 'Готово' : row.result === 'started' ? 'Выполняется' : 'Не завершён'}${row.media_seconds === null ? '' : ' · ' + Math.round(row.media_seconds) + ' сек.'}${row.input_tokens === null ? '' : ' · токены ' + row.input_tokens + ' / ' + row.output_tokens}`)) : [element('p', 'field-note', 'Запросов ещё нет.')]));
-    await loadYandex();
+    await Promise.all([loadOpenRouter(), loadAiUsage(), loadYandex()]);
   }
+  async function loadOpenRouter() {
+    const data=await request('/ai/openrouter'); if(!owner)return; const form=$('openrouter-form');
+    for(const key of ['endpoint','analysisModel','editModel','dailyLimit'])form.elements[key].value=data[key];
+    form.elements.enabled.checked=data.enabled;form.elements.trialEnabled.checked=data.trialEnabled;
+    form.elements.apiKey.value='';form.elements.password.value='';form.elements.removeKey.checked=false;
+    text($('openrouter-key-status'),data.keyConfigured?'Общий ключ OpenRouter сохранён':'API-ключ OpenRouter не указан');
+    text($('openrouter-status'),!data.enabled?'Не включён':data.analysisVerified&&data.editVerified?'Обе модели отвечали':data.analysisVerified?'Разбор проверен':data.editVerified?'План проверен':'Сохранён · ожидает проверки');
+  }
+  bindForm('openrouter-form',async(data,form)=>{
+    data.removeKey=form.elements.removeKey.checked;data.enabled=!data.removeKey&&form.elements.enabled.checked;
+    data.trialEnabled=data.enabled&&form.elements.trialEnabled.checked;data.dailyLimit=Number(data.dailyLimit);
+    if(data.removeKey&&!confirm('Удалить только API-ключ OpenRouter?'))return;
+    await request('/ai/openrouter',{method:'PUT',data});form.reset();await Promise.all([loadOpenRouter(),loadAiUsage()]);
+    notify('OpenRouter сохранён. Генерация не запускалась. Проверьте каталог, затем выполните тест в редакторе.');
+  });
+  $('openrouter-form').elements.trialEnabled.addEventListener('change',()=>{const f=$('openrouter-form');if(f.elements.trialEnabled.checked)f.elements.enabled.checked=true;});
+  $('openrouter-form').elements.enabled.addEventListener('change',()=>{const f=$('openrouter-form');if(!f.elements.enabled.checked)f.elements.trialEnabled.checked=false;});
+  $('openrouter-catalog-refresh').addEventListener('click',async()=>{
+    const button=$('openrouter-catalog-refresh');button.disabled=true;
+    try{const data=await request('/ai/openrouter/catalog');if(!owner)return;
+      $('openrouter-catalog').replaceChildren(...data.items.map(item=>element('p','field-note',`${item.model}: ${item.reason}`)));
+    }catch(e){notify(e.message);}finally{button.disabled=false;}
+  });
+  function cost(value){return value===null||value===undefined?'Не сообщён':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:6}).format(value);}
+  async function loadAiUsage(){
+    const [data,usage]=await Promise.all([request('/ai/analytics?days='+$('ai-period').value),request('/ai/usage')]);if(!owner)return;
+    const t=data.totals;
+    const cards=[['Попытки',t.attempts,'Включая ошибки после отправки'],['Успешно',t.succeeded,'Проверенный результат'],['Ошибки / прервано',t.failed,'Подарочные монеты возвращены'],['Пользователи',t.users,'Без владельца'],['Токены API',t.inputTokens+t.outputTokens,`Учтены у ${t.meteredRequests||0} запросов`],['Списано монет',t.coins,'Внутренний баланс Покадрово']];
+    $('ai-metrics').replaceChildren(...cards.map(([label,value,note])=>{const card=element('article','metric');card.append(element('span','metric-label',label),element('strong','metric-number',number(value)),element('span','metric-note',note));return card;}));
+    const q=data.quota;text($('ai-quota'),`OpenRouter сегодня: ${q.used} из ${q.limit} попыток сайта. Осталось ${q.remaining}. Бесплатная квота аккаунта — до ${q.providerFreeDailyLimit} в сутки; лимит сайта оставляет запас. Сброс: ${new Date(q.resetsAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК. Одновременно выполняется один ИИ-запрос.`);
+    function row(values){const tr=element('tr');for(const v of values)tr.append(element('td','',v));return tr;}
+    $('ai-model-usage').replaceChildren(...(data.models.length?data.models.map(m=>row([`${m.model} · ${m.task==='analysis'?'разбор':'план'}`,m.attempts,`${m.succeeded} / ${m.failed}`,`${number(m.inputTokens)} / ${number(m.outputTokens)} (${m.meteredRequests||0} учтено)`,m.averageMs===null?'—':(m.averageMs/1000).toFixed(1)+' сек.',`${cost(m.reportedCostUsd)}${m.costReportedRequests?' · '+m.costReportedRequests+' учтено':''}`])):[row(['Запросов за период нет','—','—','—','—','—'])]));
+    $('ai-days').replaceChildren(...data.series.map(d=>row([d.day,d.attempts,d.succeeded,d.failed,d.users])));
+    $('ai-capacity').replaceChildren(...data.capacity.map(c=>row([c.label,c.requests,c.fitsSiteLimit?'Хватает без запаса на ошибки':'Превышен',c.fitsProviderFreeLimit?'Хватает без запаса на ошибки':'Превышен'])));
+    $('ai-usage-notes').replaceChildren(...data.notes.map(note=>element('p','',note)));
+    $('ai-usage').replaceChildren(...(usage.items.length?usage.items.map(r=>element('p','field-note',`${new Date(r.at).toLocaleString('ru-RU')} · ${r.model} · ${r.task==='analysis'?'Разбор':'План'} · ${r.access_kind==='free_trial'?'Проба':'Владелец'} · ${r.result==='ok'?'Готово':r.result==='started'?'Выполняется':'Не завершён'}${r.upstream_status===null?'':' · HTTP '+r.upstream_status}${r.duration_ms===null?'':' · '+(r.duration_ms/1000).toFixed(1)+' сек.'}${r.input_tokens===null?'':' · токены '+r.input_tokens+' / '+r.output_tokens}`)):[element('p','field-note','Запросов ещё нет.')]));
+  }
+  $('ai-refresh').addEventListener('click',()=>loadAiUsage().catch(e=>notify(e.message)));
+  $('ai-period').addEventListener('change',()=>loadAiUsage().catch(e=>notify(e.message)));
   async function loadYandex() {
     const data=await request('/ai/yandex'); if(!owner)return; const form=$('yandex-form');
     form.elements.model.value=data.model;form.elements.folderId.value=data.folderId;form.elements.apiKey.value='';form.elements.password.value='';form.elements.removeKey.checked=false;form.elements.enabled.checked=data.enabled;
