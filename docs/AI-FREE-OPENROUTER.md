@@ -62,3 +62,7 @@
 - https://openrouter.ai/docs/guides/routing/provider-selection#max-price
 
 Запрос ограничен сервером конкретной моделью с суффиксом `:free`, `allow_fallbacks=false` и `provider.max_price` 0 для prompt/completion/request/image. Платные идентификаторы и произвольные API URL не принимаются.
+
+## Агент сайта
+
+Ежечасный агент и личный inbox описаны в [SITE-AGENT.md](SITE-AGENT.md). Технические пробы не расходуют квоту моделей. Если включены ИИ-идеи и OpenRouter настроен, добавляется максимум один бесплатный запрос в сутки. Аналитика учитывает его в `task=ideas` и в прогнозе для десяти пользователей: 30 действий + до 1 запроса агента = до 31 в сутки.

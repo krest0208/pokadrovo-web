@@ -1,6 +1,6 @@
 import coinPricing from '../shared/coin-pricing.json' with { type: 'json' };
 import { HttpError, body, deny, json } from './http.mjs';
-import { equal } from './security.mjs';
+import { equal, token } from './security.mjs';
 import { createYandex } from './yandex.mjs';
 import { createOpenRouter } from './openrouter.mjs';
 import { aiAnalytics } from './ai-usage.mjs';
@@ -185,7 +185,7 @@ async function readProviderJson(response) {
 }
 
 export function createAi({ store, now, settings, session, sameOrigin, rateKey, request = globalThis.fetch }) {
-  let active = false;
+  let active = false, closing = false;
   const yandex = createYandex({ store, now });
   store.db.exec(`CREATE TABLE IF NOT EXISTS ai_runs(request_id TEXT PRIMARY KEY, at INTEGER NOT NULL, result TEXT NOT NULL, model TEXT NOT NULL, media_seconds REAL, input_tokens INTEGER, output_tokens INTEGER);
     CREATE TABLE IF NOT EXISTS ai_trial_usage(account_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -270,6 +270,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
   // A restart must release held gift coins exactly once. Old runs without a project binding are left intact.
   store.db.exec('BEGIN IMMEDIATE');
   try {
+    store.run("UPDATE ai_runs SET result='interrupted' WHERE result='started' AND mode='site-agent'");
     for (const pending of store.all("SELECT request_id,account_id,project_id FROM ai_runs WHERE result='started' AND coin_charge>0 AND project_id IS NOT NULL")) {
       refundTrial({ accountId: pending.account_id, projectId: pending.project_id });
       store.run("UPDATE ai_runs SET result='interrupted',coin_charge=0 WHERE request_id=?", pending.request_id);
@@ -413,7 +414,51 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
     } finally { clearTimeout(timer); req.off('aborted', abort); res.off('close', abort); active = false; }
     return true;
   }
-  return { route, adminState, saveConfig, yandex, openrouter,
+  async function suggestSiteIdeas(input, signal) {
+    const s = openrouter.state(), start = Math.floor(now() / 86400000) * 86400000;
+    if (closing || !s.configured || !s.enabled) return { status: 'not-configured', ideas: [] };
+    if (active) return { status: 'busy', ideas: [] };
+    if (store.get("SELECT count(*) AS n FROM ai_runs WHERE mode='site-agent' AND at>=? AND at<?", start, start + 86400000).n) return { status: 'daily-limit', ideas: [] };
+    if (openrouter.quota().remaining <= 10) return { status: 'user-reserve', ideas: [] };
+    if (Buffer.byteLength(JSON.stringify(input)) > 24000) return { status: 'failed', ideas: [] };
+    active = true; let requestId = null; const began = Date.now();
+    const controller = new AbortController(), abort = () => controller.abort();
+    if (signal?.aborted) controller.abort(); else signal?.addEventListener('abort', abort, { once: true });
+    const timeout = setTimeout(abort, 45000); timeout.unref?.();
+    try {
+      await openrouter.ensureAvailable(s, 'deepseek-edit', controller.signal);
+      if (closing || controller.signal.aborted) return { status: 'interrupted', ideas: [] };
+      const invocation = openrouter.prepareIdeas(s, input);
+      store.db.exec('BEGIN IMMEDIATE');
+      try {
+        if (store.get("SELECT count(*) AS n FROM ai_runs WHERE mode='site-agent' AND at>=? AND at<?", start, start + 86400000).n) { store.db.exec('COMMIT'); return { status: 'daily-limit', ideas: [] }; }
+        if (openrouter.quota().remaining <= 10) { store.db.exec('COMMIT'); return { status: 'user-reserve', ideas: [] }; }
+        openrouter.reserve(); const id = 'site-ideas-' + token();
+        store.run("INSERT INTO ai_runs(request_id,at,result,model,account_id,mode,access_kind,coin_charge,provider,task) VALUES(?,?,'started',?,'owner','site-agent','owner_test',0,'openrouter','ideas')", id, now(), s.c.edit_model);
+        store.db.exec('COMMIT'); requestId = id;
+      } catch (error) { store.db.exec('ROLLBACK'); throw error; }
+      const response = await request(invocation.url, { method: 'POST', redirect: 'error', signal: controller.signal, headers: invocation.headers, body: JSON.stringify(invocation.payload) });
+      if (closing) return { status: 'interrupted', ideas: [] };
+      store.run('UPDATE ai_runs SET upstream_status=? WHERE request_id=?', response.status, requestId);
+      if (!response.ok) { await response.body?.cancel().catch(() => {}); throw Error('provider'); }
+      const result = await readProviderJson(response); if (closing) return { status: 'interrupted', ideas: [] };
+      const count = x => Number.isSafeInteger(x) && x >= 0 ? x : null;
+      const cost = typeof result.usage?.cost === 'number' && Number.isFinite(result.usage.cost) && result.usage.cost >= 0 ? result.usage.cost : null;
+      store.run('UPDATE ai_runs SET input_tokens=?,output_tokens=?,provider_cost_usd=? WHERE request_id=?', count(result.usage?.prompt_tokens), count(result.usage?.completion_tokens), cost, requestId);
+      const choice = result.choices?.[0]; if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string') throw Error('truncated');
+      const value = JSON.parse(choice.message.content), list = value?.ideas;
+      if (!Array.isArray(list) || !list.length || list.length > 24 || list.some(i => !plain(i) || Object.keys(i).sort().join(',') !== 'basis,details,title' ||
+          !short(i.title, 120) || !i.title.trim() || !short(i.details, 700) || !i.details.trim() || !short(i.basis, 300) || !i.basis.trim())) throw Error('ideas');
+      if (!openrouter.current(s) || controller.signal.aborted) throw Error('stale');
+      store.run("UPDATE ai_runs SET result='ok',duration_ms=? WHERE request_id=?", Math.max(0, Date.now() - began), requestId);
+      return { status: 'ready', ideas: list.map(i => ({ title: i.title.trim(), details: i.details.trim(), basis: i.basis.trim() })) };
+    } catch {
+      if (closing) return { status: 'interrupted', ideas: [] };
+      if (requestId) store.run("UPDATE ai_runs SET result='failed',duration_ms=? WHERE request_id=?", Math.max(0, Date.now() - began), requestId);
+      return { status: requestId ? 'failed' : 'unavailable', ideas: [] };
+    } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort); active = false; }
+  }
+  return { route, adminState, saveConfig, yandex, openrouter, suggestSiteIdeas, stop: () => { closing = true; },
     analytics: days => aiAnalytics(store, now, openrouter, days),
     usage: () => store.all('SELECT at,result,provider,model,task,duration_ms,upstream_status,provider_cost_usd,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor,coin_charge FROM ai_runs ORDER BY at DESC LIMIT 20') };
 }

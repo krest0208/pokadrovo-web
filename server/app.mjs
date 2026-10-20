@@ -4,6 +4,7 @@ import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAccounts } from './accounts.mjs';
 import { createAi } from './ai.mjs';
+import { createSiteAgent } from './site-agent.mjs';
 import { OWNER_PATH } from './owner-route.mjs';
 import { HttpError, deny, cookie, json, body } from './http.mjs';
 import { openStore, token, digest, equal, checkPassword, hashPassword, newTotpSecret, verifyTotp } from './security.mjs';
@@ -102,6 +103,10 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
   const ai = createAi({ store, now, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
+  const siteAgent = createSiteAgent({ store, now, origin: origin.origin, session: accounts.session, sameOrigin,
+    request: options.siteAgentFetch, autoStart: options.siteAgentAutoStart !== false, suggestIdeas: ai.suggestSiteIdeas,
+    facts: () => ({ aiConfigured: ai.openrouter.state().configured && ai.openrouter.state().enabled, quota: ai.openrouter.quota(),
+      aiHour: store.get("SELECT count(*) AS attempts,coalesce(sum(result IN ('failed','interrupted')),0) AS failed FROM ai_runs WHERE at>=? AND at<=?", now()-3600000, now()) }) });
   function overview(days) {
     const to = new Date(now()).toISOString().slice(0, 10), from = new Date(now() - (days - 1) * DAY).toISOString().slice(0, 10);
     const start = Date.parse(from + 'T00:00:00Z');
@@ -125,6 +130,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     const path = url.pathname;
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
+    if (await siteAgent.route(req, res, url)) return;
     if (await accounts.route(req, res, url)) return;
     if (await ai.route(req, res, url)) return;
     if (req.method === 'POST' && path === '/api/admin/login') return json(res, 200, await authenticateOwner(req, res, await body(req)));
@@ -143,6 +149,15 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
       if (req.method === 'GET' && path === '/api/admin/audit') return json(res, 200, { items: store.all('SELECT at,action,result FROM audit ORDER BY id DESC LIMIT 100') });
       if (req.method === 'GET' && path === '/api/admin/settings') {
         const c = settings(); return json(res, 200, { provider: c.provider, model: c.model, keyConfigured: !!c.secret, updated: c.updated, analyticsEnabled: !!c.analytics, ...ai.adminState() });
+      }
+      if (req.method === 'GET' && path === '/api/admin/site-agent/status') return json(res, 200, siteAgent.status());
+      if (req.method === 'GET' && path === '/api/admin/site-agent/reports') return json(res, 200, siteAgent.reports(url.searchParams.get('before') ?? undefined));
+      if (req.method === 'GET' && path === '/api/admin/site-agent/ideas') return json(res, 200, siteAgent.ideas());
+      if (req.method === 'PUT' && path === '/api/admin/site-agent/settings') { const data = await body(req); await reauth(req, data); return json(res, 200, siteAgent.settings(data)); }
+      if (req.method === 'POST' && path === '/api/admin/site-agent/run') {
+        await body(req, 2048); if (siteAgent.status().running) deny(409, 'Проверка уже выполняется.');
+        if (!store.consume('site-agent-manual', 2, 60000, now())) deny(429, 'Повторите ручную проверку через минуту.');
+        void siteAgent.run(true).catch(() => {}); return json(res, 202, { ok: true, ...siteAgent.status() });
       }
       if (req.method === 'GET' && path === '/api/admin/ai/usage') return json(res, 200, { items: ai.usage() });
       if (req.method === 'GET' && path === '/api/admin/ai/analytics') return json(res, 200, ai.analytics(Number(url.searchParams.get('days') || 7)));
@@ -273,8 +288,9 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
   store.cleanup(now()); const housekeeping = setInterval(() => { store.cleanup(now()); accounts.cleanup(); }, 300000); housekeeping.unref();
-  server.on('close', () => { clearInterval(housekeeping); store.close(); });
-  return { server, store, origin: origin.origin };
+  server.on('listening', () => siteAgent.start());
+  server.on('close', () => { clearInterval(housekeeping); siteAgent.stop(); ai.stop(); store.close(); });
+  return { server, store, siteAgent, origin: origin.origin };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -11,7 +11,7 @@ export async function request<T=Record<string,unknown>>(path:string,method='GET'
  if(location.protocol==='file:')throw new AccountError('Регистрация и админ-панель работают через локальный сервер. Запустите start-local и откройте localhost:5173.',503);
  const headers:Record<string,string>={'Accept':'application/json'};
  if(method!=='GET') {headers['Content-Type']='application/json';headers['X-CSRF-Token']=active?.csrf||'';}
- if(path.startsWith('/projects'))headers['X-PK-Account']=active?.user?.id||'';
+ if(path.startsWith('/projects')||path.startsWith('/agent'))headers['X-PK-Account']=active?.user?.id||'';
  let response:Response;
  try {response=await fetch('/api/account'+path,{method,headers,credentials:'same-origin',body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(20000)});}
  catch {throw new AccountError('Нет связи с сервером. Проверьте подключение к интернету и повторите.',503);}

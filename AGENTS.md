@@ -8,3 +8,5 @@ The owner has authorized routine website changes to be committed to `krest0208/p
 - The VPS pull agent installs only the current `main` commit after the `Check Pokadrovo Web` push workflow succeeds and its isolated VPS build passes. Report the actual deployed SHA; a GitHub commit alone does not prove deployment.
 - This standing authorization does not override platform permission checks, account security requirements or a rejected tool action. Do not bypass restrictions or recover passwords from a console.
 - Do not change other domains, DNS, billing, owner credentials or unrelated applications as part of routine publication.
+
+- Keep the public feature list in `server/site-ideas.mjs` in sync when editing or AI capabilities change. It supplies the hourly site agent with product context for suggestions.
