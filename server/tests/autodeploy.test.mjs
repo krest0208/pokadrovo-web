@@ -122,3 +122,8 @@ test('a committed but uncleared journal keeps a healthy release and restores an 
     }finally{f.close();}
   }
 });
+
+test('deployment copy cannot overwrite an unrelated file through a destination hard link',()=>{
+  const dir=temp(),source=join(dir,'source'),dest=join(dir,'dest'),privateFile=join(dir,'private.txt');mkdirSync(source);mkdirSync(dest);writeFileSync(join(source,'file'),'public');writeFileSync(privateFile,'preserve');linkSync(privateFile,join(dest,'file'));
+  try{assert.throws(()=>copyFiles(source,dest,inventory(source)),/destination/);assert.equal(readFileSync(privateFile,'utf8'),'preserve');}finally{rmSync(dir,{recursive:true,force:true});}
+});

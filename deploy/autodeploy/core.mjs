@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, chmodSync, copyFileSync, openSync, fsyncSync, closeSync, utimesSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, chmodSync, openSync, fsyncSync, closeSync, utimesSync } from 'node:fs';
 import { join, resolve, sep, dirname } from 'node:path';
 
 export const TARGET = Object.freeze({ repo:'krest0208/pokadrovo-web', branch:'main', domain:'pokadrovo.ru', ip:'138.16.185.3', workflow:'check-web.yml',
@@ -58,11 +58,14 @@ export function copyFiles(source, destination, manifest, {skipExisting = false} 
   publicDirectory(destination);
   for (const entry of manifest) {
     const input=inputFile(source,entry.path), output=child(destination,entry.path);
-    if (digest(readFileSync(input)) !== entry.hash) throw Error('Release changed after validation.');
+    if(lstatSync(input).size!==entry.bytes)throw Error('Release size changed after validation.');
+    const bytes=readFileSync(input);
+    if (digest(bytes) !== entry.hash) throw Error('Release changed after validation.');
     publicDirectory(destination,entry.path.split('/').slice(0,-1).join('/'));
     let existing;try{existing=lstatSync(output);}catch(error){if(error.code!=='ENOENT')throw error;}
-    if (existing) { if (!existing.isFile()||existing.isSymbolicLink()) throw Error('Invalid destination file.'); if (skipExisting) continue; }
-    copyFileSync(input, output); chmodSync(output, 0o644);
+    if (existing) { if (!existing.isFile()||existing.isSymbolicLink()||existing.nlink!==1) throw Error('Invalid destination file.'); if (skipExisting) continue; }
+    // Write exactly the bytes whose hash was checked, never reopen a build-controlled source path.
+    writeFileSync(output,bytes); chmodSync(output,0o644);
     if(skipExisting){const info=lstatSync(input);utimesSync(output,info.atime,info.mtime);}
   }
 }
