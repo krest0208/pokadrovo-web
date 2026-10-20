@@ -25,14 +25,13 @@ else
 fi
 [[ $(id -u pokadrovo-build) != $(id -u pokadrovo) ]]
 [[ $(id -g pokadrovo-build) != $(id -g pokadrovo) ]]
-for pk_path in /etc/systemd/system/pokadrovo-autodeploy.service /etc/systemd/system/pokadrovo-autodeploy.timer /run/pokadrovo-deploy /usr/local/lib/pokadrovo-deploy /var/lib/pokadrovo-deploy /opt/pokadrovo/deploy-work /opt/pokadrovo/backups; do [[ ! -L "$pk_path" ]]; done
+for pk_path in /etc/systemd/system/pokadrovo-autodeploy.service /etc/systemd/system/pokadrovo-autodeploy.timer /usr/local/lib/pokadrovo-deploy /var/lib/pokadrovo-deploy /opt/pokadrovo/deploy-work /opt/pokadrovo/backups; do [[ ! -L "$pk_path" ]]; done
 install -d -o root -g root -m 0755 /usr/local/lib/pokadrovo-deploy /opt/pokadrovo/deploy-work
 install -d -o root -g root -m 0700 /var/lib/pokadrovo-deploy /opt/pokadrovo/backups
 # A reinstall may replace the fixed control code only after the active deployment finishes.
 if systemctl is-active --quiet pokadrovo-autodeploy.service; then echo 'A deployment is running. Retry after it finishes.' >&2; exit 1; fi
 systemctl stop pokadrovo-autodeploy.timer 2>/dev/null || true
-install -d -o root -g root -m 0700 /run/pokadrovo-deploy
-exec 9>/run/pokadrovo-deploy/agent.lock
+exec 9>/var/lib/pokadrovo-deploy/agent.lock
 flock --nonblock 9 || { echo 'Deployment is busy; retry after it finishes.' >&2; exit 1; }
 for pk_name in agent.mjs core.mjs worker.mjs unpack.py; do install -o root -g root -m 0644 "$pk_source/$pk_name" "/usr/local/lib/pokadrovo-deploy/$pk_name"; done
 for pk_name in pokadrovo-autodeploy.service pokadrovo-autodeploy.timer; do install -o root -g root -m 0644 "$pk_source/$pk_name" "/etc/systemd/system/$pk_name"; done

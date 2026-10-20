@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 export function buildSteps(source) {
   const tests = readdirSync(join(source,'server/tests')).filter(n=>n.endsWith('.test.mjs')).sort().map(n=>'server/tests/'+n);
   return [
-    ['/usr/bin/npm',['ci','--ignore-scripts','--no-audit','--no-fund']],
+    ['/usr/bin/npm',['ci','--ignore-scripts','--include=dev','--no-audit','--no-fund']],
     [process.execPath,['--test','--test-concurrency=1',...tests,'tests/guest-storage.test.mjs','tests/admin-navigation.test.mjs']],
     [process.execPath,['node_modules/typescript/bin/tsc','--noEmit']],
     [process.execPath,['node_modules/vite/bin/vite.js','build']],
@@ -23,7 +23,7 @@ export function buildSource(source, execute = spawnSync) {
   const scratch=join(source,'.deploy-test-tmp');mkdirSync(scratch,{mode:0o700});
   for (const [command,args] of buildSteps(source)) {
     const result=execute(command,args,{cwd:source,stdio:'inherit',timeout:240000,env:{...process.env,
-      TMPDIR:scratch,NODE_OPTIONS:'--max-old-space-size=384',npm_config_cache:join(source,'.npm-cache'),npm_config_userconfig:'/dev/null',npm_config_update_notifier:'false'}});
+      NODE_ENV:'production',TMPDIR:scratch,NODE_OPTIONS:'--max-old-space-size=384',npm_config_cache:join(source,'.npm-cache'),npm_config_userconfig:'/dev/null',npm_config_update_notifier:'false'}});
     if (result.status!==0 || result.error) throw Error('Isolated build or validation failed.');
   }
 }

@@ -49,7 +49,7 @@ test('builder has no production paths, root capabilities or writable paths outsi
   const source='/opt/pokadrovo/deploy-work/release-aaaaaaa-ABC123/source';const {args}=buildUnitArgs(source,sha);
   for(const expected of ['--property=User=pokadrovo-build','--property=NoNewPrivileges=yes','--property=ProtectSystem=strict','--property=CapabilityBoundingSet=','--property=ReadWritePaths='+source,'--property=KillMode=control-group','--property=BindsTo=pokadrovo-autodeploy.service'])assert.ok(args.includes(expected));
   assert.ok(args.some(x=>x.includes('InaccessiblePaths=/var/lib/pokadrovo /var/lib/pokadrovo-deploy')));
-  assert.throws(()=>buildUnitArgs('/var/lib/pokadrovo/source',sha));const steps=buildSteps(root);assert.deepEqual(steps[0][1],['ci','--ignore-scripts','--no-audit','--no-fund']);assert.ok(steps.some(([,a])=>a.includes('server/tests/autodeploy.test.mjs')));
+  assert.throws(()=>buildUnitArgs('/var/lib/pokadrovo/source',sha));const steps=buildSteps(root);assert.deepEqual(steps[0][1],['ci','--ignore-scripts','--include=dev','--no-audit','--no-fund']);assert.ok(steps.some(([,a])=>a.includes('server/tests/autodeploy.test.mjs')));
 });
 test('validated copy rejects traversal, links, modified source and preserves public permissions under private umask',()=>{
   const dir=temp(),source=join(dir,'source'),dest=join(dir,'dest');mkdirSync(source);mkdirSync(dest);mkdirSync(join(source,'nested'));writeFileSync(join(source,'nested/file.txt'),'checked');
