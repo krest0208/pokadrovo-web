@@ -143,6 +143,9 @@ test('Pausing, manual runs, reading all messages and idea states remain under ow
     const key = page.items[0].ideas[0].key;
     assert.equal((await f.owner('/api/account/agent/ideas/state', 'POST', { key, state: 'planned' })).status, 200);
     assert.equal((await f.owner('/api/account/agent/ideas')).data.items.find(i => i.key === key).state, 'planned');
+    for (let i=0;i<105;i++) f.app.store.run("INSERT INTO site_agent_ideas(key,title,details,basis,source,first_at,delivered_at) VALUES(?,?,'Detail','Basis','rule',?,?)", 'test:archive-'+i,'Archive idea '+i,f.now()+i+1,f.now()+i+1);
+    assert.equal((await f.owner('/api/account/agent/ideas')).data.items.find(i => i.key === key).state, 'planned');
+    assert.equal((await f.owner('/api/account/agent/reports')).data.items[0].ideas[0].state,'planned');
     assert.equal((await f.owner('/api/account/agent/ideas/state', 'POST', { key, state: 'execute' })).status, 400);
     await f.owner('/api/account/agent/read-all', 'POST', {}); assert.equal(f.app.siteAgent.status().unread, 0);
     await f.restart(); assert.equal(f.app.siteAgent.status().enabled, false); assert.equal(f.app.siteAgent.status().unread, 0);

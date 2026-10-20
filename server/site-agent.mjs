@@ -40,10 +40,14 @@ export function createSiteAgent({ store, now, origin, session, sameOrigin, facts
   function reports(before) {
     if (before !== undefined && !reportId(before)) deny(400, 'Некорректная страница сообщений.');
     const rows = before ? store.all('SELECT * FROM site_agent_reports WHERE id<? ORDER BY id DESC LIMIT 21', Number(before)) : store.all('SELECT * FROM site_agent_reports ORDER BY id DESC LIMIT 21');
-    const items = rows.slice(0, 20).map(r => ({ id: r.id, at: r.at, status: r.status, read: r.read_at !== null, ...JSON.parse(r.payload) }));
+    const items = rows.slice(0, 20).map(r => {
+      const payload = JSON.parse(r.payload);
+      return { id: r.id, at: r.at, status: r.status, read: r.read_at !== null, ...payload,
+        ideas: payload.ideas.map(i => ({ ...i, state: store.get('SELECT state FROM site_agent_ideas WHERE key=?', i.key)?.state || 'new' })) };
+    });
     return { items, nextBefore: rows.length > 20 ? String(items.at(-1).id) : null, status: status() };
   }
-  function ideas() { return { items: store.all('SELECT key,title,details,basis,source,delivered_at AS at,state FROM site_agent_ideas WHERE delivered_at IS NOT NULL ORDER BY delivered_at DESC LIMIT 100') }; }
+  function ideas() { return { items: store.all("SELECT key,title,details,basis,source,delivered_at AS at,state FROM site_agent_ideas WHERE delivered_at IS NOT NULL ORDER BY CASE state WHEN 'planned' THEN 0 ELSE 1 END,delivered_at DESC LIMIT 100") }; }
   function read(id) {
     if (!reportId(id)) deny(400, 'Некорректное сообщение.');
     const found = store.get('SELECT id FROM site_agent_reports WHERE id=?', Number(id)); if (!found) deny(404, 'Сообщение не найдено.');

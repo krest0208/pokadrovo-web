@@ -44,10 +44,10 @@ export function AgentInbox({status,onRefresh}:{status:AgentStatus|null;onRefresh
  }
  async function readAll(){try{await request('/agent/read-all','POST',{});if(!mounted.current)return;setReports(old=>old.map(r=>({...r,read:true})));await onRefresh();}catch(e){if(mounted.current)setError((e as Error).message);}}
  async function changeIdea(key:string,state:'new'|'planned'|'dismissed'){
-  try{await request('/agent/ideas/state','POST',{key,state});if(mounted.current)setIdeas(old=>old.map(i=>i.key===key?{...i,state}:i));}
+  try{await request('/agent/ideas/state','POST',{key,state});if(mounted.current){const item=reports.flatMap(r=>r.ideas).find(i=>i.key===key);setIdeas(old=>old.some(i=>i.key===key)?old.map(i=>i.key===key?{...i,state}:i):item?[{...item,state},...old]:old);setReports(old=>old.map(r=>({...r,ideas:r.ideas.map(i=>i.key===key?{...i,state}:i)})));}}
   catch(e){if(mounted.current)setError((e as Error).message);}
  }
- function idea(item:Idea){const current=ideas.find(i=>i.key===item.key)?.state||'new';return <article className={'ag-idea '+(current==='dismissed'?'ag-muted':'')} key={item.key}>
+ function idea(item:Idea){const current=ideas.find(i=>i.key===item.key)?.state||item.state||'new';return <article className={'ag-idea '+(current==='dismissed'?'ag-muted':'')} key={item.key}>
   <span className="ag-eyebrow">{item.source==='ai'?'ИДЕЯ ОТ ИИ':'ПРЕДЛОЖЕНИЕ ПО РАЗВИТИЮ'}</span><h3>{item.title}</h3><p>{item.details}</p><p className="ag-basis">{item.basis}</p>
   <div className="ag-actions"><button onClick={()=>void changeIdea(item.key,current==='planned'?'new':'planned')}>{current==='planned'?'В плане ✓':'Добавить в план'}</button><button onClick={()=>void changeIdea(item.key,current==='dismissed'?'new':'dismissed')}>{current==='dismissed'?'Вернуть идею':'Скрыть идею'}</button></div>
  </article>;}
