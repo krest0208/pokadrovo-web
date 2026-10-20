@@ -26,6 +26,7 @@ RestrictSUIDSGID=yes
 CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
 ReadOnlyPaths=/var/lib/pokadrovo
 ReadWritePaths=/opt/pokadrovo /var/lib/pokadrovo-deploy
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Linux getifaddrs(), used by the VPS IP check, needs a NETLINK_ROUTE socket.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 MemoryMax=160M
 TasksMax=64

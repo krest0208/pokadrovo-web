@@ -51,6 +51,47 @@ test('builder has no production paths, root capabilities or writable paths outsi
   assert.ok(args.some(x=>x.includes('InaccessiblePaths=/var/lib/pokadrovo /var/lib/pokadrovo-deploy')));
   assert.throws(()=>buildUnitArgs('/var/lib/pokadrovo/source',sha));const steps=buildSteps(root);assert.deepEqual(steps[0][1],['ci','--ignore-scripts','--include=dev','--no-audit','--no-fund']);assert.ok(steps.some(([,a])=>a.includes('server/tests/autodeploy.test.mjs')));
 });
+test('service socket restrictions permit the real Linux network interface check',t=>{
+  if(process.platform!=='linux')return t.skip('Linux socket filtering regression');
+  const nodeProbe="import { networkInterfaces } from 'node:os'; networkInterfaces(); process.stdout.write('interface-check-ok');";
+  const baseline=spawnSync(process.execPath,['--input-type=module','-e',nodeProbe],{encoding:'utf8',timeout:15000});
+  assert.ifError(baseline.error);
+  if(baseline.status!==0&&/uv_interface_addresses/.test(baseline.stderr))return t.skip('host sandbox already blocks network interface enumeration');
+  assert.equal(baseline.status,0,baseline.stderr);
+  const unit=readFileSync(join(root,'deploy/autodeploy/pokadrovo-autodeploy.service'),'utf8');
+  const families=unit.match(/^RestrictAddressFamilies=(.+)$/m)?.[1].trim().split(/\s+/);
+  assert.ok(families?.length,'service must define its socket allow list');
+  // Apply the service allow list with a real seccomp filter in a child only.
+  // The negative control reproduces the VPS error instead of just checking a config string.
+  const probe=String.raw`
+import ctypes,os,socket,sys
+try:lib=ctypes.CDLL('libseccomp.so.2')
+except OSError:sys.exit(77)
+class ArgCmp(ctypes.Structure):
+ _fields_=[('arg',ctypes.c_uint),('op',ctypes.c_uint),('a',ctypes.c_uint64),('b',ctypes.c_uint64)]
+lib.seccomp_init.argtypes=[ctypes.c_uint32];lib.seccomp_init.restype=ctypes.c_void_p
+lib.seccomp_syscall_resolve_name.argtypes=[ctypes.c_char_p];lib.seccomp_syscall_resolve_name.restype=ctypes.c_int
+lib.seccomp_rule_add_array.argtypes=[ctypes.c_void_p,ctypes.c_uint32,ctypes.c_int,ctypes.c_uint,ctypes.POINTER(ArgCmp)]
+lib.seccomp_load.argtypes=[ctypes.c_void_p];lib.seccomp_release.argtypes=[ctypes.c_void_p]
+allowed={getattr(socket,name) for name in sys.argv[3:]}
+ctx=lib.seccomp_init(0x7fff0000)
+assert ctx,'seccomp_init failed'
+try:
+ syscall=lib.seccomp_syscall_resolve_name(b'socket');assert syscall>=0
+ for family in range(64):
+  if family not in allowed:
+   comparison=ArgCmp(0,4,family,0)
+   assert lib.seccomp_rule_add_array(ctx,0x00050000|97,syscall,1,ctypes.byref(comparison))==0
+ assert lib.seccomp_load(ctx)==0,'seccomp_load failed'
+finally:lib.seccomp_release(ctx)
+os.execvp(sys.argv[1],[sys.argv[1],'--input-type=module','-e',sys.argv[2]])
+`;
+  const check=list=>spawnSync('python3',['-B','-c',probe,process.execPath,nodeProbe,...list],{encoding:'utf8',timeout:15000});
+  const blocked=check(families.filter(f=>f!=='AF_NETLINK'));
+  if(blocked.status===77)return t.skip('libseccomp unavailable');
+  assert.ifError(blocked.error);assert.notEqual(blocked.status,0);assert.match(blocked.stderr,/uv_interface_addresses/);
+  const permitted=check(families);assert.ifError(permitted.error);assert.equal(permitted.status,0,permitted.stderr);assert.equal(permitted.stdout,'interface-check-ok');
+});
 test('validated copy rejects traversal, links, modified source and preserves public permissions under private umask',()=>{
   const dir=temp(),source=join(dir,'source'),dest=join(dir,'dest');mkdirSync(source);mkdirSync(dest);mkdirSync(join(source,'nested'));writeFileSync(join(source,'nested/file.txt'),'checked');
   try{for(const path of ['../x','/tmp/x','a/../x','a\\x','a//x'])assert.throws(()=>child(source,path));
