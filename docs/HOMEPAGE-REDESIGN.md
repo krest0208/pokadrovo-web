@@ -2,9 +2,9 @@
 
 The homepage explains an editing workflow using original travel stills and clear interface illustrations. There are no video elements or video downloads on the homepage. Uploaded files still open in the real editor through its existing callbacks.
 
-The reference https://aidentika.com/ was reviewed in the browser: its hero presents one input and a fan of results. Pokadrovo uses its own source-to-sequence composition, original imagery, blue/graphite palette and warm coin accent. The fan opens once; scene buttons switch examples. Reduced-motion preferences disable movement.
+Pokadrovo uses its own source-to-sequence composition, original imagery, blue/graphite palette and warm coin accent. The fan opens once; scene buttons switch examples. Reduced-motion preferences disable movement.
 
-The six process panels cover importing footage, writing a brief, consent-based video/audio analysis, reviewing an edit plan, manual adjustments and export. These are illustrations, visibly identified as a process example, not customer results or screenshots of completed AI work. The page does not promise a working provider connection before setup is complete.
+The six process panels cover importing footage, writing a brief, consent-based video/audio analysis, reviewing an edit plan, manual adjustments and export. The panels explain the workflow without presenting customer results or claiming that a provider has completed real AI work. The page does not promise a working provider connection before setup is complete.
 
 The footer includes every homepage destination, the format selector, recent projects, account access and an owner-only admin link. The platform marks are the actual brand silhouettes from Simple Icons; they are format selectors, not links to invented Pokadrovo social accounts.
 

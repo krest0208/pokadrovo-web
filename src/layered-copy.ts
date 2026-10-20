@@ -95,5 +95,5 @@ export const copy = {
   "files": "Файлов",
   "previewStrip": "ВАШ СЛЕДУЮЩИЙ РОЛИК",
   "previewStripText": "Начните с идеи или добавьте кадры.",
-  "credits": "Демо-кадры: SpaceX / NASA"
+  "credits": "Кадры: SpaceX / NASA"
 } as const;

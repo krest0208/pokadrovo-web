@@ -25,4 +25,3 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - `src/home/assets/coastal-story.webp`: six original illustrative travel stills generated with the built-in imagegen tool. Not real customer footage or proof of an AI-generated video. The full original prompt and design notes are in `docs/HOMEPAGE-REDESIGN.md`. Stored as WebP for delivery; the generated composition is unchanged.
 - Brand silhouettes in `src/PlatformIcon.tsx` are canonical SVG paths from Simple Icons, CC0-1.0: https://github.com/simple-icons/simple-icons/tree/develop/icons (`instagram.svg`, `tiktok.svg`, `youtube.svg`, `vk.svg`, `telegram.svg`). These identify output platforms, not Pokadrovo social accounts or partners.
-- Reference reviewed: https://aidentika.com/. The source-to-fan composition and clear visual steps informed the layout; its artwork, product copy, logos and source code were not copied.
