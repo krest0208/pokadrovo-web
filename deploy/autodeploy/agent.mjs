@@ -14,20 +14,52 @@ export function command(file, args, options = {}) {
   return result.stdout?.trim() || '';
 }
 export async function limitedJson(response, limit=1024*1024) {
-  if (!response.ok || !response.body) throw Error('GitHub or health endpoint unavailable ('+response.status+').');
+  if (!response.ok || !response.body) throw Object.assign(Error('GitHub or health endpoint unavailable ('+response.status+').'),{status:response.status});
   const reader=response.body.getReader(), chunks=[];let bytes=0;
-  try { while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>limit)throw Error('Response limit exceeded.');chunks.push(part.value);} }
+  try { while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>limit)throw Object.assign(Error('Response limit exceeded.'),{code:'RESPONSE_TOO_LARGE'});chunks.push(part.value);} }
   finally {await reader.cancel().catch(()=>{});}
-  try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw Error('Invalid JSON response.');}
+  try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw Object.assign(Error('Invalid JSON response.'),{code:'INVALID_JSON'});}
 }
-export function githubClient(fetcher=globalThis.fetch) {
-  async function api(path){
-    const response=await fetcher('https://api.github.com/repos/'+TARGET.repo+path,{redirect:'error',signal:AbortSignal.timeout(15000),headers:{Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10','User-Agent':'pokadrovo-autodeploy/1'}});
-    return limitedJson(response);
+const transientNetworkCodes=new Set(['ECONNRESET','ECONNREFUSED','EPIPE','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','ENETUNREACH','EHOSTUNREACH','UND_ERR_SOCKET','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT']);
+function requestFailure(error) {
+  if(Number.isInteger(error?.status))return {reason:'HTTP '+error.status,retry:[408,500,502,503,504].includes(error.status)};
+  const codes=new Set(),seen=new Set(),pending=[error];let timeout=false;
+  for(let i=0;pending.length&&i<12;i++){
+    const current=pending.shift();if(!current||seen.has(current))continue;seen.add(current);
+    if(current.name==='TimeoutError')timeout=true;
+    if(typeof current.code==='string'&&/^[A-Z][A-Z0-9_]{1,63}$/.test(current.code))codes.add(current.code);
+    if(current.cause)pending.push(current.cause);
+    if(Array.isArray(current.errors))pending.push(...current.errors.slice(0,6));
+  }
+  if(codes.size)return {reason:[...codes].join(', '),retry:[...codes].every(code=>transientNetworkCodes.has(code))};
+  if(timeout)return {reason:'TIMEOUT',retry:true};
+  if(error?.name==='TypeError'&&error.message==='fetch failed')return {reason:'FETCH_FAILED',retry:true};
+  return {reason:'INVALID_RESPONSE',retry:false};
+}
+export async function fetchJsonWithRetry(url,{label='JSON request',fetcher=globalThis.fetch,headers={},timeout=15000,limit=1024*1024,wait=ms=>new Promise(done=>setTimeout(done,ms)),log=console.warn}={}) {
+  for(let attempt=1;attempt<=3;attempt++){
+    const signal=AbortSignal.timeout(timeout);
+    try {
+      // No connection is kept idle across the long synchronous VPS build.
+      const response=await fetcher(url,{method:'GET',redirect:'manual',signal,headers:{...headers,Connection:'close'}});
+      if(!response.ok){await response.body?.cancel().catch(()=>{});throw Object.assign(Error('HTTP request failed.'),{status:response.status});}
+      return await limitedJson(response,limit);
+    }catch(error){
+      const failure=requestFailure(signal.aborted?signal.reason:error);
+      if(!failure.retry||attempt===3)throw Error(label+' unavailable ('+failure.reason+'; '+attempt+' attempt'+(attempt===1?'':'s')+').');
+      const delay=attempt===1?1000:3000;
+      log(label+': '+failure.reason+'; retry '+(attempt+1)+'/3 in '+delay/1000+'s.');
+      await wait(delay);
+    }
+  }
+}
+export function githubClient(fetcher=globalThis.fetch,retryOptions={}) {
+  async function api(path,label){
+    return fetchJsonWithRetry('https://api.github.com/repos/'+TARGET.repo+path,{...retryOptions,label,fetcher,headers:{Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10','User-Agent':'pokadrovo-autodeploy/1'}});
   }
   return {
-    async head(){const ref=await api('/git/ref/heads/main');if(ref.ref!=='refs/heads/main'||ref.object?.type!=='commit'||!isSha(ref.object.sha))throw Error('Unexpected main ref.');return ref.object.sha;},
-    async green(sha){if(!isSha(sha))throw Error('Invalid commit.');const data=await api('/actions/workflows/check-web.yml/runs?branch=main&event=push&head_sha='+sha+'&per_page=10');
+    async head(label='GitHub main lookup'){const ref=await api('/git/ref/heads/main',label);if(ref.ref!=='refs/heads/main'||ref.object?.type!=='commit'||!isSha(ref.object.sha))throw Error('Unexpected main ref.');return ref.object.sha;},
+    async green(sha){if(!isSha(sha))throw Error('Invalid commit.');const data=await api('/actions/workflows/check-web.yml/runs?branch=main&event=push&head_sha='+sha+'&per_page=10','GitHub CI lookup');
       // Only the newest attempt/run for this head can authorize a deployment.
       const candidates=(data.workflow_runs||[]).filter(r=>r.head_sha===sha&&r.event==='push'&&r.head_branch==='main').sort((a,b)=>b.id-a.id);
       return !!candidates.length && successfulRun(candidates[0],sha);
@@ -111,13 +143,13 @@ async function health(app,sha) {
   const page=await local('/');if(page.status!==200||!page.body.equals(index))throw Error('Website is serving another build.');
   if((await local('/api/account/projects')).status!==401)throw Error('Private project access check failed.');
   if(sha){const marker=await local('/pokadrovo-release.json');if(marker.status!==200||JSON.parse(marker.body).sha!==sha)throw Error('Release marker does not match.');
-    const external=await fetch('https://pokadrovo.ru/api/health',{redirect:'error',signal:AbortSignal.timeout(8000)});if((await limitedJson(external,65536)).ok!==true)throw Error('HTTPS health check failed.');}
+    const external=await fetchJsonWithRetry('https://pokadrovo.ru/api/health',{label:'Pokadrovo HTTPS health check',timeout:8000,limit:65536});if(external.ok!==true)throw Error('HTTPS health check failed.');}
 }
 export function linuxAdapter(config=TARGET) {
   const client=githubClient();
   const ops={now:Date.now,service:async action=>{if(!['start','stop'].includes(action))throw Error('Unsupported service action.');command('/usr/bin/systemctl',[action,'pokadrovo.service'],{timeout:45000});},health,
     backupPrivate:async backup=>{command('/usr/bin/tar',['-C','/var/lib','-czf',join(backup,'private.tar.gz'),'pokadrovo'],{timeout:60000});}};
-  return {...client,now:Date.now,
+  return {...client,now:Date.now,log:message=>console.log('Pokadrovo deployment: '+message),
     readState:()=>readJson(join(config.state,'state.json'),{}),writeState:value=>atomicJson(join(config.state,'state.json'),value),
     recover:()=>recoverRelease(config,ops),prepare:sha=>prepare(sha,config),
     activate:(prepared,sha,commit)=>activateRelease(config,ops,prepared,sha,commit),

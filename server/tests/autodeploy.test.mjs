@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { TARGET, successfulRun, isSha, child, inventory, copyFiles, atomicJson, readJson, runCycle, activateRelease, recoverRelease, pruneBackups } from '../../deploy/autodeploy/core.mjs';
-import { githubClient, limitedJson, buildUnitArgs } from '../../deploy/autodeploy/agent.mjs';
+import { githubClient, limitedJson, buildUnitArgs, fetchJsonWithRetry } from '../../deploy/autodeploy/agent.mjs';
 import { buildSteps, runBuildSteps } from '../../deploy/autodeploy/worker.mjs';
 const sha='a'.repeat(40), other='b'.repeat(40), root=fileURLToPath(new URL('../..',import.meta.url));
 const success={id:42,head_sha:sha,head_branch:'main',event:'push',status:'completed',conclusion:'success',path:'.github/workflows/check-web.yml',head_repository:{full_name:TARGET.repo}};
@@ -29,11 +30,65 @@ test('deployment accepts only successful main push checks from the exact reposit
   for(const value of ['main','../main','A'.repeat(40),'a'.repeat(39),null])assert.equal(isSha(value),false);
 });
 test('GitHub API filters head and rejects redirect/network failures rather than falling back',async()=>{
-  const urls=[];const client=githubClient(async(url,options)=>{urls.push(url);assert.equal(options.redirect,'error');assert.ok(!('Authorization' in options.headers));return Response.json(url.includes('/runs?')?{workflow_runs:[success]}:{ref:'refs/heads/main',object:{type:'commit',sha}});});
+  const urls=[];const client=githubClient(async(url,options)=>{urls.push(url);assert.equal(options.redirect,'manual');assert.equal(options.headers.Connection,'close');assert.ok(!('Authorization' in options.headers));return Response.json(url.includes('/runs?')?{workflow_runs:[success]}:{ref:'refs/heads/main',object:{type:'commit',sha}});});
   assert.equal(await client.head(),sha);assert.equal(await client.green(sha),true);assert.ok(urls[1].includes('head_sha='+sha));assert.ok(urls.every(u=>u.startsWith('https://api.github.com/repos/'+TARGET.repo+'/')));
   const newer=githubClient(async()=>Response.json({workflow_runs:[success,{...success,id:43,status:'in_progress',conclusion:null}]}));assert.equal(await newer.green(sha),false);
   await assert.rejects(githubClient(async()=>new Response('limited',{status:403})).head(),/unavailable/);
   await assert.rejects(limitedJson(new Response('x'.repeat(200)),30),/limit/);
+});
+test('JSON checks recover from HTTP and interrupted-body failures with bounded retries and fresh deadlines',async()=>{
+  const waits=[],signals=[],messages=[];let calls=0,cancelled=false;
+  const result=await fetchJsonWithRetry('https://pokadrovo.ru/api/health',{label:'Pokadrovo HTTPS health check',wait:async ms=>waits.push(ms),log:m=>messages.push(m),fetcher:async(_url,options)=>{
+    calls++;signals.push(options.signal);assert.equal(options.method,'GET');assert.equal(options.redirect,'manual');assert.equal(options.headers.Connection,'close');
+    if(calls===1)return new Response(new ReadableStream({cancel(){cancelled=true;}}),{status:503});
+    if(calls===2)return new Response(new ReadableStream({start(controller){controller.error(Object.assign(Error('socket interrupted'),{code:'ECONNRESET'}));}}));
+    return Response.json({ok:true});
+  }});
+  assert.deepEqual(result,{ok:true});assert.equal(calls,3);assert.equal(cancelled,true);assert.equal(new Set(signals).size,3);assert.deepEqual(waits,[1000,3000]);assert.equal(messages.length,2);
+});
+test('JSON retries stop after three network failures and identify the endpoint without leaking raw errors',async()=>{
+  for(const timeout of [false,true]){
+    let calls=0;const messages=[],waits=[];
+    await assert.rejects(fetchJsonWithRetry('https://api.github.com/repos/'+TARGET.repo+'/git/ref/heads/main',{label:'GitHub main recheck after build',wait:async ms=>waits.push(ms),log:m=>messages.push(m),fetcher:async()=>{
+      calls++;if(timeout)throw new DOMException('sensitive upstream details','TimeoutError');
+      throw new TypeError('fetch failed',{cause:new AggregateError([Object.assign(Error('sensitive upstream details'),{code:'EAI_AGAIN'}),Object.assign(Error('private path'),{code:'ECONNRESET'})])});
+    }}),error=>{assert.match(error.message,/GitHub main recheck after build unavailable/);assert.match(error.message,/3 attempts/);assert.match(error.message,timeout?/TIMEOUT/:/EAI_AGAIN, ECONNRESET/);assert.doesNotMatch(error.message,/sensitive|private/);return true;});
+    assert.equal(calls,3);assert.deepEqual(waits,[1000,3000]);assert.equal(messages.length,2);assert.ok(messages.every(m=>!m.includes('sensitive')));
+  }
+});
+test('JSON checks reject redirects, denied requests, invalid data and TLS failures without retrying',async()=>{
+  const cases=[
+    {reply:()=>new Response('private response',{status:302,headers:{Location:'https://other.example'}}),expected:/HTTP 302/},
+    {reply:()=>new Response('private response',{status:403}),expected:/HTTP 403/},
+    {reply:()=>new Response('not JSON'),expected:/INVALID_JSON/},
+    {reply:()=>new Response('x'.repeat(80)),limit:32,expected:/RESPONSE_TOO_LARGE/},
+    {reply:()=>{throw new TypeError('fetch failed',{cause:Object.assign(Error('private certificate details'),{code:'CERT_HAS_EXPIRED'})});},expected:/CERT_HAS_EXPIRED/}
+  ];
+  for(const scenario of cases){let calls=0;
+    await assert.rejects(fetchJsonWithRetry('https://pokadrovo.ru/api/health',{label:'Pokadrovo HTTPS health check',limit:scenario.limit,wait:async()=>assert.fail('must not retry'),log:()=>{},fetcher:async()=>{calls++;return scenario.reply();}}),error=>{assert.match(error.message,scenario.expected);assert.doesNotMatch(error.message,/private/);return true;});
+    assert.equal(calls,1);
+  }
+});
+test('real HTTP socket closure is recovered without reusing the failed connection',async()=>{
+  let requests=0;const connections=[];
+  const server=createServer((request,response)=>{requests++;connections.push(request.headers.connection);if(requests===1){request.socket.destroy();return;}response.writeHead(200,{'Content-Type':'application/json'});response.end('{"ok":true}');});
+  await new Promise((resolveListen,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolveListen);});
+  try{const result=await fetchJsonWithRetry('http://127.0.0.1:'+server.address().port+'/health',{label:'Local test health',wait:async()=>{},log:()=>{}});assert.deepEqual(result,{ok:true});assert.equal(requests,2);assert.deepEqual(connections,['close','close']);}
+  finally{server.closeAllConnections();await new Promise(resolveClose=>server.close(resolveClose));}
+});
+test('post-build GitHub retry preserves the prepared release but still rejects stale or unverified main',async()=>{
+  for(const mode of ['recover','superseded','unavailable']){
+    let heads=0;const client=githubClient(async url=>{
+      if(url.includes('/runs?'))return Response.json({workflow_runs:[success]});
+      heads++;
+      if(heads===2||mode==='unavailable'&&heads>1)throw new TypeError('fetch failed',{cause:Object.assign(Error('socket reset'),{code:'ECONNRESET'})});
+      return Response.json({ref:'refs/heads/main',object:{type:'commit',sha:mode==='superseded'&&heads>1?other:sha}});
+    },{wait:async()=>{},log:()=>{}});
+    const f=cycle({...client,readState:async()=>({deployedSha:other})});
+    if(mode==='unavailable'){await assert.rejects(runCycle(f.io),/GitHub main recheck after build unavailable \(ECONNRESET; 3 attempts\)/);assert.equal(heads,4);assert.equal(f.state.deployedSha,other);assert.equal(f.state.failedSha,sha);}
+    else{assert.equal((await runCycle(f.io)).status,mode==='recover'?'deployed':'superseded');assert.equal(heads,3);}
+    assert.equal(f.events.filter(e=>e==='prepare').length,1);assert.equal(f.events.filter(e=>e==='cleanup').length,1);assert.equal(f.events.filter(e=>e==='activate').length,mode==='recover'?1:0);
+  }
 });
 test('unchanged head, incomplete checks and cooldown never build or restart the website',async()=>{
   for(const overrides of [{readState:async()=>({deployedSha:sha})},{green:async()=>false},{readState:async()=>({failedSha:sha,failedAt:9999999})}]){const f=cycle(overrides);const result=await runCycle(f.io);assert.ok(['unchanged','waiting-for-checks','cooldown'].includes(result.status));assert.ok(!f.events.includes('prepare'));assert.ok(!f.events.includes('activate'));}

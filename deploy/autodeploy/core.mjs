@@ -71,7 +71,7 @@ export function copyFiles(source, destination, manifest, {skipExisting = false} 
 }
 export async function runCycle(io) {
   await io.recover();
-  const state = await io.readState(), sha = await io.head();
+  const state = await io.readState(), sha = await io.head('GitHub main lookup before build');
   if (!isSha(sha)) throw Error('GitHub returned an invalid commit.');
   if (state?.deployedSha === sha) return {status:'unchanged', sha};
   if (state?.failedSha === sha && io.now() - state.failedAt < 15 * 60000) return {status:'cooldown', sha};
@@ -79,7 +79,9 @@ export async function runCycle(io) {
   let prepared;
   try {
     prepared = await io.prepare(sha);
-    if (await io.head() !== sha) return {status:'superseded', sha};
+    io.log?.('Build verified; rechecking GitHub main.');
+    if (await io.head('GitHub main recheck after build') !== sha) return {status:'superseded', sha};
+    io.log?.('Main unchanged; installing the verified release.');
     await io.activate(prepared, sha, () => io.writeState({deployedSha:sha, deployedAt:io.now()}));
     return {status:'deployed', sha};
   } catch (error) {
