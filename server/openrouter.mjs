@@ -10,14 +10,49 @@ export const FREE_MODELS = Object.freeze({
 export const OPENROUTER_LIMITS = Object.freeze({ dailyDefault: 40, dailyMaximum: 50, perMinute: 18 });
 const visualModels = [FREE_MODELS.qwen, FREE_MODELS.gemma];
 const editModels = Object.values(FREE_MODELS);
+const transientCodes = new Set(['ECONNRESET','ECONNREFUSED','EPIPE','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','ENETUNREACH','EHOSTUNREACH','UND_ERR_SOCKET','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT']);
+class CatalogError extends Error {
+  constructor(code, retry = false) { super(code); this.code = code; this.retry = retry; }
+}
+function catalogFailure(error) {
+  if (error instanceof CatalogError) return error;
+  if (error?.name === 'TimeoutError') return new CatalogError('TIMEOUT', true);
+  const code = error?.cause?.code || error?.code;
+  if (transientCodes.has(code)) return new CatalogError(code, true);
+  if (typeof code === 'string' && /CERT|TLS|SSL/.test(code)) return new CatalogError('TLS');
+  return new CatalogError('NETWORK', error?.name === 'TypeError' && error?.message === 'fetch failed');
+}
 
 async function catalogJson(response) {
-  if (!response.ok || !response.body) throw Error('catalog');
+  if (!response.ok || !response.body) throw new CatalogError('HTTP ' + response.status, [408,500,502,503,504].includes(response.status));
   const reader = response.body.getReader(), chunks = []; let size = 0;
   try {
-    for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 128000) throw Error('catalog size'); chunks.push(part.value); }
+    for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 128000) throw new CatalogError('RESPONSE_TOO_LARGE'); chunks.push(part.value); }
   } finally { await reader.cancel().catch(() => {}); }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw new CatalogError('INVALID_JSON'); }
+}
+
+/** Only public catalog GETs retry. Keys, prompts, media and paid fallbacks are never involved. */
+export async function readModelCatalog(request, modelId, signal) {
+  if (!Object.values(FREE_MODELS).includes(modelId)) throw new CatalogError('UNKNOWN_MODEL');
+  const url = OPENROUTER_BASE + '/models/' + modelId.split('/').map(encodeURIComponent).join('/') + '/endpoints';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const timeout = AbortSignal.timeout(8000);
+    try {
+      const response = await request(url, { method:'GET', redirect:'manual',
+        headers:{ Accept:'application/json', Connection:'close', 'User-Agent':'pokadrovo/free-model-catalog' },
+        signal:signal ? AbortSignal.any([signal, timeout]) : timeout });
+      if (!response.ok) { await response.body?.cancel().catch(()=>{}); throw new CatalogError('HTTP ' + response.status, [408,500,502,503,504].includes(response.status)); }
+      const data = (await catalogJson(response)).data;
+      if (data?.id !== modelId || !Array.isArray(data.endpoints)) throw new CatalogError('INVALID_CATALOG');
+      return data;
+    } catch (error) {
+      const failure = catalogFailure(timeout.aborted ? timeout.reason : error);
+      if (signal?.aborted || !failure.retry || attempt === 1) throw failure;
+      await new Promise(done=>setTimeout(done,250));
+    }
+  }
 }
 
 /** Independent encrypted key; model IDs and the destination are owned by the server. */
@@ -71,19 +106,17 @@ export function createOpenRouter({ store, now, request }) {
     const old = cache.get(modelId); if (!force && old && old.expires > now()) return old.value;
     let value;
     try {
-      const response = await request(OPENROUTER_BASE + '/models/' + modelId.split('/').map(encodeURIComponent).join('/') + '/endpoints',
-        { method: 'GET', redirect: 'error', headers: { Accept: 'application/json' }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) });
-      if (response.status === 404) { await response.body?.cancel().catch(() => {}); value = { model: modelId, available: false, reason: 'Модель отсутствует в каталоге провайдера.' }; }
-      else {
-        const data = (await catalogJson(response)).data;
-        if (data?.id !== modelId || !Array.isArray(data.endpoints)) throw Error('catalog shape');
+        const data = await readModelCatalog(request, modelId, signal);
         const modalities = data.architecture?.input_modalities || [];
         const needsVideo = visualModels.includes(modelId);
         const free = data.endpoints.filter(e => (e.status === undefined || e.status >= 0) && e.pricing?.prompt != null && e.pricing?.completion != null && Number(e.pricing.prompt) === 0 && Number(e.pricing.completion) === 0 && ['request','image'].every(k => e.pricing[k] == null || Number(e.pricing[k]) === 0));
         const available = free.length > 0 && modalities.includes('text') && (!needsVideo || modalities.includes('video'));
         value = { model: modelId, available, reason: available ? 'В каталоге есть бесплатный API-провайдер. Доступ ключа проверяется первым запросом.' : 'Сейчас нет подходящего бесплатного API-провайдера. Исходник не отправляется.' };
-      }
-    } catch { value = { model: modelId, available: null, reason: 'Не удалось проверить каталог. Попробуйте позже; исходник не отправлялся.' }; }
+    } catch (error) {
+      const code = catalogFailure(error).code;
+      value = code === 'HTTP 404' ? { model:modelId, available:false, reason:'Модель отсутствует в каталоге провайдера.' }
+        : { model:modelId, available:null, reason:'Не удалось проверить каталог OpenRouter (' + code + '). Проверка выполняется без API-ключа; генерация не запускалась и исходник не отправлялся.' };
+    }
     cache.set(modelId, { expires: now() + (value.available ? 300000 : 30000), value }); return value;
   }
   async function ensureAvailable(s, service, signal) {

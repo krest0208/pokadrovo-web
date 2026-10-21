@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { createApp } from '../app.mjs';
 import { provisionOwner, token } from '../security.mjs';
-import { FREE_MODELS, OPENROUTER_BASE } from '../openrouter.mjs';
+import { FREE_MODELS, OPENROUTER_BASE, readModelCatalog } from '../openrouter.mjs';
 
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 const visual = () => ({ summary: 'Человек показывает товар.', speech: 'Неизвестная речь', audio: 'Неизвестный звук',
@@ -30,6 +30,28 @@ function catalog(url, unavailable = []) {
   return json({ data: { id, architecture: { input_modalities: id === FREE_MODELS.deepseek ? ['text'] : ['text', 'image', 'video'] },
     endpoints: unavailable.includes(id) ? [] : [{ status: 0, pricing: { prompt: '0', completion: '0' } }] } });
 }
+test('a transient public catalog failure retries a fresh credential-free GET without generating',async()=>{
+ const calls=[];
+ const data=await readModelCatalog(async(url,init)=>{
+  calls.push(init);assert.equal(init.method,'GET');assert.equal(init.headers.Authorization,undefined);assert.equal(init.body,undefined);
+  assert.equal(init.headers.Connection,'close');assert.equal(init.redirect,'manual');
+  if(calls.length===1)throw new TypeError('fetch failed',{cause:{code:'ECONNRESET'}});
+  return catalog(url);
+ },FREE_MODELS.gemma);
+ assert.equal(data.id,FREE_MODELS.gemma);assert.equal(calls.length,2);assert.notEqual(calls[0].signal,calls[1].signal);
+});
+
+test('denied, redirected, malformed, oversized and TLS catalog responses fail closed without retries',async()=>{
+ const cases=[
+  [()=>new Response('denied',{status:403}),'HTTP 403'],
+  [()=>new Response(null,{status:302,headers:{Location:'https://example.test/'}}),'HTTP 302'],
+  [()=>new Response('not json'),'INVALID_JSON'],
+  [()=>json({data:{id:'another-model',endpoints:[]}}),'INVALID_CATALOG'],
+  [()=>new Response('x'.repeat(128001)),'RESPONSE_TOO_LARGE'],
+  [()=>{throw new TypeError('secret details',{cause:{code:'CERT_HAS_EXPIRED'}});},'TLS']
+ ];
+ for(const [result,code] of cases){let calls=0;await assert.rejects(readModelCatalog(async()=>{calls++;return result();},FREE_MODELS.gemma),error=>error.code===code&&!error.message.includes('secret'));assert.equal(calls,1);}
+});
 async function fixture(upstream) {
   let clock = Date.UTC(2026, 9, 20, 10); const calls = [];
   const dir = mkdtempSync(join(tmpdir(), 'pk-router-')); mkdirSync(join(dir, 'dist')); writeFileSync(join(dir, 'dist/index.html'), '<!doctype html>');

@@ -74,7 +74,7 @@ export class AiPanel {
   private serviceChange=()=>{
     if(this.abort)return;const service=this.node.querySelector<HTMLSelectElement>('.pe-ai-mode')!.value as AiService;
     if(!this.port.provider?.modes?.some(m=>m.id===service))return;
-    this.port.provider.setService?.(service);this.available=false;this.plan=null;this.request=null;this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked=false;this.renderPlan();this.refresh();void this.checkConnection();
+    this.port.provider.setService?.(service);this.available=false;this.plan=null;this.request=null;this.say('');this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked=false;this.renderPlan();this.refresh();void this.checkConnection();
   };
   private mediaChange=(event:Event)=>{const select=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;if(event.target===select&&select.value!==this.mediaClipId)this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked=false;this.mediaClipId=select.value;this.refresh();};
   private readDraft(){

@@ -1,5 +1,7 @@
 import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, clone, clock, currentClip, cutRange, dimensions, fromAsset, length, normalizeCaption, normalizeClip, normalizeProject, parseSrt, patchClip, positions, splitClip, totalLength, uid, videoLength } from './model';
-import { download, inspectFile, persistAsset, restoreAsset, saveProject } from './assets';
+import { download, inspectFile, persistAsset, saveProject } from './assets';
+import { restoreProjectAssets } from './media-recovery';
+import { storageScope } from '../account/api';
 import { PlaybackEngine, exportFormats, exportProject } from './engine';
 import { t } from './copy';
 import { brandSvg } from '../brand';
@@ -24,6 +26,7 @@ export class Editor {
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
+ private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;
  constructor(private root:HTMLElement,private opts:EditorOptions){
   this.history=new History(normalizeProject(opts.project));this.root.className='pe';this.root.dataset.theme=opts.theme;this.root.dataset.mobile='player';
   this.root.innerHTML=`<header class="pe-top"><div class="pe-brand">${button('home',t.home,'home','square')}${brand(33,true)}<b>${t.brand}<small>STUDIO / 0.6</small></b><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
@@ -57,6 +60,7 @@ export class Editor {
   this.listen(this.root,'pointerdown',e=>this.pointer(e as PointerEvent));this.listen(this.root,'dragstart',e=>this.dragStart(e as DragEvent));
   this.listen(this.root,'dragover',e=>{if((e.target as Element).closest('.pe-library,.pe-timeline'))e.preventDefault();});this.listen(this.root,'drop',e=>this.drop(e as DragEvent));
   this.listen(document,'keydown',e=>this.key(e as KeyboardEvent));
+  this.listen(window,'pagehide',()=>{if(this.autosaveTimer)this.save(false);});
   this.resize=new ResizeObserver(()=>this.fitCanvas());this.resize.observe(this.$('.pe-viewport'));
   this.render();void this.restore();
  }
@@ -68,24 +72,34 @@ export class Editor {
  private fail(e:unknown){this.status(t.error+': '+(e instanceof Error?e.message:String(e)));}
  private async restore(){
   this.loading=true;this.status(t.loading+'...');
-  try{const metadata=new Map([...this.project.clips,...this.project.audio].map(c=>[c.assetId,c]));for(const [id,c] of metadata){if(this.opts.assets.has(id))continue;const blob=await restoreAsset(id);if(!blob)throw new Error('Missing original file: '+c.name);const a=await inspectFile(Object.assign(blob,{name:c.name}),id,c.kind==='audio'&&blob.type.startsWith('video/')?'video':c.kind);if(this.disposed){URL.revokeObjectURL(a.url);return;}this.opts.assets.set(id,a);}this.status(t.ready);}
-  catch(e){this.fail(e);}finally{this.loading=false;if(!this.disposed){this.render();await this.prepare();}}
+  let missing:string[]=[];
+  try{missing=await restoreProjectAssets(this.project,this.opts.assets,()=>!this.disposed&&storageScope()===this.account);if(!missing.length)this.status(t.ready);}
+  catch(e){this.fail(e);}finally{this.loading=false;if(!this.disposed){this.render();await this.prepare();if(missing.length)this.status('Не удалось восстановить файлы: '+missing.join(', ')+'. Остальные исходники загружены. Добавьте недостающие файлы повторно.');}}
  }
- async importFiles(files:FileList|File[]|null){if(!files?.length||this.exporting)return;this.engine.pause();this.loading=true;let next=clone(this.project),added=0;let storageFailed=false;const problems:string[]=[];
+ async importFiles(files:FileList|File[]|null){if(!files?.length||this.exporting||this.importing||this.disposed)return;this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
   for(const file of Array.from(files)){if(this.disposed)break;try{
-   this.status(`${t.loading}: ${file.name}`);const a=await inspectFile(file);if(this.disposed){URL.revokeObjectURL(a.url);break;}
-   this.opts.assets.set(a.id,a);try{await persistAsset(a);}catch{storageFailed=true;}
+   this.status(`${t.loading}: ${file.name}`);const a=await inspectFile(file);if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
+   try{await persistAsset(a);}catch{storageFailed=true;}
+   if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
+   this.opts.assets.set(a.id,a);const next=clone(this.project);
    const c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
+   this.history.commit(next);this.save(false);this.render();
   }catch(e){problems.push(file.name+': '+(e instanceof Error?e.message:String(e)));}}
-  this.loading=false;if(added&&!this.disposed){this.history.commit(next);this.render();await this.prepare();this.save(false);}
+  this.loading=false;this.importing=false;if(added&&!this.disposed)await this.prepare();
   this.status(problems.length?problems.join('; '):storageFailed?t.storageError:`${t.files}: ${added} / ${t.ready}`);
  }
  private async prepare(){const rev=++this.prep;this.loading=true;
   try{const [w,h]=dimensions(this.project.ratio);this.engine.canvas.width=w;this.engine.canvas.height=h;await this.engine.prepare(this.project);if(rev===this.prep&&!this.disposed)this.fitCanvas();}
   catch(e){if(!this.disposed&&rev===this.prep)this.fail(e);}finally{if(rev===this.prep){this.loading=false;this.tools?.sync();}}
  }
- private commit(p:Project,message=t.ready){this.engine.pause();this.history.commit(p);this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
- private save(notify=true){try{saveProject(this.project);this.opts.onSave(clone(this.project));if(notify)this.status(t.saved);}catch{this.status(t.storageError);}}
+ private commit(p:Project,message=t.ready){this.engine.pause();this.history.commit(p);this.cacheChange();this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
+ private cacheChange(){
+  if(this.disposed||storageScope()!==this.account)return;
+  try{saveProject(this.project,false);this.opts.onSave(clone(this.project));}catch{this.status(t.storageError);}
+  if(this.autosaveTimer)clearTimeout(this.autosaveTimer);
+  this.autosaveTimer=setTimeout(()=>this.save(false),500);
+ }
+ private save(notify=true){if(this.autosaveTimer){clearTimeout(this.autosaveTimer);this.autosaveTimer=null;}if(storageScope()!==this.account)return;try{saveProject(this.project);this.opts.onSave(clone(this.project));if(notify)this.status(t.saved);}catch{this.status(t.storageError);}}
  private updateCursor(time:number,playing:boolean){
   this.cursor=time;if(this.disposed)return;
   this.$('.pe-time').textContent=clock(time);this.$('.pe-duration').textContent=clock(totalLength(this.project));const head=this.root.querySelector<HTMLElement>('.pe-head');if(head)head.style.left=(time*this.pixels())+'px';
@@ -186,7 +200,7 @@ export class Editor {
   if(action==='json-export'){download(new Blob([JSON.stringify(this.project,null,2)],{type:'application/json'}),this.project.name+'.json');return;}
   if(action==='play'){if(this.loading)return;this.engine.playing?this.engine.pause():void this.engine.play().catch(e=>this.fail(e));return;}
   if(action==='back'||action==='forward'){void this.seek(this.cursor+(action==='back'?-1:1));return;}
-  if(action==='undo'||action==='redo'){this.engine.pause();this.history[action]();this.selected=null;this.render();void this.prepare();return;}
+  if(action==='undo'||action==='redo'){this.engine.pause();this.history[action]();this.history.value.modified=Date.now();this.cacheChange();this.selected=null;this.render();void this.prepare();return;}
   if(action==='mark-in'||action==='mark-out'){if(action==='mark-in')this.markIn=this.cursor;else this.markOut=this.cursor;this.renderTimeline();return;}
   if(action==='cut'){this.commit(cutRange(this.project,this.markIn,this.markOut));this.markOut=this.markIn;this.renderTimeline();return;}
   if(action==='add-text'){const p=clone(this.project),c=normalizeCaption({text:t.text,from:this.cursor,to:Math.max(this.cursor+3,videoLength(p))});p.texts.push(c);this.selected={track:'text',id:c.id};this.tab='text';this.commit(p);return;}
@@ -264,5 +278,5 @@ export class Editor {
   }catch(e){this.$('.pe-export-message').textContent=e instanceof DOMException&&e.name==='AbortError'?t.cancel:t.error+': '+(e instanceof Error?e.message:String(e));}
   finally{this.exporting=false;cancel.hidden=true;modal.querySelectorAll<HTMLInputElement>('select,button').forEach(n=>n.disabled=false);}
  }
- dispose(){this.disposed=true;this.tools.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
+ dispose(){if(this.autosaveTimer)this.save(false);this.disposed=true;this.tools.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
 }
