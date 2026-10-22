@@ -289,7 +289,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
         owner: !!auth?.owner, configured: !!auth?.owner && configured,
         verified: !!auth?.owner && verified, model: auth?.owner ? routerService(service) ? openrouter.model(o, service) : service === 'yandex-edit' ? y.c.model : OMNI_MODEL : undefined,
         limits: AI_LIMITS, trial: trialState(auth), billing: coinState(auth, service), tariffConfigured: false, paymentsEnabled: false,
-        modes: SERVICES.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника · проба', 'deepseek-edit': 'План монтажа · проба', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'Монтаж · тариф готовится' }[id], ...modeStatus(auth, id) })) }); return true;
+        modes: SERVICES.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника · проба', 'deepseek-edit': 'План монтажа · проба', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'Яндекс · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
     }
     if (req.method !== 'POST' || path !== '/api/ai/edit-plan') return false;
     const auth = session(req); sameOrigin(req);
