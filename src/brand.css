@@ -1,4 +1,6 @@
-.pk-brand-mark{display:inline-block;flex-shrink:0;vertical-align:middle;overflow:visible}
+.pk-brand-mark{--pk-logo-tile:#eaf0ff;--pk-logo-border:#cbd9f6;--pk-logo-back:#7899e6;--pk-logo-middle:#4777df;--pk-logo-front:#245ce0;--pk-logo-highlight:#bfd2ff;--pk-logo-play:#fff;display:inline-block;flex-shrink:0;vertical-align:middle;overflow:visible}
+[data-theme=dark] .pk-brand-mark{--pk-logo-tile:#213149;--pk-logo-border:#405675;--pk-logo-back:#afc8ff;--pk-logo-middle:#7da4ff;--pk-logo-front:#8cafff;--pk-logo-highlight:#e6eeff;--pk-logo-play:#142646}
+.pk-brand-mark rect,.pk-brand-mark path{transition:fill .2s ease,stroke .2s ease}
 .pk-brand-back,.pk-brand-middle,.pk-brand-front,.pk-brand-play{transform-box:view-box;transform-origin:32px 32px;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
 .pk-brand-mark--animated .pk-brand-back{animation:pk-brand-back-in 1.7s cubic-bezier(.2,.8,.2,1)}
 .pk-brand-mark--animated .pk-brand-middle{animation:pk-brand-middle-in 1.7s cubic-bezier(.2,.8,.2,1)}
