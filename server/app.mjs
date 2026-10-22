@@ -263,7 +263,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
     if (accountsEnabled && (pagePath === '/profile' || !guestEditingEnabled && ['/studio', '/projects'].includes(pagePath)) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
-    let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile','/projects'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
+    let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile','/projects','/pricing','/pricing/'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
     if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some(s => s.startsWith('.'))) deny(404, 'Не найдено.');
     const target = resolve(dist, '.' + (decoded === '/' ? '/index.html' : decoded));
     if (!target.startsWith(dist + sep)) deny(404, 'Не найдено.');

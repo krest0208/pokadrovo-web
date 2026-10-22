@@ -2,6 +2,7 @@ import * as React from 'react';
 import AiHome from './AiHome';
 import HomeFormats from './HomeFormats';
 import ProjectLibrary from './ProjectLibrary';
+import AiPlans from './AiPlans';
 import type { Editor } from './editor/editor';
 import { OmniAiProvider } from './editor/omni';
 import { Asset, Mode, Project, Ratio, newProject, normalizeProject } from './editor/model';
@@ -17,9 +18,9 @@ import './mobile.css';
 type Intent = { kind:'create'|'resume'|'open'; brief?:string; id?:string; mode?:Mode; ratio?:Ratio };
 const canEdit=(session:Session|null)=>!!session?.user||(session?.accountsEnabled===false||session?.guestEditingEnabled===true);
 const accountKey=(session:Session|null)=>session?.user?.id||((session?.accountsEnabled===false||session?.guestEditingEnabled===true)?'guest-local':null);
-type State={screen:'home'|'editor'|'profile'|'projects';theme:'light'|'dark';mode:Mode;ratio:Ratio;project:Project|null;projects:Project[];error:string;session:Session|null;checking:boolean;auth:boolean;authMode:'register'|'login'};
+type State={screen:'home'|'editor'|'profile'|'projects'|'pricing';theme:'light'|'dark';mode:Mode;ratio:Ratio;project:Project|null;projects:Project[];error:string;session:Session|null;checking:boolean;auth:boolean;authMode:'register'|'login'};
 export default class Studio extends React.Component<Record<string,never>,State>{
- state:State={screen:'home',theme:'light',mode:'video',ratio:'16:9',project:null,projects:[],error:'',session:null,checking:true,auth:false,authMode:'register'};
+ state:State={screen:typeof location!=='undefined'&&location.pathname.replace(/\/$/,'')==='/pricing'?'pricing':'home',theme:'light',mode:'video',ratio:'16:9',project:null,projects:[],error:'',session:null,checking:true,auth:false,authMode:'register'};
  private host:HTMLDivElement|null=null; private editor:Editor|null=null; private assets=new Map<string,Asset>();
  private pending:File[]=[]; private intent:Intent|null=null; private disposed=false; private starting=false; private revision=0; private refreshBusy=false;
  componentDidMount(){
@@ -60,11 +61,11 @@ export default class Studio extends React.Component<Record<string,never>,State>{
   if(changed){this.revision++;this.editor?.dispose();this.editor=null;this.assets.forEach(a=>URL.revokeObjectURL(a.url));this.assets.clear();}
   let projects:Project[]=[];
   if(canEdit(session)){try{projects=loadProjects();if(session.user){const r=await request<{projects:unknown[]}>('/projects');if(currentUser()?.id!==session.user.id)return;const map=new Map(projects.map(p=>[p.id,p]));for(const raw of r.projects){const p=normalizeProject(raw),old=map.get(p.id);if(!old||old.modified<p.modified)map.set(p.id,p);}projects=[...map.values()].sort((a,b)=>b.modified-a.modified);replaceProjectCache(projects);}}catch(e){this.setState({error:(e as Error).message});}}
-  await new Promise<void>(done=>this.setState(s=>({session,checking:false,projects,project:changed?(projects[0]||null):(s.project||projects[0]||null),screen:changed?'home':s.screen}),done));
+  await new Promise<void>(done=>this.setState(s=>({session,checking:false,projects,project:changed?(projects[0]||null):(s.project||projects[0]||null),screen:changed&&s.screen!=='pricing'?'home':s.screen}),done));
  }
  private syncStatus=(event:Event)=>{const status=this.host?.querySelector('.pe-status');if(status)status.textContent=String((event as CustomEvent).detail||'');};
- private navigate=(screen:State['screen'])=>{history.pushState({},'',screen==='home'?'/':screen==='editor'?'/studio':screen==='projects'?'/projects':'/profile');this.setState({screen});window.scrollTo({top:0,behavior:'instant'});};
- private onPop=()=>{if(location.pathname==='/studio')void this.authorize({kind:'resume'});else if(location.pathname==='/projects'&&!this.state.session?.user&&canEdit(this.state.session))this.setState({screen:'projects'});else if(['/profile','/projects'].includes(location.pathname))this.openAccount();else this.setState({screen:'home'});};
+ private navigate=(screen:State['screen'])=>{history.pushState({},'',screen==='home'?'/':screen==='editor'?'/studio':screen==='projects'?'/projects':screen==='pricing'?'/pricing':'/profile');this.setState({screen});window.scrollTo({top:0,behavior:'instant'});};
+ private onPop=()=>{if(location.pathname.replace(/\/$/,'')==='/pricing')this.setState({screen:'pricing'});else if(location.pathname==='/studio')void this.authorize({kind:'resume'});else if(location.pathname==='/projects'&&!this.state.session?.user&&canEdit(this.state.session))this.setState({screen:'projects'});else if(['/profile','/projects'].includes(location.pathname))this.openAccount();else this.setState({screen:'home'});};
  private recheck=()=>{if(this.refreshBusy||this.state.checking||this.disposed)return;this.refreshBusy=true;void getSession().then(s=>{if(!s.user&&this.state.session?.user)this.expired();else if(accountKey(s)!==accountKey(this.state.session)||s.accountsEnabled!==this.state.session?.accountsEnabled||s.guestEditingEnabled!==this.state.session?.guestEditingEnabled)void this.adopt(s);}).catch(()=>{}).finally(()=>{this.refreshBusy=false;});};
  private expired=()=>{if(this.disposed)return;if(this.state.session?.accountsEnabled===false){this.pending=[];this.intent=null;void getSession().then(s=>this.adopt(s)).then(()=>this.navigate('home')).catch(e=>this.setState({error:e.message}));return;}this.editor?.dispose();this.editor=null;this.revision++;acceptSession({user:null,csrf:'',providers:this.state.session?.providers||[]});this.intent={kind:'resume'};this.setState({session:null,screen:'home',project:null,projects:[],auth:true,authMode:'login',error:'Сеанс завершён. Войдите снова.'});void getSession().then(session=>{if(!this.disposed)this.setState({session});}).catch(()=>{});};
  private rememberIntent(){try{if(this.intent)sessionStorage.setItem('pokadrovo.auth.intent',JSON.stringify(this.intent));else sessionStorage.removeItem('pokadrovo.auth.intent');}catch{}}
@@ -96,7 +97,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
  private changedUser=(u:User)=>{if(this.state.session){const session=acceptSession({...this.state.session,user:u});this.setState({session});}};
  private restoreLegacy=()=>{if(this.state.session?.user?.role!=='owner'||!confirm('Добавить в аккаунт владельца проекты, сохранённые в этом браузере до регистрации?'))return;try{const projects=importOwnerLegacy();this.setState({projects,error:'Старые локальные проекты добавлены владельцу.'});}catch(e){this.setState({error:(e as Error).message});}};
  render(){const s=this.state,user=s.session?.user;return <>
-  {s.screen==='home'?<div key="home" className="ps-shell" data-theme={s.theme}>
+  {s.screen==='pricing'?<AiPlans theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onStart={this.resume}/>:s.screen==='home'?<div key="home" className="ps-shell" data-theme={s.theme}>
    <AiHome guestMode={s.checking||!user&&canEdit(s.session)} registrationEnabled={s.session?.accountsEnabled===true} onSignIn={this.openSignIn} theme={s.theme} onToggleTheme={this.toggleTheme} onCreate={this.create} onContinue={this.resume} onImport={this.attach} onOpenProject={this.openProject} account={user?{id:user.id,name:user.name,role:user.role}:null} onAccount={this.openAccount} onAdmin={user?.role==='owner'&&s.session?.adminPath?this.openAdmin:undefined} projects={s.projects.map(p=>({id:p.id,name:p.name,count:p.clips.length,modified:p.modified}))}/>
    <HomeFormats mode={s.mode} ratio={s.ratio} onChoose={(mode,ratio)=>this.setState({mode,ratio})} onStart={()=>this.create('')}/>
   </div>:s.screen==='projects'?<ProjectLibrary projects={s.projects} theme={s.theme} onHome={()=>this.navigate('home')} onNew={()=>this.create('')} onOpen={this.openProject} onImport={()=>this.setState({projects:loadProjects()})}/>:s.screen==='profile'&&user?<><ProfileView user={user} projects={s.projects} theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onEditor={this.resume} onNew={()=>this.create('')} onOpen={this.openProject} onLogout={this.signOut} onUser={this.changedUser} onAdmin={user?.role==='owner'&&s.session?.adminPath?this.openAdmin:undefined}/>{user.role==='owner'&&<button className="au-legacy" onClick={this.restoreLegacy}>Восстановить проекты прежней версии из этого браузера</button>}</>:<><div key="editor" ref={node=>{this.host=node;}}/>{canEdit(s.session)&&<div className="au-editor-account" data-theme={s.theme}><button onClick={this.openAccount}>{user?'Профиль · '+user.name:s.session?.accountsEnabled?'Создать аккаунт':'Мои проекты'}</button>{user?.role==='owner'&&s.session?.adminPath&&<button onClick={this.openAdmin}>Админ-панель</button>}</div>}</>}
