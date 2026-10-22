@@ -8,6 +8,7 @@ import { previewStorage,record } from './storage';
 import { AdminPreview } from './admin';
 import '../editor/editor.css';
 import '../editor/tools.css';
+import '../editor/workspace.css';
 import '../home-formats.css';
 import './preview.css';
 

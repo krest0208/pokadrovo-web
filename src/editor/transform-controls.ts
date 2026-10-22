@@ -77,7 +77,7 @@ export class TransformControls {
     const end=(ev:PointerEvent)=>{
       if(ev.pointerId!==e.pointerId)return;const result=this.draft;cleanup();this.draft=null;
       if(changed&&result)this.port.commit(result,'Положение и форма сохранены.');
-      else{this.port.preview(original);this.sync();}
+      else{this.port.preview(original);this.sync();if(window.matchMedia('(max-width: 900px)').matches)this.port.run('mobile-inspector');}
     };
     const escape=(ev:KeyboardEvent)=>{if(ev.key==='Escape'){ev.preventDefault();ev.stopImmediatePropagation();cancel();}};
     this.cancelDrag=cancel;
