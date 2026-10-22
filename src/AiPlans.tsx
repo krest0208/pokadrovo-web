@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { ArrowUpRight, AudioLines, Check, Coins, Film, Layers3, Moon, Sun, Text } from 'lucide-react';
 import BrandMark from './BrandMark';
+import yandexModels from '../shared/yandex-models.json';
 import './ai-plans.css';
 
 const plans = [
@@ -38,7 +39,7 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
     <a className="pk-plans-skip" href="#plans-main">К тарифам</a>
     <header className="pk-plans-header">
       <a href="/" className="pk-plans-brand" onClick={event=>{event.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a>
-      <nav aria-label="Навигация по тарифам"><a href="#ai-levels">Уровни ИИ</a><a href="#ai-compare">Сравнить</a><a href="#ai-coins">Монеты</a></nav>
+      <nav aria-label="Навигация по тарифам"><a href="#ai-levels">Уровни ИИ</a><a href="#ai-russia">Модели в России</a><a href="#ai-compare">Сравнить</a><a href="#ai-coins">Монеты</a></nav>
       <button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Включить тёмную тему':'Включить светлую тему'}>{theme==='light'?<Moon size={20}/>:<Sun size={20}/>}</button>
     </header>
     <main id="plans-main">
@@ -59,6 +60,19 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
           <ul>{plan.features.map(feature=><li key={feature}><Check size={17}/><span>{feature}</span></li>)}</ul>
           <p className="pk-plan-limit">{plan.limitation}</p><span className="pk-plan-status">{plan.status}</span>
         </article>;})}
+      </section>
+      <section id="ai-russia" className="pk-russia-models" aria-labelledby="ai-russia-title">
+        <span className="pk-plans-eyebrow">Выбор через Yandex AI Studio</span>
+        <h2 id="ai-russia-title">Модели, доступные<br/><em>через платформу в России.</em></h2>
+        <p>Четыре варианта для монтажного плана. Они получают ваше задание, структуру проекта и предыдущий разбор исходника. Нарезку и добавление текста выполняет редактор после вашего подтверждения.</p>
+        <div className="pk-russia-grid">{yandexModels.map(model=><article key={model.id}>
+          <span>Yandex AI Studio</span><h3>{model.name}</h3><strong>{model.role}</strong><p>{model.description}</p>
+          <dl><div><dt>Контекст модели</dt><dd>{model.contextTokens.toLocaleString('ru-RU')} токенов</dd></div><div><dt>В Покадрово</dt><dd>План нарезки и тексты титров по переданному контексту</dd></div></dl>
+          <span className="pk-russia-status">Интеграция подготовлена · тест владельца</span>
+        </article>)}</div>
+        <div className="pk-plans-context"><Film size={24}/><p><strong>Полный автоматический монтаж собирается из нескольких этапов.</strong>Эти подключения пока не получают исходные видео и аудио напрямую. Распознавание речи с таймкодами, автоматические субтитры по речи и удаление вдохов ещё не подключены. Лимит отправляемого описания — 64 КБ; окно контекста модели не увеличивает лимиты сайта.</p></div>
+        <p className="pk-russia-note">Доступ подготовлен для тестирования владельцем. Успешные запросы к новым моделям ещё нужно проверить с рабочим ключом. Цена дополнительных моделей в монетах будет утверждена после тестов; плата за API зависит от выбранной модели и тарифов Yandex Cloud.</p>
+        <a className="pk-plans-link" href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">Каталог и характеристики провайдера <ArrowUpRight size={17}/></a>
       </section>
       <section id="ai-compare" className="pk-plans-comparison" aria-labelledby="ai-compare-title">
         <span className="pk-plans-eyebrow">Разница по делу</span><h2 id="ai-compare-title">Что меняется с уровнем</h2>

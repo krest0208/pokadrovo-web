@@ -9,7 +9,7 @@ import { createApp } from '../app.mjs';
 import { provisionOwner, token } from '../security.mjs';
 import { AI_LIMITS, OMNI_MODEL, validateOmniEndpoint, validateAiMedia, validateAiRequest, validateReelsProject } from '../ai.mjs';
 
-import { YANDEX_MODEL, YANDEX_ENDPOINT } from '../yandex.mjs';
+import { YANDEX_MODEL, YANDEX_ENDPOINT, YANDEX_CHAT_ENDPOINT, YANDEX_MODELS } from '../yandex.mjs';
 
 const endpoint = 'https://test-workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1';
 const request = () => ({ version: 1, requestId: token(), projectId: 'p1', revision: 'pk1-test', prompt: 'Опиши изображение и звуки. Предложи нужные правки.',
@@ -156,6 +156,55 @@ test('Reels restrictions include audio and text tails, malformed timings and sou
     { audio: [{ id: 'a', start: 0, end: 10, speed: 1, at: 55 }] }, { texts: [{ id: 't', from: 50, to: 61 }] },
     { clips: [{ ...project.clips[0], speed: 0 }] }, { clips: [{ ...project.clips[0], speed: '1' }] }])
     assert.throws(() => validateReelsProject({ ...project, ...patch }));
+});
+
+test('Russia-hosted model choices produce validated trim and caption plans through one Yandex account',async()=>{
+  const calls=[],plan={analysis:null,summary:'Убрать первые две секунды и добавить заголовок.',operations:[{type:'trim',track:'video',id:'v1',start:2,end:10},{type:'caption',text:'Поездка',from:0,to:2,fontId:'system'}]};
+  const f=await fixture(async(url,init)=>{calls.push([url,init]);return response(plan);});
+  try{
+    const choices=YANDEX_MODELS.filter(model=>model.api==='chat');assert.equal(choices.length,3);
+    let secret;
+    for(const model of choices){
+      const settings=await f.yandex({model:model.id,...(secret?{apiKey:''}:{})});assert.equal(settings.status,200,settings.raw);
+      assert.equal(settings.data.modelName,model.name);assert.equal(settings.data.connected,false);
+      const stored=f.app.store.get('SELECT secret FROM ai_yandex_config').secret;if(secret)assert.equal(stored,secret);secret=stored;
+      const r=request(),context={...analysis(),clipId:'v1',assetId:'asset1',duration:10};
+      const result=await f.owner('/api/ai/edit-plan','POST',{service:'yandex-edit',model:'untrusted-browser-override',request:r,context});
+      assert.equal(result.status,200,result.raw);assert.deepEqual(result.data.plan.operations,plan.operations);
+      assert.deepEqual(result.data.usage,{inputTokens:1234,outputTokens:321});assert.equal(result.data.access.customerChargeMinor,0);
+      const [url,init]=calls.at(-1),payload=JSON.parse(init.body);assert.equal(url,YANDEX_CHAT_ENDPOINT);
+      assert.equal(init.headers.Authorization,'Api-Key test-only-independent-yandex-key');assert.equal(init.headers['OpenAI-Project'],'b1gtestfolder12345678');assert.equal(init.headers['x-data-logging-enabled'],'false');
+      assert.equal(payload.model,'gpt://b1gtestfolder12345678/'+model.id);assert.equal(payload.response_format.type,'json_schema');assert.equal(payload.stream,false);
+      const input=JSON.parse(payload.messages[1].content);assert.equal(input.media,null);assert.equal(input.previousAnalysis.summary,context.summary);
+      assert.match(payload.messages[0].content,/Не утверждай, что просмотрел видео/);
+      assert.equal((await f.owner('/api/admin/ai/yandex')).data.connected,true);
+      const row=f.app.store.get('SELECT provider,model,coin_charge FROM ai_runs WHERE request_id=?',r.requestId);assert.equal(row.provider,'yandex');assert.equal(row.model,model.id);assert.equal(row.coin_charge,0);
+    }
+    const before=calls.length;
+    assert.equal((await f.yandex({model:'https://attacker.example/model',apiKey:''})).status,400);
+    assert.equal((await f.yandex({model:'deepseek-v4-flash',apiKey:''})).status,400);
+    const user=await register(f);
+    assert.equal((await user.user('/api/ai/edit-plan','POST',{service:'yandex-edit',model:choices[0].id,request:request()})).status,402);
+    assert.equal((await f.owner('/api/ai/edit-plan','POST',{service:'yandex-edit',request:request(),media:media(),mediaConsent:true})).status,422);
+    assert.equal(calls.length,before);
+    assert.equal((await f.owner('/api/admin/ai/analytics')).data.models.filter(row=>row.provider==='yandex').length,3);
+  }finally{await f.close();}
+});
+
+test('changing a Russia-hosted model clears verification and truncated responses never retry or apply',async()=>{
+  let calls=0,broken=false;
+  const f=await fixture(async()=>{calls++;return broken?response(undefined,{choices:[{finish_reason:'length',message:{content:'{"operations":['}}]}):response();});
+  try{
+    await f.yandex({model:'aliceai-llm'});
+    assert.equal((await f.owner('/api/ai/edit-plan','POST',{service:'yandex-edit',request:request()})).status,200);
+    assert.equal((await f.owner('/api/admin/ai/yandex')).data.connected,true);
+    await f.yandex({model:'deepseek-v4.1-flash',apiKey:''});
+    assert.equal((await f.owner('/api/admin/ai/yandex')).data.connected,false);
+    broken=true;
+    const failed=await f.owner('/api/ai/edit-plan','POST',{service:'yandex-edit',request:request()});assert.equal(failed.status,502);assert.equal(failed.data.plan,undefined);
+    assert.equal(calls,2);assert.equal((await f.owner('/api/admin/ai/yandex')).data.connected,false);
+    assert.equal(f.app.store.get("SELECT count(*) n FROM ai_runs WHERE result='failed'").n,1);
+  }finally{await f.close();}
 });
 
 test('Yandex has independent encrypted credentials, owner-only reauthentication and native JSON protocol', async () => {

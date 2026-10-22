@@ -166,11 +166,20 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
   }
   $('ai-refresh').addEventListener('click',()=>loadAiUsage().catch(e=>notify(e.message)));
   $('ai-period').addEventListener('change',()=>loadAiUsage().catch(e=>notify(e.message)));
+  let yandexModels=[];
+  function describeYandexModel() {
+    const selected=yandexModels.find(model=>model.id===$('yandex-form').elements.model.value);
+    text($('yandex-model-description'),selected?selected.role+' · контекст '+selected.contextTokens.toLocaleString('ru-RU')+' токенов. '+selected.description:'Выберите модель из списка AI Studio.');
+  }
+  $('yandex-form').elements.model.addEventListener('change',describeYandexModel);
   async function loadYandex() {
     const data=await request('/ai/yandex'); if(!owner)return; const form=$('yandex-form');
+    yandexModels=data.models||[];
+    form.elements.model.replaceChildren(...yandexModels.map(model=>new Option(model.name,model.id)));
     form.elements.model.value=data.model;form.elements.folderId.value=data.folderId;form.elements.apiKey.value='';form.elements.password.value='';form.elements.removeKey.checked=false;form.elements.enabled.checked=data.enabled;
+    describeYandexModel();
     text($('yandex-key-status'),data.keyConfigured?'Отдельный ключ Яндекса сохранён':'Ключ Яндекса не указан');
-    text($('yandex-connection-status'),data.connected?'Проверен запросом':data.configured&&data.enabled?'Готов к тесту администратора':'Не включён');
+    text($('yandex-connection-status'),data.connected?data.modelName+' · проверена':data.configured&&data.enabled?'Готова к тесту: '+data.modelName:'Не включена');
   }
   bindForm('yandex-form',async(data,form)=>{
     data.removeKey=form.elements.removeKey.checked;data.enabled=!data.removeKey&&form.elements.enabled.checked;

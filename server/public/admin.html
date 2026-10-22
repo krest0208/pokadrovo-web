@@ -46,14 +46,15 @@
       <p class="field-note">Проверка читает публичный каталог, не отправляет исходники и не запускает генерацию. Наличие модели в каталоге ещё не подтверждает доступ вашего ключа.</p>
       <div id="openrouter-catalog" aria-live="polite"></div>
     </article>
-    <article class="card"><div class="card-heading"><div><h3>Яндекс AI Studio · будущий платный монтаж</h3><p id="yandex-key-status">Отдельный ключ Яндекса не указан</p></div><span id="yandex-connection-status" class="small-pill">Не включён</span></div>
+    <article class="card"><div class="card-heading"><div><h3>Модели в России · Yandex AI Studio</h3><p id="yandex-key-status">Отдельный ключ Яндекса не указан</p></div><span id="yandex-connection-status" class="small-pill">Не включён</span></div>
       <form id="yandex-form" class="settings-form">
-        <label>Модель Яндекса<input name="model" value="yandexgpt-5.1" readonly></label>
+        <label>Модель монтажного плана<select name="model" required><option value="yandexgpt-5.1">YandexGPT 5.1 Pro</option></select></label>
+        <p id="yandex-model-description" class="field-note">Выберите модель для теста монтажного плана.</p>
         <label>Идентификатор каталога · Folder ID<input name="folderId" maxlength="64" pattern="[a-z0-9]{10,64}" autocomplete="off" spellcheck="false" required></label>
         <label>API-ключ Яндекса<input name="apiKey" type="password" maxlength="4096" autocomplete="new-password" placeholder="Пусто — сохранить прежний ключ"></label>
         <label class="check-label"><input type="checkbox" name="removeKey"> Удалить только ключ Яндекса</label>
         <label class="check-label"><input type="checkbox" name="enabled"> Разрешить тесты Яндекса администратору без списаний в Покадрово</label>
-        <p class="field-note">Пользовательский тариф и платежи ещё не включены. Яндекс получает задание, структуру проекта и переданный предыдущий анализ; исходное видео в этом режиме пока не разбирается. Ключ Qwen хранится отдельно.</p>
+        <p class="field-note">Модели работают через Yandex AI Studio с одним ключом и каталогом. Они получают задание, структуру проекта и предыдущий разбор; видео и звук в этом режиме не отправляются. Смена модели требует нового успешного теста. Запросы оплачиваются в Yandex Cloud; пользовательский тариф пока закрыт. Ключ Alibaba Qwen хранится отдельно.</p>
         <label>Текущий пароль владельца<input name="password" type="password" autocomplete="current-password" required></label>
         <button class="primary" type="submit">Сохранить Яндекс</button><p class="form-error" role="alert"></p>
       </form>

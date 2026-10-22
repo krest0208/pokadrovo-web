@@ -243,7 +243,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
           : visual ? 'Визуальный разбор исходника и советы. Речь и звук не распознаются.' : 'План по заданию и предыдущему анализу. Медиафайлы не отправляются.' };
     }
     if (service === 'yandex-edit') return { available: owner && y.configured && y.enabled,
-      reason: !owner ? 'Тариф платного монтажа готовится. Списания и оплата пока недоступны.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите Яндекс для тестов администратора.' : 'Тест Яндекса без списаний в Покадрово. Расходы API оплачивает владелец.', requiresMedia: false };
+      reason: !owner ? 'Тариф платного монтажа готовится. Списания и оплата пока недоступны.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите Яндекс для тестов администратора.' : `${yandex.adminState().modelName}: план по заданию и предыдущему разбору. Тест без списаний монет; API оплачивает владелец.`, requiresMedia: false };
     return { available: q.configured && q.enabled && (owner || trialEnabled() && trial.remaining > 0), requiresMedia: trial.requiresMedia,
       reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Тест Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
         : !q.configured || !q.enabled || !trialEnabled() ? 'Бесплатная проба Reels пока не открыта.' : trial.expired ? 'Срок бесплатной пробы закончился.' : !trial.remaining ? 'Запросы бесплатной пробы использованы. Платный тариф готовится.' : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Успешный запрос — ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
@@ -289,7 +289,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
         owner: !!auth?.owner, configured: !!auth?.owner && configured,
         verified: !!auth?.owner && verified, model: auth?.owner ? routerService(service) ? openrouter.model(o, service) : service === 'yandex-edit' ? y.c.model : OMNI_MODEL : undefined,
         limits: AI_LIMITS, trial: trialState(auth), billing: coinState(auth, service), tariffConfigured: false, paymentsEnabled: false,
-        modes: SERVICES.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника · проба', 'deepseek-edit': 'План монтажа · проба', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'Яндекс · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
+        modes: SERVICES.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника · проба', 'deepseek-edit': 'План монтажа · проба', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'AI Studio · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
     }
     if (req.method !== 'POST' || path !== '/api/ai/edit-plan') return false;
     const auth = session(req); sameOrigin(req);
@@ -367,7 +367,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
       let value, usage;
       const cost = routerService(service) && typeof result.usage?.cost === 'number' && Number.isFinite(result.usage.cost) && result.usage.cost >= 0 ? result.usage.cost : null;
       if (service === 'yandex-edit') {
-        ({ value, usage } = yandex.parse(result));
+        ({ value, usage } = yandex.parse(result, y));
         store.run('UPDATE ai_runs SET input_tokens=?,output_tokens=? WHERE request_id=?', usage.inputTokens, usage.outputTokens, requestId);
       } else {
         const integer = x => Number.isSafeInteger(x) && x >= 0 ? x : null;
