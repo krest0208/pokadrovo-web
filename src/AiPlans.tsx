@@ -40,25 +40,25 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
     <header className="pk-plans-header">
       <a href="/" className="pk-plans-brand" onClick={event=>{event.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a>
       <nav aria-label="Навигация по тарифам"><a href="#ai-levels">Уровни ИИ</a><a href="#ai-russia">Модели в России</a><a href="#ai-compare">Сравнить</a><a href="#ai-coins">Монеты</a></nav>
-      <button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Включить тёмную тему':'Включить светлую тему'}>{theme==='light'?<Moon size={20}/>:<Sun size={20}/>}</button>
+      <button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Включить тёмную тему':'Включить светлую тему'}>{theme==='light'?<Moon size={20} aria-hidden="true"/>:<Sun size={20} aria-hidden="true"/>}</button>
     </header>
-    <main id="plans-main">
+    <main id="plans-main" tabIndex={-1}>
       <section className="pk-plans-hero">
         <span className="pk-plans-eyebrow">Тарифы — мощность — нейросети</span>
         <h1>Вашей истории —<br/><em>своя мощность.</em></h1>
         <p>От первого разбора кадров до подробного плана монтажа. Выбирайте глубину работы ИИ под свою задачу.</p>
-        <a className="pk-plans-link" href="#ai-levels">Посмотреть уровни <ArrowUpRight size={18}/></a>
-        <div className="pk-plans-draft"><Coins size={20}/><p><strong>Предварительные тарифы.</strong> Цены указаны в монетах. Платные уровни и покупка монет пока не открыты; курс к рублю объявим перед запуском оплаты.</p></div>
+        <a className="pk-plans-link" href="#ai-levels">Посмотреть уровни <ArrowUpRight size={18} aria-hidden="true"/></a>
+        <div className="pk-plans-draft"><Coins size={20} aria-hidden="true"/><p><strong>Предварительные тарифы.</strong> Цены указаны в монетах. Платные уровни и покупка монет пока не открыты; курс к рублю объявим перед запуском оплаты.</p></div>
       </section>
       <section id="ai-levels" className="pk-plans-levels" aria-label="Тарифы и возможности нейросетей">
-        {plans.map(plan=>{const Icon=plan.icon;return <article key={plan.id} className={'pk-plan-card pk-plan-'+plan.id}>
-          <div className="pk-plan-card-top"><span>{plan.label}</span><Icon size={25}/></div>
-          <h2>{plan.name}</h2><p className="pk-plan-description">{plan.description}</p>
-          <div className="pk-plan-price"><Coins size={26}/><strong>{plan.coins}</strong><span>{plan.coins===1?'монета':plan.coins<5?'монеты':'монет'}</span></div><p className="pk-plan-unit">{plan.unit}</p>
+        {plans.map(plan=>{const Icon=plan.icon;return <article key={plan.id} className={'pk-plan-card pk-plan-'+plan.id} aria-labelledby={'plan-'+plan.id}>
+          <div className="pk-plan-card-top"><span>{plan.label}</span><Icon size={25} aria-hidden="true"/></div>
+          <div className="pk-plan-title"><h2 id={'plan-'+plan.id}>{plan.name}</h2><span className="pk-plan-status">{plan.status}</span></div><p className="pk-plan-description">{plan.description}</p>
+          <div className="pk-plan-price"><Coins size={26} aria-hidden="true"/><strong>{plan.coins}</strong><span>{plan.coins===1?'монета':plan.coins<5?'монеты':'монет'}</span></div><p className="pk-plan-unit">{plan.unit}</p>
           <div className="pk-plan-power"><div><span>Мощность</span><strong>{plan.power}</strong></div><div className="pk-plan-meter" aria-hidden="true">{[0,1,2].map(n=><i key={n} className={n<plan.depth?'is-on':''}/>)}</div></div>
           <div className="pk-plan-model"><span>Нейросеть</span><h3>{plan.model}</h3><p>{plan.detail}</p><small>Контекст модели: {plan.context}</small></div>
-          <ul>{plan.features.map(feature=><li key={feature}><Check size={17}/><span>{feature}</span></li>)}</ul>
-          <p className="pk-plan-limit">{plan.limitation}</p><span className="pk-plan-status">{plan.status}</span>
+          <ul>{plan.features.map(feature=><li key={feature}><Check size={17} aria-hidden="true"/><span>{feature}</span></li>)}</ul>
+          <p className="pk-plan-limit">{plan.limitation}</p>
         </article>;})}
       </section>
       <section id="ai-russia" className="pk-russia-models" aria-labelledby="ai-russia-title">
@@ -70,15 +70,16 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
           <dl><div><dt>Контекст модели</dt><dd>{model.contextTokens.toLocaleString('ru-RU')} токенов</dd></div><div><dt>В Покадрово</dt><dd>План нарезки и тексты титров по переданному контексту</dd></div></dl>
           <span className="pk-russia-status">Интеграция подготовлена · тест владельца</span>
         </article>)}</div>
-        <div className="pk-plans-context"><Film size={24}/><p><strong>Полный автоматический монтаж собирается из нескольких этапов.</strong>Эти подключения пока не получают исходные видео и аудио напрямую. Распознавание речи с таймкодами, автоматические субтитры по речи и удаление вдохов ещё не подключены. Лимит отправляемого описания — 64 КБ; окно контекста модели не увеличивает лимиты сайта.</p></div>
+        <div className="pk-plans-context"><Film size={24} aria-hidden="true"/><p><strong>Полный автоматический монтаж собирается из нескольких этапов.</strong>Эти подключения пока не получают исходные видео и аудио напрямую. Распознавание речи с таймкодами, автоматические субтитры по речи и удаление вдохов ещё не подключены. Лимит отправляемого описания — 64 КБ; окно контекста модели не увеличивает лимиты сайта.</p></div>
         <p className="pk-russia-note">Доступ подготовлен для тестирования владельцем. Успешные запросы к новым моделям ещё нужно проверить с рабочим ключом. Цена дополнительных моделей в монетах будет утверждена после тестов; плата за API зависит от выбранной модели и тарифов Yandex Cloud.</p>
-        <a className="pk-plans-link" href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">Каталог и характеристики провайдера <ArrowUpRight size={17}/></a>
+        <a className="pk-plans-link" href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">Каталог и характеристики провайдера <ArrowUpRight size={17} aria-hidden="true"/></a>
       </section>
       <section id="ai-compare" className="pk-plans-comparison" aria-labelledby="ai-compare-title">
         <span className="pk-plans-eyebrow">Разница по делу</span><h2 id="ai-compare-title">Что меняется с уровнем</h2>
         <p>Мощность здесь — глубина рабочего процесса. Это не оценка качества в процентах: результат зависит от исходника и задания.</p>
-        <div className="pk-plans-table-wrap" tabIndex={0} role="region" aria-label="Сравнение тарифов, таблицу можно прокрутить"><table><caption>Возможности и предварительная стоимость уровней ИИ</caption><thead><tr><th scope="col">Возможность</th>{plans.map(plan=><th key={plan.id} scope="col">{plan.name}</th>)}</tr></thead><tbody>{comparison.map(([name,...values])=><tr key={name}><th scope="row">{name}</th>{values.map((value,index)=><td key={index}>{value}</td>)}</tr>)}</tbody></table></div>
-        <div className="pk-plans-context"><Film size={24}/><p><strong>Сейчас в пробе: исходник до 60 секунд и 12 МиБ.</strong> Большое окно контекста у модели не увеличивает лимиты загрузки сайта. Длинные видео, автоматические субтитры по таймкодам и поиск музыки пока не входят в эти тарифы.</p></div>
+        <p id="pk-plans-scroll-hint" className="pk-plans-scroll-hint">Таблицу можно прокрутить по горизонтали.</p>
+        <div className="pk-plans-table-wrap" aria-describedby="pk-plans-scroll-hint" tabIndex={0} role="region" aria-label="Сравнение тарифов, таблицу можно прокрутить"><table><caption>Возможности и предварительная стоимость уровней ИИ</caption><thead><tr><th scope="col">Возможность</th>{plans.map(plan=><th key={plan.id} scope="col">{plan.name}</th>)}</tr></thead><tbody>{comparison.map(([name,...values])=><tr key={name}><th scope="row">{name}</th>{values.map((value,index)=><td key={index}>{value}</td>)}</tr>)}</tbody></table></div>
+        <div className="pk-plans-context"><Film size={24} aria-hidden="true"/><p><strong>Сейчас в пробе: исходник до 60 секунд и 12 МиБ.</strong> Большое окно контекста у модели не увеличивает лимиты загрузки сайта. Длинные видео, автоматические субтитры по таймкодам и поиск музыки пока не входят в эти тарифы.</p></div>
       </section>
       <section id="ai-coins" className="pk-plans-coins" aria-labelledby="ai-coins-title"><div><span className="pk-plans-eyebrow">Один баланс</span><h2 id="ai-coins-title">Платите за работу ИИ.<br/><em>Монтируйте в своём ритме.</em></h2><p>Монеты Покадрово — единицы оплаты действий в студии. Токены модели — внутренний способ расчёта провайдера; это разные вещи.</p></div><div className="pk-plans-rules">
         <div><span>01</span><p><strong>Понятная единица</strong>Разбор исходника и создание плана — два отдельных действия. В «Студии» предлагаем объединить их в один запуск за 15 монет.</p></div>
@@ -92,7 +93,7 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
         <details><summary>Чем более дорогой уровень лучше?</summary><p>«Автор» добавляет работу со звуком, «Студия» — отдельную модель для проработки плана. Мы проверим пользу на одинаковых исходниках перед запуском. Более дорогой запрос сам по себе не гарантирует удачный монтаж.</p></details>
         <details><summary>Откуда взяты характеристики моделей?</summary><p>Из документации провайдеров, проверенной 22 октября 2026 года. Это возможности самих моделей; доступные действия Покадрово описаны отдельно выше.</p><div className="pk-plans-sources"><a href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">YandexGPT 5.1 Pro ↗</a><a href="https://openrouter.ai/google/gemma-4-26b-a4b-it:free" target="_blank" rel="noopener noreferrer">Gemma 4 ↗</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-omni-flash" target="_blank" rel="noopener noreferrer">Qwen Omni ↗</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max" target="_blank" rel="noopener noreferrer">Qwen Max ↗</a></div></details>
       </section>
-      <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">Начните с материала</span><h2>Есть кадры?<br/>Откройте студию.</h2></div><button type="button" onClick={onStart}>Открыть студию <ArrowUpRight size={22}/></button></section>
+      <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">Начните с материала</span><h2>Есть кадры?<br/>Откройте студию.</h2></div><button type="button" onClick={onStart}>Открыть студию <ArrowUpRight size={22} aria-hidden="true"/></button></section>
     </main>
     <footer className="pk-plans-footer"><a href="/" onClick={event=>{event.preventDefault();onHome();}}>← На главную</a><span>© {new Date().getFullYear()} Покадрово</span><a href="#plans-main">Тарифы — мощность — нейросети ↑</a></footer>
   </div>;

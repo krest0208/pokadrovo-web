@@ -147,6 +147,7 @@ export class Editor {
   if(this.tab!=='text'){
    const arr=[...this.opts.assets.values()].filter(a=>this.tab==='audio'?a.kind==='audio':a.kind!=='audio');
    html+='<div class="pe-asset-grid">'+arr.map(a=>`<button type="button" class="pe-asset" data-asset="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}"><span>${a.thumbnail?`<img src="${a.thumbnail}" alt=""/>`:icon(a.kind==='audio'?'audio':'video',30)}<i>${clock(a.duration).slice(0,5)}</i></span><b>${escapeHtml(a.name)}</b><small>${a.kind==='audio'?'Аудио':a.kind==='image'?'Фото':'Видео'}</small></button>`).join('')+'</div>';
+   if(!arr.length)html+='<div class="pe-none"><h3>Пока нет файлов</h3><p>Добавьте материалы кнопкой выше.</p></div>';
   }else html+=this.project.texts.map(c=>`<button class="pe-caption-item" data-select="text:${c.id}">${icon('text')}<span>${escapeHtml(c.text||t.text)}</span></button>`).join('');
   html+=`<details class="pe-project-tools"><summary>Файл проекта</summary>${button('json-export',t.downloadProject)}${button('json-import',t.importProject)}<p class="pe-note">${t.backupHint}</p></details>`;
   this.$('.pe-library-body').innerHTML=html;
