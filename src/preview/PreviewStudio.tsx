@@ -9,6 +9,7 @@ import { AdminPreview } from './admin';
 import '../editor/editor.css';
 import '../editor/tools.css';
 import '../editor/workspace.css';
+import '../motion/site-motion.css';
 import '../home-formats.css';
 import './preview.css';
 

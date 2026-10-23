@@ -3,6 +3,7 @@ import AiHome from './AiHome';
 import HomeFormats from './HomeFormats';
 import ProjectLibrary from './ProjectLibrary';
 import AiPlans from './AiPlans';
+import SiteMotion from './motion/SiteMotion';
 import type { Editor } from './editor/editor';
 import { OmniAiProvider } from './editor/omni';
 import { Asset, Mode, Project, Ratio, newProject, normalizeProject } from './editor/model';
@@ -100,6 +101,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
  private changedUser=(u:User)=>{if(this.state.session){const session=acceptSession({...this.state.session,user:u});this.setState({session});}};
  private restoreLegacy=()=>{if(this.state.session?.user?.role!=='owner'||!confirm('Добавить в аккаунт владельца проекты, сохранённые в этом браузере до регистрации?'))return;try{const projects=importOwnerLegacy();this.setState({projects,error:'Старые локальные проекты добавлены владельцу.'});}catch(e){this.setState({error:(e as Error).message});}};
  render(){const s=this.state,user=s.session?.user;return <>
+  <SiteMotion screen={s.screen}/>
   {s.screen==='pricing'?<AiPlans theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onStart={this.resume}/>:s.screen==='home'?<div key="home" className="ps-shell" data-theme={s.theme}>
    <AiHome guestMode={s.checking||!user&&canEdit(s.session)} registrationEnabled={s.session?.accountsEnabled===true} onSignIn={this.openSignIn} theme={s.theme} onToggleTheme={this.toggleTheme} onCreate={this.create} onContinue={this.resume} onProjects={this.openProjects} onImport={this.attach} onOpenProject={this.openProject} account={user?{id:user.id,name:user.name,role:user.role}:null} onAccount={this.openAccount} onAdmin={user?.role==='owner'&&s.session?.adminPath?this.openAdmin:undefined} projects={s.projects.map(p=>({id:p.id,name:p.name,count:p.clips.length,modified:p.modified}))}/>
    <HomeFormats mode={s.mode} ratio={s.ratio} onChoose={(mode,ratio)=>this.setState({mode,ratio})} onStart={()=>this.create('')}/>

@@ -1,0 +1,42 @@
+:is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade){--pk-motion-ease:cubic-bezier(.22,1,.36,1)}
+:is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade) button,
+:is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade) a{transition:translate .22s var(--pk-motion-ease),scale .18s var(--pk-motion-ease),background-color .2s,color .2s,border-color .2s,box-shadow .22s}
+:is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade) button:not(:disabled):active{scale:.975}
+:is(.pk-button,.pkh-theme,.pk-plans-theme,.pk-plans-cta button,.ph-status button,.pk-library-primary,.au-primary) svg,
+.pk-button>span:last-child,.pk-text-link>span,.pk-library-project>b{transition:translate .24s var(--pk-motion-ease)}
+@media (hover:hover) and (pointer:fine){
+ :is(.pk-button,.pk-library-primary,.pk-plans-cta button,.au-primary):hover{translate:0 -2px;box-shadow:0 7px 18px #245ce021}
+ .pk-button:hover>span:last-child,.pk-text-link:hover>span{translate:3px -2px}
+ .pk-pack,.pk-process-art,.pk-feature-grid>article,.pk-plan-card,.pk-russia-grid>article,.pk-library-project,.ph-platforms>button{transition:translate .3s var(--pk-motion-ease),border-color .22s,box-shadow .3s}
+ .pk-pack:hover,.pk-plan-card:hover,.pk-russia-grid>article:hover,.pk-library-project:hover,.ph-platforms>button:hover{translate:0 -4px;box-shadow:0 16px 35px #182c4910}
+ .pk-process-card:hover .pk-process-art{translate:0 -4px}
+ .pk-library-project:hover>b{translate:4px 0}
+ .pkh-nav a:hover,.pk-footer-top nav a:hover,.pk-footer-top nav button:hover{translate:3px 0}
+}
+.pkh-header-right>.pkh-theme,.pk-plans-theme{transition:rotate .3s,background-color .2s,color .2s}
+.pkh-header-right>.pkh-theme:active,.pk-plans-theme:active{rotate:25deg}
+.pkh-nav.is-open{animation:pk-menu-enter .24s cubic-bezier(.22,1,.36,1)}
+.pkh-files,.pk-error,.pk-library>p[role=alert]{animation:pk-feedback-enter .2s ease-out}
+.pk-faq details[open]>p,.pk-plans-faq details[open]>p,.pk-plans-faq details[open]>.pk-plans-sources{animation:pk-feedback-enter .25s ease-out}
+.au-dialog{animation:pk-dialog-enter .28s cubic-bezier(.22,1,.36,1)}
+.au-shell-notice{animation:pk-notice-enter .2s ease-out}
+.pe .pe-ai-panel:not([hidden]){animation:pk-panel-enter .25s cubic-bezier(.22,1,.36,1)}
+.pe .pe-export-dialog{animation:pk-dialog-enter .24s cubic-bezier(.22,1,.36,1)}
+.pe .pe-tour-card{animation:pk-dialog-enter .23s cubic-bezier(.22,1,.36,1)}
+.pe .pe-inspector-group[open]>.pe-group-body{animation:pk-feedback-enter .18s ease-out}
+.pe .pe-context-menu{animation:pk-feedback-enter .14s ease-out}
+.pe .pe-mobile-nav button{transition:background-color .2s,color .2s}
+.pe .pe-tools>button:active:not(:disabled){scale:.94}
+.pe .pe-actions>button{transition:background-color .18s,border-color .18s,box-shadow .18s}
+.pe .pe-actions>.primary:hover:not(:disabled){box-shadow:0 4px 13px #245ce02b}
+@keyframes pk-menu-enter{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@keyframes pk-feedback-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes pk-dialog-enter{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes pk-panel-enter{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+@keyframes pk-notice-enter{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+ :is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade,.pe) *,
+ :is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade,.pe) *::before,
+ :is(.pkh,.pk-plans,.ph,.pk-library,.au-profile,.au-shade,.pe) *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+ .au-shell-notice{animation:none!important}
+}
