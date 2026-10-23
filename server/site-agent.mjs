@@ -142,7 +142,7 @@ export function createSiteAgent({ store, now, origin, session, sameOrigin, facts
   }
   async function route(req, res, url) {
     if (!url.pathname.startsWith('/api/account/agent/')) return false;
-    const auth = session(req); if (!auth.owner) deny(403, 'Сообщения агента доступны только владельцу сайта.');
+    const auth = session(req); if (!auth.owner) deny(403, 'Сообщения агента доступны только администратору сайта.');
     if (!equal(req.headers['x-pk-account'], auth.key)) deny(409, 'Аккаунт изменился. Обновите страницу.');
     if (req.method === 'GET' && url.pathname === '/api/account/agent/status') { json(res, 200, status()); return true; }
     if (req.method === 'GET' && url.pathname === '/api/account/agent/reports') { json(res, 200, reports(url.searchParams.get('before') ?? undefined)); return true; }

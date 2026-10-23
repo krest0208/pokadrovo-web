@@ -19,7 +19,7 @@ export function HeroStory({scene,onScene}:{scene:number;onScene:(scene:number)=>
 const steps=[
  {title:'Добавьте то, что сняли',text:'Видео с телефона, фотографии, звук. Соберите материалы в одном проекте.'},
  {title:'Расскажите, какой ролик нужен',text:'Задайте настроение, длительность и главную мысль. Пишите обычными словами.'},
- {title:'Разберите материал с ИИ',text:'В режиме Reels можно отправить выбранное видео со звуком на анализ. Только с вашего согласия.'},
+ {title:'Разберите материал с ИИ',text:'Выберите доступный режим разбора короткого видео. Передача файла — только с вашего согласия. Возможности указаны в студии.'},
  {title:'Посмотрите предложенные правки',text:'ИИ предлагает план. Вы решаете, что применить, и сохраняете контроль над монтажом.'},
  {title:'Доведите до своего стиля',text:'Подрежьте кадры, настройте звук и добавьте титры. Любую правку можно отменить.'},
  {title:'Сохраните готовый ролик',text:'Выберите формат, проверьте результат и экспортируйте видео из студии.'}
@@ -27,7 +27,7 @@ const steps=[
 function ProcessArt({step}:{step:number}){
  if(step===0)return <div className="pk-import-art"><div className="pk-art-toolbar"><span>Материалы проекта</span><b>+</b></div><div className="pk-media-grid">{[0,1,2,3,4,5].map(i=><Shot key={i} index={i}><span>{`Кадр ${i+1}`}</span></Shot>)}</div><div className="pk-file-tray">＋ Видео, фото и аудио</div></div>;
  if(step===1)return <div className="pk-brief-art"><div className="pk-chat-user">Собери ролик о поездке на 30 секунд. Начни с моря, оставь живой звук волн.</div><div className="pk-brief-tags"><span>30 секунд</span><span>Спокойный темп</span><span>Звук волн</span></div><div className="pk-brief-photo"><Shot index={3}/><span>Ваша идея — отправная точка.</span></div></div>;
- if(step===2)return <div className="pk-analysis-art"><Shot index={2}><span className="pk-analysis-frame"/></Shot><div className="pk-analysis-notes"><div><b>Картинка</b><span>Человек на фоне моря</span></div><div><b>Звук</b><span>Ветер, волны, речь</span></div><div><b>Контекст</b><span>Путешествие у побережья</span></div></div></div>;
+ if(step===2)return <div className="pk-analysis-art"><Shot index={2}><span className="pk-analysis-frame"/></Shot><div className="pk-analysis-notes"><div><b>Картинка</b><span>Человек на фоне моря</span></div><div><b>Детали</b><span>Море, человек, побережье</span></div><div><b>Контекст</b><span>Путешествие у побережья</span></div></div></div>;
  if(step===3)return <div className="pk-plan-art"><div className="pk-art-toolbar"><span>Предложенный план</span><b>✦</b></div>{['Открыть ролик общим планом моря','Сократить паузу между кадрами','Добавить заголовок в начале'].map((s,i)=><div className="pk-plan-row" key={s}><span>0{i+1}</span><strong>{s}</strong><b>✓</b></div>)}<div className="pk-plan-confirm">Применить правки <span>↗</span></div></div>;
  if(step===4)return <div className="pk-edit-art"><div className="pk-edit-preview"><Shot index={1}><strong>Выходные у моря</strong></Shot><div><span>Громкость</span><b>70%</b><i/><span>Титр</span><b>В начале</b></div></div><Timeline/></div>;
  return <div className="pk-export-art"><div className="pk-export-landscape"><Shot index={1}><strong>Выходные<br/>у моря</strong></Shot><span>16:9</span></div><div className="pk-export-portrait"><Shot index={2}><strong>К морю.</strong></Shot><span>9:16</span></div><div className="pk-export-check">✓ Ваш ролик, ваш формат</div></div>;

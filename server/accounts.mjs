@@ -45,7 +45,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
   function session(req, required = true) {
     try { const s = ownerSession(req), o = owner(); if (o) return { csrf: s.csrf, key: 'owner', owner: true, session: s, user: { id: 'owner', name: o.login, email: null, emailVerified: false, role: 'owner', created: o.created, passwordSet: true } }; }
     catch (e) { if (e.status !== 401) throw e; }
-    if (!accountsEnabled) { if (required) deny(401, 'Для серверных данных требуется вход владельца.'); return null; }
+    if (!accountsEnabled) { if (required) deny(401, 'Для серверных данных требуется вход администратора.'); return null; }
     const raw = cookie(req, sessionName);
     if (sidOk(raw)) {
       const s = store.get('SELECT s.*,u.name,u.email,u.email_verified,u.password,u.status,u.created AS user_created FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?', digest(raw));
@@ -71,7 +71,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
   }
   function providers() { if (!socialLoginEnabled) return []; return store.all('SELECT * FROM oauth_config').map(c => {
     const ready = !!(c.enabled && c.client_id && c.secret && (c.provider === 'google' || (secure && c.version)));
-    return { id: c.provider, ready, professionalOnly: c.provider === 'instagram', note: !c.enabled || !c.client_id || !c.secret ? 'Владелец ещё не подключил этот способ входа.' : c.provider !== 'google' && !secure ? 'Для Meta требуется настроенный HTTPS-домен.' : c.provider !== 'google' && !c.version ? 'Укажите версию API Meta в админ-панели.' : c.provider === 'instagram' ? 'Только профессиональные аккаунты Instagram: Business / Creator.' : '' };
+    return { id: c.provider, ready, professionalOnly: c.provider === 'instagram', note: !c.enabled || !c.client_id || !c.secret ? 'Этот способ входа недоступен.' : c.provider !== 'google' && !secure ? 'Для Meta требуется настроенный HTTPS-домен.' : c.provider !== 'google' && !c.version ? 'Укажите версию API Meta в админ-панели.' : c.provider === 'instagram' ? 'Только профессиональные аккаунты Instagram: Business / Creator.' : '' };
   }); }
   function startSession(res, user) {
     const sid = token(), csrf = token();
@@ -183,12 +183,12 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
       appendCookie(res, sessionName, '', 0, secure); json(res, 200, { ok: true }); return true;
     }
     if (req.method === 'PATCH' && path === '/api/account/profile') {
-      if (a.owner) deny(400, 'Имя владельца меняется в админ-панели: Защита доступа.');
+      if (a.owner) deny(400, 'Имя администратора меняется в админ-панели: Защита доступа.');
       const data = await body(req), name = nameOf(data.name); if (name.length < 2) deny(400, 'Имя должно содержать не менее двух символов.');
       store.run('UPDATE users SET name=? WHERE id=?', name, a.key); json(res, 200, { user: profile(store.get('SELECT * FROM users WHERE id=?', a.key)) }); return true;
     }
     if (req.method === 'POST' && path === '/api/account/password') {
-      if (a.owner) deny(400, 'Пароль владельца меняется в админ-панели.'); limit(req, 'user-password', 8);
+      if (a.owner) deny(400, 'Пароль администратора меняется в админ-панели.'); limit(req, 'user-password', 8);
       const data = await body(req), u = store.get('SELECT * FROM users WHERE id=?', a.key);
       if (!u.password) deny(400, 'У этого аккаунта вход через соцсеть. Локальный пароль не настроен.');
       if (!await passwordJob(() => checkPassword(data.password, u.password))) deny(403, 'Текущий пароль не подошёл.');

@@ -226,7 +226,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
     for (const key of ['aiEnabled', 'trialEnabled']) if (data[key] !== undefined && typeof data[key] !== 'boolean') deny(400, 'Некорректный переключатель ИИ.');
     const enabled = data.aiEnabled === true, publicTrial = data.trialEnabled === true;
     if ((enabled || publicTrial) && (next.provider !== 'qwen' || !next.secret)) deny(400, 'Для пробы укажите Qwen Omni и API-ключ.');
-    if (publicTrial && !enabled) deny(400, 'Сначала включите Qwen для теста владельца.');
+    if (publicTrial && !enabled) deny(400, 'Сначала включите подключение Qwen.');
     return () => { put('ai_endpoint', canonical); put('ai_enabled', enabled ? '1' : '0'); put('ai_trial_enabled', publicTrial ? '1' : '0'); put('ai_verified', ''); };
   }
   function modeStatus(auth, service) {
@@ -238,23 +238,23 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
         requiresMedia: visual,
         reason: !o.configured ? 'Добавьте API-ключ OpenRouter в админ-панели.' : !o.enabled ? 'Включите OpenRouter в админ-панели.'
           : !remaining ? 'Лимит OpenRouter для сайта исчерпан до 03:00 по Москве.'
-          : !owner && !o.trialEnabled ? 'Бесплатная проба пока не открыта.' : !owner && trial.expired ? 'Срок бесплатной пробы закончился.'
+          : !owner && !o.trialEnabled ? 'Бесплатная проба недоступна.' : !owner && trial.expired ? 'Срок бесплатной пробы закончился.'
           : !owner && !trial.remaining ? 'Подарочные монеты использованы.'
           : visual ? 'Визуальный разбор исходника и советы. Речь и звук не распознаются.' : 'План по заданию и предыдущему анализу. Медиафайлы не отправляются.' };
     }
     if (service === 'yandex-edit') return { available: owner && y.configured && y.enabled,
-      reason: !owner ? 'Тариф платного монтажа готовится. Списания и оплата пока недоступны.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите Яндекс для тестов администратора.' : `${yandex.adminState().modelName}: план по заданию и предыдущему разбору. Тест без списаний монет; API оплачивает владелец.`, requiresMedia: false };
+      reason: !owner ? 'Этот режим недоступен. Покупка монет и оплата недоступны.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите подключение Яндекса.' : `${yandex.adminState().modelName}: план по заданию и предыдущему разбору. Без списаний монет; расходы API несёт сайт.`, requiresMedia: false };
     return { available: q.configured && q.enabled && (owner || trialEnabled() && trial.remaining > 0), requiresMedia: trial.requiresMedia,
-      reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Тест Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
-        : !q.configured || !q.enabled || !trialEnabled() ? 'Бесплатная проба Reels пока не открыта.' : trial.expired ? 'Срок бесплатной пробы закончился.' : !trial.remaining ? 'Запросы бесплатной пробы использованы. Платный тариф готовится.' : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Успешный запрос — ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
+      reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
+        : !q.configured || !q.enabled || !trialEnabled() ? 'Бесплатная проба Reels недоступна.' : trial.expired ? 'Срок бесплатной пробы закончился.' : !trial.remaining ? 'Запросы бесплатной пробы использованы. Покупка монет недоступна.' : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Успешный запрос — ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
   }
   function reserveTrial(auth, r, media, service) {
     if (auth.owner) return null;
-    if (!(routerService(service) ? openrouter.state().trialEnabled : trialEnabled())) deny(503, 'Бесплатная проба пока не открыта.');
+    if (!(routerService(service) ? openrouter.state().trialEnabled : trialEnabled())) deny(503, 'Бесплатная проба недоступна.');
     const old = trialRow(auth);
     if (old?.project_id && old.project_id !== r.projectId) deny(402, 'Бесплатная проба действует для одного проекта Reels. Откройте начатый проект.');
     if (old && old.expires <= now()) deny(402, 'Срок бесплатной пробы закончился.');
-    if (old && old.used >= TRIAL_RULES.requests) deny(402, 'Запросы бесплатной пробы использованы. Платный тариф ещё готовится.');
+    if (old && old.used >= TRIAL_RULES.requests) deny(402, 'Запросы бесплатной пробы использованы. Покупка монет недоступна.');
     if (!old?.media_analyzed && (!media || media.mime !== 'video/mp4')) deny(422, 'Начните пробу кнопкой анализа MP4-видео.');
     const peer = rateKey ? rateKey(auth.req) : store.hmac(auth.req.socket.remoteAddress || 'local');
     if (!store.consume('ai-trial-ip:' + peer + ':' + new Date(now()).toISOString().slice(0, 10), routerService(service) ? 30 : 6, 86400000, now())) deny(429, 'Дневной лимит бесплатных запросов для этого подключения исчерпан.');
@@ -306,7 +306,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
       const data = await body(req, MAX_BODY), service = data.service || 'reels-trial';
       if (!SERVICES.includes(service)) deny(400, 'Неизвестный режим ИИ.');
       // Price/role/provider fields from the browser cannot unlock an undefined paid tariff.
-      if (service === 'yandex-edit' && !auth.owner) deny(402, 'Тариф платного монтажа ещё не утверждён. Оплата и списания пока не включены.');
+      if (service === 'yandex-edit' && !auth.owner) deny(402, 'Этот режим недоступен. Покупка монет и оплата недоступны.');
       const r = validateAiRequest(data.request), q = state(), y = yandex.state(), o = openrouter.state();
       if (routerService(service)) {
         validateFreeProject(r.project);
@@ -361,7 +361,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
       store.run('UPDATE ai_runs SET upstream_status=? WHERE request_id=?', response.status, requestId);
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});
-        deny(response.status === 429 ? 429 : 502, [401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Владельцу нужно проверить настройки.' : response.status === 429 ? 'Лимит провайдера исчерпан. Повторите позже.' : response.status === 404 ? 'Бесплатная модель сейчас недоступна. Платная замена не запускается.' : 'Провайдер отклонил запрос. Монтаж не изменён.');
+        deny(response.status === 429 ? 429 : 502, [401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Обратитесь в поддержку сайта.' : response.status === 429 ? 'Лимит провайдера исчерпан. Повторите позже.' : response.status === 404 ? 'Бесплатная модель сейчас недоступна. Платная замена не запускается.' : 'Провайдер отклонил запрос. Монтаж не изменён.');
       }
       const result = await readProviderJson(response);
       let value, usage;

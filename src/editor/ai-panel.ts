@@ -25,7 +25,7 @@ export class AiPanel {
     this.node=document.createElement('aside');this.node.className='pe-ai-panel';this.node.hidden=true;
     this.node.ariaLabel='Задание для ИИ-монтажёра';
     this.node.innerHTML=`<header><div><span class="pe-ai-symbol">✦</span><strong>Покадрово AI<small>Ваш замысел. Ваш контроль.</small></strong></div><button type="button" data-ai="close" aria-label="Закрыть панель ИИ">×</button></header>
-    <div class="pe-ai-scroll"><div class="pe-ai-connection"><i></i><span>${port.provider?(port.provider.getStatus?'Проверяем настройки ':'Подключён: ')+esc(port.provider.name):'Нейросеть пока не подключена'}</span></div>
+    <div class="pe-ai-scroll"><div class="pe-ai-connection"><i></i><span>${port.provider?(port.provider.getStatus?'Проверяем настройки ':'Подключён: ')+esc(port.provider.name):'Нейросеть недоступна'}</span></div>
     <label class="pe-ai-mode-label" ${port.provider?.modes?'':'hidden'}>Режим монтажа<select class="pe-ai-mode" aria-label="Режим монтажа">${port.provider?.modes?.map(m=>`<option value="${m.id}">${esc(m.label)}</option>`).join('')||''}</select></label><p class="pe-ai-mode-note pe-ai-note"></p>
     <label for="pe-ai-prompt">Как смонтировать видео?</label><textarea id="pe-ai-prompt" maxlength="4000" rows="6" placeholder="Опишите задачу: какие кадры оставить, какой темп и настроение нужны…"></textarea>
     <div class="pe-ai-presets">${examples.map((s,i)=>`<button type="button" data-ai="example-${i}">${['Темп и звук','Вертикальный ролик','Убрать лишнее'][i]}</button>`).join('')}</div>
@@ -37,12 +37,12 @@ export class AiPanel {
     <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button></section>
     <p class="pe-ai-note pe-ai-billing-note">Подарочный баланс: 3 монеты. Успешный ИИ-запрос — 1 монета; один Reels и 7 дней с первого запуска. На сервере Покадрово файл не сохраняется.</p>
     <button type="button" class="pe-ai-cancel" data-ai="cancel" hidden>Отменить запрос</button>
-    <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Кнопка станет доступна после подключения сервиса. Сейчас можно сохранить задание; автоматический монтаж не запускается.'}</p>
+    <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Сервис недоступен. Вы можете сохранить задание в проекте.'}</p>
     <button type="button" class="pe-ai-save" data-ai="save">Сохранить задание в проекте</button>
     <div class="pe-ai-feedback" role="status"></div>
     <section class="pe-ai-analysis" hidden></section>
     <section class="pe-ai-plan"><h3>План монтажа</h3><p>Здесь появятся правки. Они применяются только после вашего подтверждения.</p></section>
-    <details class="pe-ai-dev"><summary>Подготовка подключения</summary><p>Для разработки интеграции: выгрузите запрос, затем загрузите ответ по протоколу Pokadrovo Edit Plan v1.</p><button type="button" data-ai="download">Скачать JSON-запрос</button><button type="button" data-ai="import">Загрузить JSON-план</button><input type="file" accept=".json,application/json" class="pe-ai-plan-file" hidden/></details>
+    <details class="pe-ai-dev"><summary>Обмен планом через JSON</summary><p>Скачайте запрос и загрузите план в формате Pokadrovo Edit Plan v1.</p><button type="button" data-ai="download">Скачать JSON-запрос</button><button type="button" data-ai="import">Загрузить JSON-план</button><input type="file" accept=".json,application/json" class="pe-ai-plan-file" hidden/></details>
     </div>`;
     this.input=this.node.querySelector('textarea')!;
     this.readDraft();
@@ -67,7 +67,7 @@ export class AiPanel {
      this.available=status.available;this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
      if(provider.service!=='yandex-edit'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
      this.node.querySelector('.pe-ai-connection span')!.textContent=reason;
-     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Тест администратора без списаний монет. Запрос учитывается в общем лимите выбранного подключения; расходы API несёт сайт.':provider.service==='yandex-edit'?'Стоимость режима будет указана в монетах. Тариф ещё готовится; покупка и списания пока недоступны.':`Подарочный баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. Один Reels, 7 дней с первого запуска. При ошибке монета возвращается. Покупка пока не открыта.`;
+     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Запрос без списаний монет. Учитывается лимит подключения; расходы API несёт сайт.':provider.service==='yandex-edit'?'Режим недоступен. Покупка монет и оплата недоступны.':`Подарочный баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. Один Reels, 7 дней с первого запуска. При ошибке монета возвращается. Покупка монет недоступна.`;
     }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
     finally{if(!this.disposed&&generation===this.statusGeneration)this.refresh();}
   }
@@ -105,7 +105,7 @@ export class AiPanel {
     this.node.querySelector('.pe-ai-consent-copy')!.textContent=visual?'Разрешаю передать выбранный файл целиком через OpenRouter выбранной в настройках модели. Звук в этом режиме не анализируется.':'Разрешаю передать выбранный файл целиком, включая звук, в Qwen через Alibaba Cloud для анализа.';
     this.node.querySelector('[data-ai="analyze"]')!.textContent=visual?'Разобрать исходник и дать советы':'Разобрать файл и предложить монтаж';
     this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'✦ Подготовить план монтажа';
-    this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Включите режим Reels и сократите ролик до 60 секунд.'):'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Пользовательский тариф готовится.';
+    this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Включите режим Reels и сократите ролик до 60 секунд.'):'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Доступ закрыт.';
     (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!this.available||!!this.abort||this.port.busy()||!validReels||this.requiresMedia;
     const source=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;
     const clips=[...p.clips,...p.audio].filter(c=>(visual?c.kind==='video':c.kind!=='image')&&this.port.assets.has(c.assetId));

@@ -70,7 +70,7 @@
     text(registration, data.integrations.users ? 'Подключена' : 'Отключена');
     registration.classList.toggle('good', data.integrations.users);
     const m = data.metrics; text($('period-note'), `${data.from} — ${data.to} · UTC · сбор с ${new Date(data.startedAt).toLocaleDateString('ru-RU')}`);
-const accountCards = data.users ? [['Зарегистрировано за период', data.users.registered, 'По базе аккаунтов'], ['Всего пользователей', data.users.total, 'Без учётной записи владельца']] : [];
+const accountCards = data.users ? [['Зарегистрировано за период', data.users.registered, 'По базе аккаунтов'], ['Всего пользователей', data.users.total, 'Без учётной записи администратора']] : [];
     const cards = [
       ['Запросы главной страницы', m.pageRequests, 'Включая повторные открытия'],
       ['Уникальные браузеры', m.uniqueBrowsers, 'Приблизительно · с согласием'],
@@ -123,7 +123,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     form.elements.apiKey.value = ''; form.elements.password.value = ''; form.elements.removeKey.checked = false; form.elements.analyticsEnabled.checked = settings.analyticsEnabled;
     text($('key-status'), settings.keyConfigured ? 'Ключ сохранён на сервере' : 'Ключ не указан');
     text($('ai-connection-status'), settings.connected ? 'Проверена запросом' : settings.configured && settings.aiEnabled ? 'Готова к пробе' : 'Не включена');
-    text($('ai-connection-note'), settings.connected ? 'Qwen успешно ответил на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели будет проверен первым запросом из редактора.' : 'Для запуска выберите Qwen Omni, укажите ключ и Base URL, затем включите пробный режим.');
+    text($('ai-connection-note'), settings.connected ? 'Qwen успешно ответил на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели проверяется запросом из редактора.' : 'Для запуска выберите Qwen Omni, укажите ключ и Base URL, затем включите пробный режим.');
     updateAiFields();
     await Promise.all([loadOpenRouter(), loadAiUsage(), loadYandex()]);
   }
@@ -154,7 +154,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
   async function loadAiUsage(){
     const [data,usage]=await Promise.all([request('/ai/analytics?days='+$('ai-period').value),request('/ai/usage')]);if(!owner)return;
     const t=data.totals;
-    const cards=[['Попытки',t.attempts,'Включая ошибки после отправки'],['Успешно',t.succeeded,'Проверенный результат'],['Ошибки / прервано',t.failed,'Подарочные монеты возвращены'],['Пользователи',t.users,'Без владельца'],['Токены API',t.inputTokens+t.outputTokens,`Учтены у ${t.meteredRequests||0} запросов`],['Списано монет',t.coins,'Внутренний баланс Покадрово']];
+    const cards=[['Попытки',t.attempts,'Включая ошибки после отправки'],['Успешно',t.succeeded,'Проверенный результат'],['Ошибки / прервано',t.failed,'Подарочные монеты возвращены'],['Пользователи',t.users,'Без администратора'],['Токены API',t.inputTokens+t.outputTokens,`Учтены у ${t.meteredRequests||0} запросов`],['Списано монет',t.coins,'Внутренний баланс Покадрово']];
     $('ai-metrics').replaceChildren(...cards.map(([label,value,note])=>{const card=element('article','metric');card.append(element('span','metric-label',label),element('strong','metric-number',number(value)),element('span','metric-note',note));return card;}));
     const q=data.quota;text($('ai-quota'),`OpenRouter сегодня: ${q.used} из ${q.limit} попыток сайта. Осталось ${q.remaining}. Бесплатная квота аккаунта — до ${q.providerFreeDailyLimit} в сутки; лимит сайта оставляет запас. Сброс: ${new Date(q.resetsAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК. Одновременно выполняется один ИИ-запрос.`);
     function row(values){const tr=element('tr');for(const v of values)tr.append(element('td','',v));return tr;}
@@ -162,7 +162,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     $('ai-days').replaceChildren(...data.series.map(d=>row([d.day,d.attempts,d.succeeded,d.failed,d.users])));
     $('ai-capacity').replaceChildren(...data.capacity.map(c=>row([c.label,c.requests,c.totalRequests,c.fitsSiteLimit?'Хватает без запаса на ошибки':'Превышен',c.fitsProviderFreeLimit?'Хватает без запаса на ошибки':'Превышен'])));
     $('ai-usage-notes').replaceChildren(...data.notes.map(note=>element('p','',note)));
-    $('ai-usage').replaceChildren(...(usage.items.length?usage.items.map(r=>element('p','field-note',`${new Date(r.at).toLocaleString('ru-RU')} · ${r.model} · ${r.task==='analysis'?'Разбор':r.task==='ideas'?'Идеи агента':'План'} · ${r.access_kind==='free_trial'?'Проба':'Владелец'} · ${r.result==='ok'?'Готово':r.result==='started'?'Выполняется':'Не завершён'}${r.upstream_status===null?'':' · HTTP '+r.upstream_status}${r.duration_ms===null?'':' · '+(r.duration_ms/1000).toFixed(1)+' сек.'}${r.input_tokens===null?'':' · токены '+r.input_tokens+' / '+r.output_tokens}`)):[element('p','field-note','Запросов ещё нет.')]));
+    $('ai-usage').replaceChildren(...(usage.items.length?usage.items.map(r=>element('p','field-note',`${new Date(r.at).toLocaleString('ru-RU')} · ${r.model} · ${r.task==='analysis'?'Разбор':r.task==='ideas'?'Идеи агента':'План'} · ${r.access_kind==='free_trial'?'Проба':'Администратор'} · ${r.result==='ok'?'Готово':r.result==='started'?'Выполняется':'Не завершён'}${r.upstream_status===null?'':' · HTTP '+r.upstream_status}${r.duration_ms===null?'':' · '+(r.duration_ms/1000).toFixed(1)+' сек.'}${r.input_tokens===null?'':' · токены '+r.input_tokens+' / '+r.output_tokens}`)):[element('p','field-note','Запросов ещё нет.')]));
   }
   $('ai-refresh').addEventListener('click',()=>loadAiUsage().catch(e=>notify(e.message)));
   $('ai-period').addEventListener('change',()=>loadAiUsage().catch(e=>notify(e.message)));
@@ -179,7 +179,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     form.elements.model.value=data.model;form.elements.folderId.value=data.folderId;form.elements.apiKey.value='';form.elements.password.value='';form.elements.removeKey.checked=false;form.elements.enabled.checked=data.enabled;
     describeYandexModel();
     text($('yandex-key-status'),data.keyConfigured?'Отдельный ключ Яндекса сохранён':'Ключ Яндекса не указан');
-    text($('yandex-connection-status'),data.connected?data.modelName+' · проверена':data.configured&&data.enabled?'Готова к тесту: '+data.modelName:'Не включена');
+    text($('yandex-connection-status'),data.connected?data.modelName+' · проверена':data.configured&&data.enabled?'Ожидает проверки: '+data.modelName:'Не включена');
   }
   bindForm('yandex-form',async(data,form)=>{
     data.removeKey=form.elements.removeKey.checked;data.enabled=!data.removeKey&&form.elements.enabled.checked;
@@ -243,7 +243,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
   bindForm('totp-begin', async data => { const r = await request('/totp/begin', { method: 'POST', data }); text($('totp-secret'), r.secret); $('totp-confirm').hidden = false; $('totp-begin').hidden = true; });
   bindForm('totp-confirm', async (data, form) => { await request('/totp/confirm', { method: 'POST', data }); form.reset(); await loadSecurity(); notify('Вход по паролю и коду с телефона включён.'); });
   bindForm('totp-disable', async data => { if (!confirm('Отключить второй фактор?')) return; await request('/totp/disable', { method: 'POST', data }); await loadSecurity(); notify('Второй фактор отключён.'); });
-  const auditNames = { owner_created: 'Владелец создан', owner_reset: 'Восстановление через терминал', login: 'Успешный вход', login_failed: 'Неудачная попытка входа', logout: 'Выход', reauth_failed: 'Неудачное подтверждение пароля', settings_updated: 'Настройки обновлены', api_key_removed: 'API-ключ удалён', password_changed: 'Пароль изменён', totp_enabled: 'Второй фактор включён', totp_disabled: 'Второй фактор отключён' };
+  const auditNames = { owner_created: 'Администратор создан', owner_reset: 'Восстановление через терминал', login: 'Успешный вход', login_failed: 'Неудачная попытка входа', logout: 'Выход', reauth_failed: 'Неудачное подтверждение пароля', settings_updated: 'Настройки обновлены', api_key_removed: 'API-ключ удалён', password_changed: 'Пароль изменён', totp_enabled: 'Второй фактор включён', totp_disabled: 'Второй фактор отключён' };
   async function loadAudit() {
     const data = await request('/audit'); if (!owner) return;
     $('audit-body').replaceChildren(...data.items.map(r => { const tr = element('tr'); tr.append(element('td', '', date(r.at)), element('td', '', auditNames[r.action] || 'Действие сервера'), element('td', '', r.result === 'ok' ? 'Выполнено' : 'Отклонено')); return tr; }));

@@ -100,7 +100,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
  private authenticated=(s:Session)=>{void this.adopt(s).then(()=>{this.setState({auth:false,error:''});this.runIntent();});};
  private signOut=()=>{void flushProjectSaves().then(()=>logout()).then(async s=>{this.pending=[];this.intent=null;this.rememberIntent();await this.adopt(s);this.navigate('home');}).catch(e=>{if(e.status===401)this.expired();else this.setState({error:e.message});});};
  private changedUser=(u:User)=>{if(this.state.session){const session=acceptSession({...this.state.session,user:u});this.setState({session});}};
- private restoreLegacy=()=>{if(this.state.session?.user?.role!=='owner'||!confirm('Добавить в аккаунт владельца проекты, сохранённые в этом браузере до регистрации?'))return;try{const projects=importOwnerLegacy();this.setState({projects,error:'Старые локальные проекты добавлены владельцу.'});}catch(e){this.setState({error:(e as Error).message});}};
+ private restoreLegacy=()=>{if(this.state.session?.user?.role!=='owner'||!confirm('Добавить в аккаунт администратора проекты, сохранённые в этом браузере до регистрации?'))return;try{const projects=importOwnerLegacy();this.setState({projects,error:'Старые локальные проекты добавлены в аккаунт.'});}catch(e){this.setState({error:(e as Error).message});}};
  render(){const s=this.state,user=s.session?.user;return <>
   <SiteMotion screen={s.screen}/>
   {s.screen==='pricing'?<AiPlans theme={s.theme} onTheme={this.toggleTheme} onHome={()=>this.navigate('home')} onStart={this.resume}/>:s.screen==='home'?<div key="home" className="ps-shell" data-theme={s.theme}>

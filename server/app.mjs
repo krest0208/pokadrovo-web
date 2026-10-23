@@ -44,7 +44,7 @@ export function createApp(options = {}) {
   const sameOrigin = req => { if (!allowed.has(req.headers.origin) || req.headers['sec-fetch-site'] === 'cross-site') deny(403, 'Запрос разрешён только с этого сайта.'); };
   function session(req) {
     const value = cookie(req, sessionName);
-    if (!/^[\w-]{43}$/.test(value)) deny(401, 'Войдите как владелец.');
+    if (!/^[\w-]{43}$/.test(value)) deny(401, 'Войдите как администратор.');
     const s = store.get('SELECT * FROM sessions WHERE id=?', digest(value));
     if (!s || s.expires <= now() || s.last_seen <= now() - 30 * 60000) {
       if (s) store.run('DELETE FROM sessions WHERE id=?', s.id);
@@ -68,7 +68,7 @@ export function createApp(options = {}) {
   }
   async function authenticateOwner(req, res, data, publicEntry = false) {
     sameOrigin(req);
-    const o = owner(); if (!o) deny(503, 'Владелец ещё не настроен. Запустите npm run admin:setup в терминале сервера.');
+    const o = owner(); if (!o) deny(503, 'Администратор ещё не настроен. Запустите npm run admin:setup в терминале сервера.');
     const limit = store.consume('login:' + ip(req), 8, 15 * 60000, now());
     const globalLimit = store.consume('login-global', 30, 15 * 60000, now());
     if (!limit || !globalLimit) { res.setHeader('Retry-After', '900'); deny(429, 'Слишком много попыток. Подождите 15 минут.'); }

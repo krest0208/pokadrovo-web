@@ -16,7 +16,7 @@
     submit.disabled = true;
     try {
       const response = await fetch('/setup-owner', { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json', 'X-Pokadrovo-Setup-Token': token }, body: JSON.stringify(Object.fromEntries(new FormData(form))), signal: AbortSignal.timeout(20000) });
-      const result = await response.json(); if (!response.ok) throw Error(result.error || 'Не удалось создать владельца.');
+      const result = await response.json(); if (!response.ok) throw Error(result.error || 'Не удалось создать администратора.');
       token = ''; form.reset(); form.hidden = true;
       const next = new URL(result.nextUrl); if (!['http:', 'https:'].includes(next.protocol)) throw Error('Некорректный адрес приложения.');
       document.getElementById('continue').href = next.href; document.getElementById('success').hidden = false;
