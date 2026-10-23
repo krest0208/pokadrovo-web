@@ -100,7 +100,7 @@
   .pkh h1 { font-size: clamp(48px,4.7vw,68px); line-height: 1.06; letter-spacing: -.055em; margin-top: 22px; }
   .pkh .pk-hero-lead { font-size: 18px; margin-top: 24px!important; }
   .pkh .pk-hero-actions { flex-wrap: wrap; gap: 10px 22px; margin-top: 28px; }
-  .pkh .pk-hero-story { height: 500px; width: 100%; margin: 0; min-width: 0; }
+  .pkh .pk-hero-story { height: auto; padding-top: 510px; width: 100%; margin: 0; min-width: 0; }
   .pkh .pk-story-source { left: 0; top: 147px; width: 21%; }
   .pkh .pk-source-pile { height: 163px; }
   .pkh .pk-art-label { font-size: 13px; }
@@ -116,7 +116,7 @@
   .pkh .pk-result-title>strong { font-size: clamp(23px,2.2vw,31px); }
   .pkh .pk-result-bar>span { font-size: 12px; }
   .pkh .pk-hero-timeline { left: -12%; width: 108%; top: 303px; }
-  .pkh .pk-scene-picker { gap: 4px; bottom: 0; flex-wrap: wrap; }
+  .pkh .pk-scene-picker { position: relative; inset: auto; gap: 4px; flex-wrap: wrap; }
   .pkh .pk-scene-picker button { font-size: 12px; min-height: 40px; padding: 8px 10px; }
 }
 @media (min-width: 761px) and (max-width: 999px) {
