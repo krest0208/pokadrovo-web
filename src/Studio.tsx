@@ -16,6 +16,7 @@ import './editor/tools.css';
 import './home-formats.css';
 import './mobile.css';
 import './editor/workspace.css';
+import './design-system.css';
 
 type Intent = { kind:'create'|'resume'|'open'|'projects'; brief?:string; id?:string; mode?:Mode; ratio?:Ratio };
 const canEdit=(session:Session|null)=>!!session?.user||(session?.accountsEnabled===false||session?.guestEditingEnabled===true);

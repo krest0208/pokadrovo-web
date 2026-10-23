@@ -12,6 +12,7 @@ import '../editor/workspace.css';
 import '../motion/site-motion.css';
 import '../home-formats.css';
 import './preview.css';
+import '../design-system.css';
 
 type Screen='home'|'editor'|'projects'|'admin';
 type State={screen:Screen;theme:'light'|'dark';projects:Project[];project:Project|null;mode:Mode;ratio:Ratio;notice:string};
