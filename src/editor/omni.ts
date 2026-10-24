@@ -10,7 +10,7 @@ export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summa
 /** Credentials and provider URLs never enter the browser. Context stays in this editor session. */
 export class OmniAiProvider implements AiProvider {
  readonly name='Покадрово AI';
- readonly modes=[{id:'source-analysis',label:'Разбор исходника · проба'},{id:'deepseek-edit',label:'План монтажа · проба'},{id:'reels-trial',label:'Qwen Omni · видео и звук'},{id:'yandex-edit',label:'AI Studio · план монтажа'}] as const;
+ readonly modes=[{id:'source-analysis',label:'Разбор исходника'},{id:'deepseek-edit',label:'План монтажа'},{id:'reels-trial',label:'Qwen Omni · видео и звук'},{id:'yandex-edit',label:'AI Studio · план монтажа'}] as const;
  constructor(public service:AiService='source-analysis'){}
  get supportsMedia(){return this.service==='reels-trial'||this.service==='source-analysis';}
  setService(service:AiService){this.service=service;}

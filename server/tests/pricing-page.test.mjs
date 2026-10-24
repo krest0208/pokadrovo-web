@@ -62,7 +62,7 @@ test('the public comparison keeps unavailable levels clear without internal road
   const b=browser(),noop=()=>{};
   const pricing=renderToStaticMarkup(React.createElement(b.api.AiPlans,{theme:'dark',onTheme:noop,onHome:noop,onStart:noop}));
   assert.match(pricing,/data-theme="dark"/);assert.match(pricing,/Недоступен/);
-  assert.match(pricing,/Покупка монет и платные уровни недоступны/);assert.doesNotMatch(pricing,/<form|>Купить</);
+  assert.match(pricing,/Уровни «Сценарист», «Автор» и «Студия» пока недоступны/);assert.match(pricing,/Доступность покупки и стоимость пакетов монет указаны в балансе/);assert.doesNotMatch(pricing,/<form|>Купить</);
   assert.doesNotMatch(pricing,/владельц|готовим запуск|тариф готовится|в разработке|предстоит|объявим/i);
   const home=renderToStaticMarkup(React.createElement(b.api.AiHome,{theme:'light',onToggleTheme:noop,onCreate:noop,onContinue:noop,onImport:noop,onOpenProject:noop,projects:[]}));
   const footer=home.slice(home.indexOf('<footer'));

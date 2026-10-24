@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAccounts } from './accounts.mjs';
+import { createBilling } from './billing.mjs';
 import { createAi } from './ai.mjs';
 import { createSiteAgent } from './site-agent.mjs';
 import { OWNER_PATH } from './owner-route.mjs';
@@ -102,7 +103,8 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     const [id, signature] = cookie(req, visitorName).split('.');
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
-  const ai = createAi({ store, now, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
+  const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin});
+  const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
   const siteAgent = createSiteAgent({ store, now, origin: origin.origin, session: accounts.session, sameOrigin,
     request: options.siteAgentFetch, autoStart: options.siteAgentAutoStart !== false, suggestIdeas: ai.suggestSiteIdeas,
     facts: () => ({ aiConfigured: ai.openrouter.state().configured && ai.openrouter.state().enabled, quota: ai.openrouter.quota(),
@@ -121,7 +123,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     return { from, to, timezone: 'UTC', startedAt: Number(store.get('SELECT value FROM meta WHERE key=?', 'started').value), series,
       metrics: { pageRequests: sum('page_requests'), uniqueBrowsers: unique, visits: sum('site_view'), editorOpens: sum('editor_open'), projects, projectSaves: sum('project_saved'), exports: sum('export_completed'), aiRequests: sum('ai_request') },
       breakdown: { devices: store.all("SELECT device label,count(DISTINCT visitor) count FROM events WHERE kind='site_view' AND at>=? AND at<=? GROUP BY device", start, now()), modes: store.all("SELECT mode label,count(*) count FROM events WHERE kind='editor_open' AND at>=? AND at<=? GROUP BY mode", start, now()), formats: store.all("SELECT format label,count(*) count FROM events WHERE kind='export_completed' AND at>=? AND at<=? GROUP BY format", start, now()) },
-      users: accounts.userMetrics(days), integrations: { users: accountsEnabled, payments: false, aiProvider: ai.adminState().connected || ai.openrouter.adminState().connected || ai.yandex.adminState().connected },
+      users: accounts.userMetrics(days), integrations: { users: accountsEnabled, payments: billing.catalog().available, aiProvider: ai.adminState().connected || ai.openrouter.adminState().connected || ai.yandex.adminState().connected },
       notes: ['Счётчик запросов включает обновления страницы и ботов. Это не число людей.', 'События и приблизительные уникальные браузеры учитываются только с согласия пользователя. DNT/GPC отключают события.', 'Данные начинаются с запуска этого сервера. История старого хостинга не импортирована.', 'Клиентские события не являются биллингом: их можно блокировать или подделывать.', 'Экспорт означает подготовленный файл и отправку на скачивание, а не подтверждённую загрузку в соцсеть.'] };
   }
   async function route(req, res) {
@@ -130,6 +132,7 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     const path = url.pathname;
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
+    if (await billing.route(req, res, url)) return;
     if (await siteAgent.route(req, res, url)) return;
     if (await accounts.route(req, res, url)) return;
     if (await ai.route(req, res, url)) return;
@@ -138,6 +141,11 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
       const s = session(req);
       if (!['GET', 'HEAD'].includes(req.method)) csrf(req, s);
       if (await accounts.adminRoute(req, res, url)) return;
+      if(req.method==='GET'&&path==='/api/admin/billing')return json(res,200,billing.adminState());
+      if(req.method==='PUT'&&path==='/api/admin/billing'){const data=await body(req,32768);await reauth(req,data);return json(res,200,billing.save(data));}
+      if(req.method==='GET'&&path==='/api/admin/billing/orders')return json(res,200,{items:billing.orders()});
+      if(req.method==='POST'&&path==='/api/admin/billing/test-order')return json(res,201,billing.testOrder({key:'owner',owner:true},await body(req,4096)));
+      if(req.method==='POST'&&path==='/api/admin/billing/refunds'){const data=await body(req,4096);await reauth(req,data);return json(res,200,billing.reconcileRefund(data));}
       if (req.method === 'GET' && path === '/api/admin/session') return json(res, 200, { login: owner().login, csrf: s.csrf, totpEnabled: !!owner().totp, expires: s.expires, idleMinutes: 30, accountsEnabled, socialLoginEnabled });
       if (req.method === 'POST' && path === '/api/admin/logout') {
         store.run('DELETE FROM sessions WHERE id=?', s.id); store.audit('logout', 'ok', now()); setCookie(res, sessionName, '', 0); return json(res, 200, { ok: true });

@@ -11,7 +11,7 @@
     csrf = ''; owner = null; settings = null; clearTimeout(idleTimer); clearTimeout(agentPoll);
     app.hidden = true; $('login-screen').hidden = false; text($('login-error'), message);
     $('login-form').elements.password.value = ''; $('login-form').elements.code.value = '';
-    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog', 'site-agent-reports']) $(id).replaceChildren();
+    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog', 'site-agent-reports', 'billing-orders']) $(id).replaceChildren();
     for (const form of app.querySelectorAll('form')) form.reset();
     text($('totp-secret'), ''); $('totp-confirm').hidden = true; text($('ai-quota'), '');
   }
@@ -44,7 +44,7 @@
   $('toggle-owner-password').addEventListener('click', () => { const input = $('owner-password'), show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggle-owner-password').setAttribute('aria-pressed', String(show)); text($('toggle-owner-password'), show ? 'Скрыть пароль' : 'Показать пароль'); });
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
-  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта' };
+  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', billing: 'Оплата и монеты' };
   async function switchView(view) {
     currentView = view; if(view!=='agent')clearTimeout(agentPoll);
     for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== view + '-view';
@@ -58,6 +58,7 @@
     if (view === 'users') await loadUsers();
     if (view === 'oauth') await loadOAuth();
     if (view === 'agent') await loadSiteAgent();
+    if (view === 'billing') await loadBilling();
   }
   for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => switchView(b.dataset.view).catch(e => notify(e.message)));
   $('period').addEventListener('change', () => loadOverview().catch(e => notify(e.message)));
@@ -69,6 +70,7 @@
     const registration = document.querySelectorAll('.integration-row b')[1];
     text(registration, data.integrations.users ? 'Подключена' : 'Отключена');
     registration.classList.toggle('good', data.integrations.users);
+    const payments=document.querySelectorAll('.integration-row b')[2];text(payments,data.integrations.payments?'Продажи включены':'Продажи выключены');payments.classList.toggle('good',data.integrations.payments);
     const m = data.metrics; text($('period-note'), `${data.from} — ${data.to} · UTC · сбор с ${new Date(data.startedAt).toLocaleDateString('ru-RU')}`);
 const accountCards = data.users ? [['Зарегистрировано за период', data.users.registered, 'По базе аккаунтов'], ['Всего пользователей', data.users.total, 'Без учётной записи администратора']] : [];
     const cards = [
@@ -115,6 +117,32 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     for (const d of [...series].reverse()) { const row = element('tr'); for (const value of [d.day, d.page_requests, d.editor_open, d.project_saved, d.export_completed]) row.append(element('td', '', value)); body.append(row); }
     table.append(head, body); $('chart-table').replaceChildren(table);
   }
+  async function loadBilling(){
+    const [data,history]=await Promise.all([request('/billing'),request('/billing/orders')]);if(!owner)return;
+    const f=$('billing-form');for(const k of ['merchantLogin','algorithm','tax','paymentMethod','paymentObject','offerUrl','termsVersion'])f.elements[k].value=data[k];
+    for(const k of ['enabled','approved','fiscalReady','legalReady'])f.elements[k].checked=data[k];
+    for(const id of ['start','author','studio'])f.elements['price_'+id].value=data.prices[id]||'';
+    for(const input of f.querySelectorAll('input[type=password]'))input.value='';
+    for(const k of ['result','success','fail'])$('billing-'+k+'-url').value=data.urls[k];
+    text($('billing-status'),data.available?'Продажи включены':'Продажи выключены');
+    text($('billing-test-state'),data.testConfigured?'Тестовые пароли сохранены':'Не сохранены');text($('billing-live-state'),data.liveConfigured?'Боевые пароли сохранены':'Не сохранены');
+    text($('billing-test-note'),data.testVerified?'Подтверждение ResultURL получено. Тест пройден.':data.testConfigured?'Можно проверить оплату. Настоящий баланс не изменится.':'Сначала сохраните тестовые пароли.');$('billing-test').disabled=!data.testConfigured;
+    const states={pending:'Ожидает оплаты',paid:'Оплачен',partially_refunded:'Частичный возврат',refunded:'Возвращён'};
+    $('billing-orders').replaceChildren(...history.items.map(o=>{const row=element('tr');for(const x of ['№'+o.id,number(o.coins),o.priceRub+' ₽',o.test?'Тест':'Боевой',states[o.status]||o.status,date(o.created)])row.append(element('td','',x));return row;}));
+    if(!history.items.length){const row=element('tr'),cell=element('td','','Платежей пока нет');cell.colSpan=6;row.append(cell);$('billing-orders').append(row);}
+  }
+  bindForm('billing-form',async(data,form)=>{
+    for(const k of ['enabled','approved','fiscalReady','legalReady'])data[k]=form.elements[k].checked;
+    data.prices={};for(const id of ['start','author','studio']){data.prices[id]=data['price_'+id].trim().replace(',','.');delete data['price_'+id];}
+    await request('/billing',{method:'PUT',data});notify('Настройки Robokassa сохранены');await loadBilling();
+  });
+  $('billing-refresh').addEventListener('click',()=>loadBilling().catch(e=>notify(e.message)));
+  $('billing-test').addEventListener('click',async()=>{
+    const button=$('billing-test');if(button.disabled)return;button.disabled=true;
+    try{const order=await request('/billing/test-order',{method:'POST',data:{packageId:'start',requestId:crypto.randomUUID()}});if(!owner)return;if(!/^\/api\/billing\/pay\/[1-9]\d*$/.test(order.checkoutPath))throw Error('Некорректный адрес оплаты');window.location.assign(order.checkoutPath);}
+    catch(e){notify(e.message);button.disabled=false;}
+  });
+  bindForm('billing-refund-form',async(data,form)=>{data.confirmed=form.elements.confirmed.checked;data.amountRub=data.amountRub.trim().replace(',','.');await request('/billing/refunds',{method:'POST',data});form.reset();notify('Возврат записан, баланс пересчитан');await loadBilling();});
   async function loadSettings() {
     settings = await request('/settings'); if (!owner) return;
     const form = $('settings-form'); form.elements.provider.value = settings.provider; form.elements.model.value = settings.model;

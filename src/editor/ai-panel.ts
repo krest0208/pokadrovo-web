@@ -35,7 +35,7 @@ export class AiPanel {
     <label>Исходник из проекта<select class="pe-ai-media-source" aria-label="Файл для анализа"></select></label>
     <label class="pe-ai-consent"><input type="checkbox" class="pe-ai-media-consent"/> <span class="pe-ai-consent-copy">Разрешаю отправить выбранный файл провайдеру для анализа.</span></label>
     <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button></section>
-    <p class="pe-ai-note pe-ai-billing-note">Подарочный баланс: 3 монеты. Успешный ИИ-запрос — 1 монета; один Reels и 7 дней с первого запуска. На сервере Покадрово файл не сохраняется.</p>
+    <p class="pe-ai-note pe-ai-billing-note">ИИ-запрос — 1 монета. Подарочная проба: 3 монеты, один Reels и 7 дней. На сервере Покадрово файл не сохраняется.</p>
     <button type="button" class="pe-ai-cancel" data-ai="cancel" hidden>Отменить запрос</button>
     <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Сервис недоступен. Вы можете сохранить задание в проекте.'}</p>
     <button type="button" class="pe-ai-save" data-ai="save">Сохранить задание в проекте</button>
@@ -67,7 +67,7 @@ export class AiPanel {
      this.available=status.available;this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
      if(provider.service!=='yandex-edit'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
      this.node.querySelector('.pe-ai-connection span')!.textContent=reason;
-     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Запрос без списаний монет. Учитывается лимит подключения; расходы API несёт сайт.':provider.service==='yandex-edit'?'Режим недоступен. Покупка монет и оплата недоступны.':`Подарочный баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. Один Reels, 7 дней с первого запуска. При ошибке монета возвращается. Покупка монет недоступна.`;
+     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Запрос без списаний монет. Учитывается лимит подключения; расходы API несёт сайт.':provider.service==='yandex-edit'?'Этот режим пока не входит в доступные тарифы.':`Баланс: ${status.billing?.remainingCoins ?? status.trial?.remaining ?? 0} монет. Успешный запрос — ${status.billing?.requestCostCoins ?? 1} монета. При ошибке она возвращается. Подарочная проба: один проект и 7 дней. Пакеты монет — в балансе сверху.`;
     }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
     finally{if(!this.disposed&&generation===this.statusGeneration)this.refresh();}
   }
