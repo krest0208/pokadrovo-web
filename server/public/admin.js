@@ -44,7 +44,7 @@
   $('toggle-owner-password').addEventListener('click', () => { const input = $('owner-password'), show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggle-owner-password').setAttribute('aria-pressed', String(show)); text($('toggle-owner-password'), show ? 'Скрыть пароль' : 'Показать пароль'); });
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
-  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', database:'Аккаунты и база', legal:'Документы и реквизиты', billing: 'Оплата и монеты' };
+  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', mail:'Почта сайта', database:'Аккаунты и база', legal:'Документы и реквизиты', billing: 'Оплата и монеты' };
   async function switchView(view) {
     currentView = view; if(view!=='agent')clearTimeout(agentPoll);
     for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== view + '-view';
@@ -61,6 +61,7 @@
     if (view === 'billing') await loadBilling();
     if (view === 'legal') await loadLegal();
     if (view === 'database') await loadDatabase();
+    if (view === 'mail') await loadMail();
   }
   for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => switchView(b.dataset.view).catch(e => notify(e.message)));
   $('period').addEventListener('change', () => loadOverview().catch(e => notify(e.message)));
@@ -119,6 +120,18 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     for (const d of [...series].reverse()) { const row = element('tr'); for (const value of [d.day, d.page_requests, d.editor_open, d.project_saved, d.export_completed]) row.append(element('td', '', value)); body.append(row); }
     table.append(head, body); $('chart-table').replaceChildren(table);
   }
+  async function loadMail(){
+    const d=await request('/mail');if(!owner)return;
+    text($('mail-state'),d.publicReady?'Доступно пользователям':d.configured?'Подключение сохранено; нужны документы':'Отправка не настроена');
+    text($('mail-quota'),'Осталось: '+number(d.quota.remaining)+' из '+number(d.quota.limit)+' за '+d.quota.windowDays+' дня.'+(d.quota.nextAvailable?' Квота начнёт освобождаться: '+date(d.quota.nextAvailable):''));
+    const f=$('mail-form');f.elements.sender.value=d.sender||'';f.elements.username.value='';f.elements.smtpPassword.value='';f.elements.password.value='';f.elements.enabled.checked=d.enabled;f.elements.confirmed.checked=d.confirmed;f.elements.removeCredentials.checked=false;
+    text($('mail-credentials'),'SMTP-логин: '+(d.usernameConfigured?'сохранён':'не указан')+'. SMTP-пароль: '+(d.passwordConfigured?'сохранён':'не указан')+'. Сохранённые значения в браузер не возвращаются. При смене доступа или отправителя введите оба значения заново.');
+    const labels={queued:'в очереди',sending:'передаётся SMTP-серверу',accepted:'SMTP-сервер принял письмо',failed:'SMTP не подтвердил приём',cancelled:'отправка отменена',expired:'срок истёк',interrupted:'доставка прервана'};
+    text($('mail-result'),d.last?'Последняя попытка: '+date(d.last.created)+' — '+(labels[d.last.status]||d.last.status)+(d.last.error?'. '+d.last.error:''):'Попыток отправки пока нет.');
+  }
+  $('mail-refresh').addEventListener('click',()=>loadMail().catch(e=>notify(e.message)));
+  bindForm('mail-form',async(data,f)=>{data.enabled=f.elements.enabled.checked&&!f.elements.removeCredentials.checked;data.confirmed=f.elements.confirmed.checked;data.removeCredentials=f.elements.removeCredentials.checked;await request('/mail',{method:'PUT',data});notify('Настройки почты сохранены');await loadMail();});
+  bindForm('mail-test-form',async(data,f)=>{data.confirmed=f.elements.confirmed.checked;await request('/mail/test',{method:'POST',data});f.reset();notify('Тестовое письмо поставлено в очередь. Обновите статус и проверьте почту.');await loadMail();});
   async function loadDatabase(){
     const d=await request('/database');if(!owner)return;
     const r=d.registration; text($('database-registration'),!r.accountsEnabled?'Регистрация выключена настройкой сервера':r.legalReady?'Регистрация готова':'Ожидаются документы оператора');
@@ -126,7 +139,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     const summary=element('p','',r.legalReady?'Документы опубликованы. Новая регистрация, вход и запись согласий доступны.':'До открытия регистрации заполните и проверьте документы. Существующий вход и гостевой монтаж доступны.');const list=element('ul');if(!r.legalReady&&!r.missing.length)list.append(element('li','','Опубликуйте проверенные документы в разделе реквизитов.'));for(const key of r.missing)list.append(element('li','',missing[key]||key));$('database-readiness').replaceChildren(summary,list);
     text($('database-health'),d.healthy?'Проверка пройдена':'Нужна проверка');const labels={integrity:'Целостность',writable:'Запись данных',foreignKeys:'Связи таблиц',wal:'Журнал WAL',schemaReady:'Таблицы аккаунтов'};
     $('database-checks').replaceChildren(...Object.entries(labels).map(([key,label])=>{const card=element('div','metric');card.append(element('span','',label),element('strong','',d[key]?'В порядке':'Проверить'));return card;}));
-    text($('database-counts'),'Аккаунтов: '+number(d.users)+'. Проектов: '+number(d.projects)+'. Аккаунтов с резервным кодом: '+number(d.recovery.accountsWithCode)+'. Подтверждение почты письмом не подключено.');
+    text($('database-counts'),'Аккаунтов: '+number(d.users)+'. Проектов: '+number(d.projects)+'. Аккаунтов с резервным кодом: '+number(d.recovery.accountsWithCode)+'. Настройки отправки писем находятся в разделе «Почта сайта».');
     const b=d.backup;text($('database-backup-state'),b.error|| (b.running?'Создаётся копия…':b.lastSuccess?'Последняя успешная копия: '+date(b.lastSuccess):'Успешной копии пока нет. Автоматическая проверка выполняется после запуска сервера.'));
     const table=element('table'),head=element('thead'),hr=element('tr');for(const x of ['Создана','Размер базы и ключа'])hr.append(element('th','',x));head.append(hr);const tb=element('tbody');for(const item of b.copies){const tr=element('tr');tr.append(element('td','',date(item.created)),element('td','',number(Math.ceil(item.bytes/1024))+' КБ'));tb.append(tr);}table.append(head,tb);$('database-backups').replaceChildren(b.copies.length?table:element('p','','Копий пока нет.'));
   }

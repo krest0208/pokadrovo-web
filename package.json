@@ -17,12 +17,13 @@
     "test:browser-models": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@fontsource/outfit": "^5.2.5",
     "@fontsource/ibm-plex-mono": "^5.2.5",
-    "motion": "14.6.0"
+    "@fontsource/outfit": "^5.2.5",
+    "lucide-react": "^0.468.0",
+    "motion": "14.6.0",
+    "nodemailer": "10.2.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

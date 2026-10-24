@@ -1,3 +1,4 @@
+import {createAccountEmail} from './account-email.mjs';
 import {createAccountRecovery} from './account-recovery.mjs';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
@@ -12,7 +13,7 @@ const sidOk = value => /^[\w-]{43}$/.test(value);
 const projectIdOk = value => typeof value === 'string' && /^[\w.-]{1,120}$/.test(value);
 const profile = row => ({ id: row.id, name: row.name, email: row.email, emailVerified: !!row.email_verified, role: 'user', created: row.created, passwordSet: !!row.password });
 
-export function createAccounts({ legal, store, now, origin, secure, sameOrigin, ownerSession, owner, ownerPath, ownerLogin, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
+export function createAccounts({ legal, mail, store, now, origin, secure, sameOrigin, ownerSession, owner, ownerPath, ownerLogin, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE COLLATE NOCASE, name TEXT NOT NULL, password TEXT, email_verified INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, last_login INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active');
     CREATE TABLE IF NOT EXISTS identities(provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(provider,subject));
@@ -40,6 +41,7 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
   };
   function limit(req, type, count = 12, ms = 15 * 60000) { if (!store.consume(type + ':' + ip(req), count, ms, now())) deny(429, 'Слишком много попыток. Попробуйте позднее.'); }
   function cleanup() {
+    accountMail.cleanup();
     store.run('DELETE FROM oauth_states WHERE expires<=?', now());
     store.run('DELETE FROM user_sessions WHERE expires<=? OR last_seen<?', now(), now() - DAY);
   }
@@ -71,6 +73,7 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
     if (!sidOk(random || '') || !/^\d{13}$/.test(stamp || '') || +stamp <= now() - 3600000 || +stamp > now() + 30000 || !equal(sign, store.hmac('auth-csrf:' + stamp + '.' + random)) || !equal(value, req.headers['x-csrf-token'])) deny(403, 'Откройте форму входа заново.');
   }
   const recovery=createAccountRecovery({store,now,session,sameOrigin,publicMutation,passwordJob,limit,accountsEnabled,secure,sessionName});
+  const accountMail=createAccountEmail({store,now,origin,mail,accountsEnabled,session,publicMutation,mutation,passwordJob,limit,recovery,secure,sessionName});
   function providers() { if (!socialLoginEnabled) return []; return store.all('SELECT * FROM oauth_config').map(c => {
     const ready = !!(c.enabled && c.client_id && c.secret && (c.provider === 'google' || (secure && c.version)));
     return { id: c.provider, ready, professionalOnly: c.provider === 'instagram', note: !c.enabled || !c.client_id || !c.secret ? 'Этот способ входа недоступен.' : c.provider !== 'google' && !secure ? 'Для Meta требуется настроенный HTTPS-домен.' : c.provider !== 'google' && !c.version ? 'Укажите версию API Meta в админ-панели.' : c.provider === 'instagram' ? 'Только профессиональные аккаунты Instagram: Business / Creator.' : '' };
@@ -82,7 +85,7 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
     // Bound active devices; invalidate oldest ones after five sessions.
     store.run('DELETE FROM user_sessions WHERE user_id=? AND id NOT IN (SELECT id FROM user_sessions WHERE user_id=? ORDER BY created DESC LIMIT 5)', user.id, user.id);
     appendCookie(res, sessionName, sid, 7 * 86400, secure);
-    return { user: profile(user), csrf, providers: providers(), accountsEnabled, guestEditingEnabled, socialLoginEnabled, legal:legal.state() };
+    return { user: profile(user), csrf, providers: providers(), accountsEnabled, guestEditingEnabled, socialLoginEnabled, legal:legal.state(),mail:{enabled:mail.ready()} };
   }
   function listProjects(auth) { return store.all('SELECT payload FROM account_projects WHERE account_id=? ORDER BY modified DESC LIMIT 200', auth.key).map(r => JSON.parse(r.payload)); }
   // Only document metadata is stored: never a Blob, object URL, credential or executable HTML.
@@ -101,9 +104,10 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
     cleanup();
     if (req.method === 'GET' && path === '/api/account/session') {
       const a = session(req, false); const csrf = a?.csrf || (accountsEnabled ? anonymousCsrf(req, res) : '');
-      json(res, 200, { legal:legal.state(), user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled, ...(a?.owner ? { adminPath: ownerPath } : {}) }); return true;
+      json(res, 200, { legal:legal.state(), user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled, mail:{enabled:mail.ready()}, ...(a?.owner ? { adminPath: ownerPath } : {}) }); return true;
     }
     if(await recovery.route(req,res,url))return true;
+    if(await accountMail.route(req,res,url))return true;
     if (!socialLoginEnabled && (path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Этот способ входа отключён. Используйте почту и пароль.');
     if (!accountsEnabled && (['/api/account/register', '/api/account/login'].includes(path) || path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Регистрация и вход посетителей отключены. Монтажёр доступен без аккаунта.');
     if (req.method === 'POST' && (path === '/api/account/register' || path === '/api/account/login')) {
@@ -136,6 +140,7 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
           legal.recordAcceptance(id,acceptedVersion);recoveryCode=recovery.issue(id);store.db.exec('COMMIT');
         }catch(e){store.db.exec('ROLLBACK');throw e;}
         store.audit('user_registered', 'ok', now());
+        accountMail.issue(store.get('SELECT * FROM users WHERE id=?',id),'verify');
         json(res, 201, {...startSession(res, store.get('SELECT * FROM users WHERE id=?', id)),recoveryCode}); return true;
       }
       if (typeof data.email !== 'string' || !data.email.trim() || data.email.length > 254) deny(401, 'Неверная почта, логин или пароль.');

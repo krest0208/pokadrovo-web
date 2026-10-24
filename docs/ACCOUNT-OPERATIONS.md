@@ -10,7 +10,7 @@ The registration form requires its current document version, independent terms a
 
 ## Passwords and offline recovery
 
-Email is the account identifier. Email delivery and ownership confirmation are **not configured** and `emailVerified` is not set by password signup. Do not describe the site as sending confirmation/reset emails. A working mail delivery service and actual sender credentials/domain settings would be required for that separate integration; the current work does not create an external mailbox or accept an email-provider contract.
+Email remains the account identifier. The code now supports RuSender SMTP for verification and reset, but production delivery stays **disabled until real provider credentials and sender activation are completed**. New signup is not automatically marked verified. Do not claim that a live email was delivered merely because a queue was created or SMTP accepted it. See `docs/EMAIL-OPERATIONS.md` for no-charge setup, provider/domain review, quota, test and recovery limits.
 
 Each password signup issues a 192-bit random offline recovery code. The server sends it once in the private no-store signup response and retains only a keyed digest bound to that account. It never appears in an account listing, subsequent login/session response, URL, telemetry, local storage or project metadata. The UI asks the user to save it outside the site. Clipboard copying requires their button press.
 

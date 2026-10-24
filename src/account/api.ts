@@ -1,7 +1,7 @@
 export type User = { id:string; name:string; email:string|null; emailVerified:boolean; role:'user'|'owner'; created:number; passwordSet:boolean };
 export type Provider = { id:'google'|'facebook'|'instagram'; ready:boolean; professionalOnly:boolean; note:string };
 export type LegalState = {ready:boolean;salesReady:boolean;version:string;edition:string;links:Record<string,string>};
-export type Session = { recoveryCode?:string; legal?:LegalState; user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean; guestEditingEnabled?:boolean; socialLoginEnabled?:boolean; adminPath?:string };
+export type Session = { mail?:{enabled:boolean}; recoveryCode?:string; legal?:LegalState; user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean; guestEditingEnabled?:boolean; socialLoginEnabled?:boolean; adminPath?:string };
 let active:Session|null=null;
 export class AccountError extends Error { constructor(message:string,public status:number,public totpRequired=false){super(message);} }
 export const currentUser=()=>active?.user||null;

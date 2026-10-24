@@ -1,3 +1,4 @@
+import {createMail} from './email.mjs';
 import { createServer } from 'node:http';
 import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
@@ -101,7 +102,8 @@ export function createApp(options = {}) {
   }
 let accounts;
   const legal = createLegal({store,now,origin:origin.origin,session:(...args)=>accounts.session(...args),sameOrigin});
-  accounts = createAccounts({ legal, store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, ownerPath: OWNER_PATH, ownerLogin: (req, res, data) => authenticateOwner(req, res, { login: data.email, password: data.password, code: data.code }, true), reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
+  const mail=createMail({store,now,origin:origin.origin,legalReady:()=>legal.ready(),transportFactory:options.mailTransport});
+  accounts = createAccounts({ legal, mail, store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, ownerPath: OWNER_PATH, ownerLogin: (req, res, data) => authenticateOwner(req, res, { login: data.email, password: data.password, code: data.code }, true), reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
     revokeOwner(req, res) { const s = session(req); store.run('DELETE FROM sessions WHERE id=?', s.id); setCookie(res, sessionName, '', 0); }
   });  function visitor(req) {
     const [id, signature] = cookie(req, visitorName).split('.');
@@ -148,6 +150,9 @@ let accounts;
       const s = session(req);
       if (!['GET', 'HEAD'].includes(req.method)) csrf(req, s);
       if (await accounts.adminRoute(req, res, url)) return;
+      if(req.method==='GET'&&path==='/api/admin/mail')return json(res,200,mail.state());
+      if(req.method==='PUT'&&path==='/api/admin/mail'){const data=await body(req,8192);await reauth(req,data);return json(res,200,mail.save(data));}
+      if(req.method==='POST'&&path==='/api/admin/mail/test'){const data=await body(req,4096);await reauth(req,data);if(!store.consume('mail-owner-test',3,3600000,now()))deny(429,'Не более трёх тестов в час.');const {emailAddress}=await import('./email.mjs');const to=emailAddress(data.to);if(!to)deny(400,'Введите ваш адрес для тестового письма.');if(data.confirmed!==true)deny(400,'Подтвердите отправку на собственный адрес.');if(!mail.enqueue({kind:'test',to},now()+600000,{test:true}))deny(429,'Проверьте настройки почты и остаток бесплатной квоты.');return json(res,202,{queued:true});}
       if(req.method==='GET'&&path==='/api/admin/billing')return json(res,200,billing.adminState());
       if(req.method==='PUT'&&path==='/api/admin/billing'){const data=await body(req,32768);await reauth(req,data);return json(res,200,billing.save(data));}
       if(req.method==='GET'&&path==='/api/admin/billing/orders')return json(res,200,{items:billing.orders()});
@@ -279,11 +284,15 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
       return sendFile(res, join(here, 'public/admin.html'), 'text/html; charset=utf-8', req.method);
     }
+    if(pagePath==='/account/email'){res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');return sendFile(res,join(here,'public/email.html'),'text/html; charset=utf-8',req.method);}
+    const mailAssets={'/account-mail/email.js':['email.js','text/javascript; charset=utf-8'],'/account-mail/email.css':['email.css','text/css; charset=utf-8']};
+    if(mailAssets[path])return sendFile(res,join(here,'public',mailAssets[path][0]),mailAssets[path][1],req.method);
     if(path === '/legal-assets/legal.css' && ['GET','HEAD'].includes(req.method)) return sendFile(res,join(here,'public/legal.css'),'text/css; charset=utf-8',req.method);
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
     if (accountsEnabled && (pagePath === '/profile' || !guestEditingEnabled && ['/studio', '/projects'].includes(pagePath)) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
     let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile','/projects','/pricing','/pricing/'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
+    if(decoded==='/server'||decoded.startsWith('/server/'))deny(404,'Не найдено.');
     if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some(s => s.startsWith('.'))) deny(404, 'Не найдено.');
     const target = resolve(dist, '.' + (decoded === '/' ? '/index.html' : decoded));
     if (!target.startsWith(dist + sep)) deny(404, 'Не найдено.');
@@ -308,9 +317,9 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
   store.cleanup(now()); const housekeeping = setInterval(() => { store.cleanup(now()); accounts.cleanup(); }, 300000); housekeeping.unref();
-  server.on('listening', () => {siteAgent.start();databaseCare.start();});
-  server.on('close', () => { clearInterval(housekeeping); siteAgent.stop(); ai.stop(); const pendingBackup=databaseCare.stop();if(pendingBackup)void pendingBackup.catch(()=>{}).finally(()=>store.close());else store.close(); });
-  return { server, store, siteAgent, databaseCare, origin: origin.origin };
+  server.on('listening', () => {siteAgent.start();databaseCare.start();if(options.mailAutoStart!==false)mail.start();});
+  server.on('close', () => { clearInterval(housekeeping); siteAgent.stop(); ai.stop(); const pending=[databaseCare.stop(),mail.stop()].filter(Boolean);if(pending.length)void Promise.allSettled(pending).finally(()=>store.close());else store.close(); });
+  return { server, store, siteAgent, databaseCare, mail, origin: origin.origin };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
