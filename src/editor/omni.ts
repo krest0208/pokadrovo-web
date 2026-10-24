@@ -49,6 +49,6 @@ export class OmniAiProvider implements AiProvider {
    if(result.analysis)this.context={projectId:request.projectId,analysis:result.analysis};
    return result as OmniResult;
   }catch(error){if(controller.signal.aborted)throw Error('Запрос отменён или завершился по времени. Повторно он автоматически не отправляется.');throw error;}
-  finally{clearTimeout(timer);signal.removeEventListener('abort',abort);}
+  finally{clearTimeout(timer);signal.removeEventListener('abort',abort);if(accountId&&currentUser()?.id===accountId)window.dispatchEvent(new CustomEvent('pokadrovo:balance-changed',{detail:{accountId}}));}
  }
 }

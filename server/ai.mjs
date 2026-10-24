@@ -282,6 +282,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, r
     if (req.method === 'GET' && path === '/api/ai/status') {
       const auth = session(req, false), service = url.searchParams.get('service') || 'reels-trial';
       if (!SERVICES.includes(service)) deny(400, 'Неизвестный режим ИИ.');
+      if (req.headers['x-pk-account'] && !equal(req.headers['x-pk-account'], auth?.key || '')) deny(409, 'Аккаунт изменился. Обновите страницу.');
       const q = state(), selected = modeStatus(auth, service), y = yandex.state(), o = openrouter.state();
       const configured = routerService(service) ? o.configured : service === 'yandex-edit' ? y.configured : q.configured;
       const verified = routerService(service) ? o.c[service === 'source-analysis' ? 'analysis_verified' : 'edit_verified'] === o.c.revision && !!o.c.revision : service === 'yandex-edit' ? y.verified : q.verified;

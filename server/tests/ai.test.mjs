@@ -329,6 +329,11 @@ test('Coin cost is server-owned, owners are exempt, and paid modes stay closed w
     await f.configure({trialEnabled:true}); const {user}=await register(f);
     const guest=await f.client()('/api/ai/status');assert.equal(guest.data.billing.remainingCoins,0);
     const before=await user('/api/ai/status');assert.equal(before.data.billing.remainingCoins,3);assert.equal(before.data.billing.purchaseAvailable,false);
+    const wrongAccount=await user('/api/ai/status?service=source-analysis','GET',undefined,{'X-PK-Account':'another-account'});
+    assert.equal(wrongAccount.status,409);assert.equal(wrongAccount.data.billing,undefined);
+    assert.equal((await f.client()('/api/ai/status','GET',undefined,{'X-PK-Account':'owner'})).status,409);
+    const exempt=await f.owner('/api/ai/status?service=source-analysis');assert.equal(exempt.data.billing.ownerExempt,true);assert.equal(exempt.data.billing.remainingCoins,null);
+    assert.equal(f.app.store.get('SELECT count(*) n FROM ai_trial_usage').n,0,'Reading the balance must not start a trial');
     const spoof={...analyze(),coinCost:0,balance:99999,owner:true};const first=await user('/api/ai/edit-plan','POST',spoof);
     assert.equal(first.status,200,first.raw);assert.equal(first.data.billing.chargedCoins,1);assert.equal(first.data.billing.remainingCoins,2);
     const owner=await f.owner('/api/ai/edit-plan','POST',analyze());assert.equal(owner.status,200,owner.raw);assert.equal(owner.data.billing.chargedCoins,0);assert.equal(owner.data.billing.remainingCoins,null);

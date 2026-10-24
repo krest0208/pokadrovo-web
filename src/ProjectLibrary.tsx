@@ -5,8 +5,8 @@ import {Project,normalizeProject,totalLength,clock} from './editor/model';
 import {saveProject,download} from './editor/assets';
 import './projects.css';
 
-type Props={projects:Project[];theme:'light'|'dark';onHome:()=>void;onNew:()=>void;onOpen:(id:string)=>void;onImport:()=>void};
-export default function ProjectLibrary({projects,theme,onHome,onNew,onOpen,onImport}:Props){
+type Props={balance?:React.ReactNode;projects:Project[];theme:'light'|'dark';onHome:()=>void;onNew:()=>void;onOpen:(id:string)=>void;onImport:()=>void};
+export default function ProjectLibrary({projects,theme,onHome,onNew,onOpen,onImport,balance}:Props){
   const [error,setError]=useState(''),[importing,setImporting]=useState(false);
   const input=useRef<HTMLInputElement>(null);
   const importFile=async(file?:File)=>{
@@ -22,7 +22,7 @@ export default function ProjectLibrary({projects,theme,onHome,onNew,onOpen,onImp
     finally{setImporting(false);}
   };
   return <main className="pk-library" data-theme={theme}>
-    <nav aria-label="Навигация проектов"><button className="pk-library-brand" type="button" onClick={onHome} aria-label="Покадрово — на главную"><BrandMark size={36}/><strong>покадрово</strong></button><span>ВАШЕ ПРОСТРАНСТВО</span></nav>
+    <nav aria-label="Навигация проектов"><button className="pk-library-brand" type="button" onClick={onHome} aria-label="Покадрово — на главную"><BrandMark size={36}/><strong>покадрово</strong></button><span>ВАШЕ ПРОСТРАНСТВО</span>{balance}</nav>
     <header><div><p className="pk-library-eyebrow">Продолжите с того же кадра</p><h1>Мои проекты</h1><p>Все ваши истории в одном месте. Выберите проект или начните новый.</p></div><button type="button" className="pk-library-primary" onClick={onNew}><Plus size={19} aria-hidden="true"/> Новый проект</button></header>
     <details className="pk-library-backups"><summary><span><FolderOpen size={19} aria-hidden="true"/> Импорт и резервная копия</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="pk-library-backup-body">
       <div className="pk-library-actions"><input ref={input} type="file" accept=".json,application/json" hidden aria-label="Файл проекта JSON" onChange={e=>{void importFile(e.target.files?.[0]);e.target.value='';}}/><button type="button" disabled={importing} onClick={()=>input.current?.click()}><Upload size={18} aria-hidden="true"/>{importing?'Открываю…':'Открыть файл проекта'}</button><button type="button" disabled={!projects.length} onClick={()=>download(new Blob([JSON.stringify(projects,null,2)],{type:'application/json'}),'Pokadrovo-projects.json')}><Download size={18} aria-hidden="true"/> Скачать проекты</button></div>

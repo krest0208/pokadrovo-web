@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { ArrowUpRight, AudioLines, Check, Coins, Film, Layers3, Moon, Sun, Text } from 'lucide-react';
+import CoinMark from './CoinMark';
+import { ArrowUpRight, AudioLines, Check, Film, Layers3, Moon, Sun, Text } from 'lucide-react';
 import BrandMark from './BrandMark';
 import yandexModels from '../shared/yandex-models.json';
 import './ai-plans.css';
@@ -32,15 +33,16 @@ const comparison = [
   ['Доступность','При подключенном пробном ИИ','Недоступен','Недоступен','Недоступен']
 ];
 
-type Props={theme:'light'|'dark';onTheme:()=>void;onHome:()=>void;onStart:()=>void};
-export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
+type Props={balance?:React.ReactNode;theme:'light'|'dark';onTheme:()=>void;onHome:()=>void;onStart:()=>void};
+export default function AiPlans({theme,onTheme,onHome,onStart,balance}:Props){
   React.useEffect(()=>{const previous=document.title;document.title='Тарифы — мощность — нейросети | Покадрово';return()=>{document.title=previous;};},[]);
   return <div className="pk-plans" data-theme={theme}>
     <a className="pk-plans-skip" href="#plans-main">К тарифам</a>
-    <header className="pk-plans-header">
+    <header className={`pk-plans-header${balance?' pk-has-balance':''}`}>
       <a href="/" className="pk-plans-brand" onClick={event=>{event.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a>
       <nav aria-label="Навигация по тарифам"><a href="#ai-levels">Уровни ИИ</a><a href="#ai-russia">Модели в России</a><a href="#ai-compare">Сравнить</a><a href="#ai-coins">Монеты</a></nav>
       <button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Включить тёмную тему':'Включить светлую тему'}>{theme==='light'?<Moon size={20} aria-hidden="true"/>:<Sun size={20} aria-hidden="true"/>}</button>
+      {balance}
     </header>
     <main id="plans-main" tabIndex={-1}>
       <section className="pk-plans-hero">
@@ -48,13 +50,13 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
         <h1>Вашей истории —<br/><em>своя мощность.</em></h1>
         <p>От первого разбора кадров до подробного плана монтажа. Выбирайте глубину работы ИИ под свою задачу.</p>
         <a className="pk-plans-link" href="#ai-levels">Посмотреть уровни <ArrowUpRight size={18} aria-hidden="true"/></a>
-        <div className="pk-plans-draft"><Coins size={20} aria-hidden="true"/><p><strong>Цены для сравнения.</strong> Уровни приведены для сравнения. Покупка монет и платные уровни недоступны; цены не являются предложением оплаты.</p></div>
+        <div className="pk-plans-draft"><CoinMark size={20} aria-hidden="true"/><p><strong>Цены для сравнения.</strong> Уровни приведены для сравнения. Покупка монет и платные уровни недоступны; цены не являются предложением оплаты.</p></div>
       </section>
       <section id="ai-levels" className="pk-plans-levels" aria-label="Тарифы и возможности нейросетей">
         {plans.map(plan=>{const Icon=plan.icon;return <article key={plan.id} className={'pk-plan-card pk-plan-'+plan.id} aria-labelledby={'plan-'+plan.id}>
           <div className="pk-plan-card-top"><span>{plan.label}</span><Icon size={25} aria-hidden="true"/></div>
           <div className="pk-plan-title"><h2 id={'plan-'+plan.id}>{plan.name}</h2><span className="pk-plan-status">{plan.status}</span></div><p className="pk-plan-description">{plan.description}</p>
-          <div className="pk-plan-price"><Coins size={26} aria-hidden="true"/><strong>{plan.coins}</strong><span>{plan.coins===1?'монета':plan.coins<5?'монеты':'монет'}</span></div><p className="pk-plan-unit">{plan.unit}</p>
+          <div className="pk-plan-price"><CoinMark size={26} aria-hidden="true"/><strong>{plan.coins}</strong><span>{plan.coins===1?'монета':plan.coins<5?'монеты':'монет'}</span></div><p className="pk-plan-unit">{plan.unit}</p>
           <div className="pk-plan-power"><div><span>Мощность</span><strong>{plan.power}</strong></div><div className="pk-plan-meter" aria-hidden="true">{[0,1,2].map(n=><i key={n} className={n<plan.depth?'is-on':''}/>)}</div></div>
           <div className="pk-plan-model"><span>Нейросеть</span><h3>{plan.model}</h3><p>{plan.detail}</p><small>Контекст модели: {plan.context}</small></div>
           <ul>{plan.features.map(feature=><li key={feature}><Check size={17} aria-hidden="true"/><span>{feature}</span></li>)}</ul>

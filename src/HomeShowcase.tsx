@@ -1,11 +1,11 @@
 import * as React from 'react';
+export {default as Coin} from './CoinMark';
 import story from './home/assets/coastal-story.webp';
 
 const descriptions=['Камера в руках путешественника','Дорога вдоль синего моря','Путешественница на смотровой площадке','Чашка кофе и карта у моря','Волны на прибрежных камнях','Прогулка по берегу на закате'];
 export function Shot({index=0,className='',children}:{index?:number;className?:string;children?:React.ReactNode}){
  return <div className={`pk-shot ${className}`}><svg className="pk-shot-image" viewBox={`${index%3*512} ${Math.floor(index/3)*512} 512 512`} preserveAspectRatio="xMidYMid slice" role="img" aria-label={descriptions[index]}><image href={story} width="1536" height="1024"/></svg>{children}</div>;
 }
-export function Coin({size=22}:{size?:number}){return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#FFC971"/><circle cx="12" cy="12" r="7" stroke="#A86513" strokeWidth="1.3"/><path d="m10 8 6 4-6 4V8Z" fill="#8C5010"/></svg>;}
 export function Arrow(){return <svg viewBox="0 0 40 24" fill="none" aria-hidden="true"><path d="M2 12h34M26 2l10 10-10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;}
 function Wave(){return <div className="pk-wave" aria-hidden="true">{Array.from({length:48},(_,i)=><i key={i} style={{height:`${12+(i*17%29)}px`}}/>)}</div>;}
 export function Timeline({compact=false}:{compact?:boolean}){return <div className={`pk-timeline ${compact?'is-compact':''}`} role="img" aria-label="Схема таймлайна: четыре выбранных фрагмента, дорожка звука и титр над первым кадром"><div className="pk-time-ruler"><span>00:00</span><span>00:10</span><span>00:20</span><span>00:30</span></div><div className="pk-title-track">Выходные у моря</div><div className="pk-video-track">{[1,0,2,5].map((n,i)=><Shot key={i} index={n}><span>{['Начало','Детали','Герой','Финал'][i]}</span></Shot>)}</div><Wave/><i className="pk-playhead"/></div>;}
