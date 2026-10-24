@@ -34,11 +34,10 @@ let script=result.outputFiles.find(f=>f.path.endsWith('.js')).text;
 // fragment extractors cannot mistake it for another executable script block.
 script=script.replace(/<(?=\/?script\b)/gi,'\\x3c');
 let css=result.outputFiles.find(f=>f.path.endsWith('.css')).text;
-// Two bundled Outfit weights keep the isolated preview below its 1 MB limit.
+// One bundled Outfit weight keeps the isolated preview below its 1 MB limit.
 // Monospace UI uses the existing local fallback; live site fonts are unchanged.
 for(const [family,weight,file]of [
-  ['Outfit',400,'@fontsource/outfit/files/outfit-latin-400-normal.woff2'],
-  ['Outfit',800,'@fontsource/outfit/files/outfit-latin-800-normal.woff2']
+  ['Outfit',400,'@fontsource/outfit/files/outfit-latin-400-normal.woff2']
 ]){const bytes=await readFile(resolve(root,'node_modules',file));css+=`\n@font-face{font-family:'${family}';font-style:normal;font-weight:${weight};font-display:swap;src:url(data:font/woff2;base64,${bytes.toString('base64')}) format('woff2')}`;}
 if(/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b/.test(script))throw Error('Unexpected network API in preview bundle.');
 if(result.metafile.inputs['src/account/api.ts']||result.metafile.inputs['src/Studio.tsx'])throw Error('Live account code leaked into preview.');

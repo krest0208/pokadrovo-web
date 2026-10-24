@@ -1,7 +1,7 @@
 import { animate } from 'motion/mini';
 
 const targets=[
-  '.pk-hero-copy > *','.pk-section-heading > *','.pk-process-card','.pk-feature-grid > article',
+  '.pk-hero-copy > *','.pk-principles > div','.pk-section-heading > *','.pk-process-card','.pk-feature-grid > article',
   '.pk-start > div','.pkh-composer','.pk-pack','.pk-trial-strip','.pk-inline-heading',
   '.pk-project-list > button','.pk-empty-projects','.pk-faq details','.pk-final > div:first-child',
   '.pk-footer-top > *','.ph header','.ph-platforms > button',
