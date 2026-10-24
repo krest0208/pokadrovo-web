@@ -1,6 +1,7 @@
 export type User = { id:string; name:string; email:string|null; emailVerified:boolean; role:'user'|'owner'; created:number; passwordSet:boolean };
 export type Provider = { id:'google'|'facebook'|'instagram'; ready:boolean; professionalOnly:boolean; note:string };
-export type Session = { user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean; guestEditingEnabled?:boolean; socialLoginEnabled?:boolean; adminPath?:string };
+export type LegalState = {ready:boolean;salesReady:boolean;version:string;edition:string;links:Record<string,string>};
+export type Session = { legal?:LegalState; user:User|null; csrf:string; providers:Provider[]; accountsEnabled?:boolean; guestEditingEnabled?:boolean; socialLoginEnabled?:boolean; adminPath?:string };
 let active:Session|null=null;
 export class AccountError extends Error { constructor(message:string,public status:number,public totpRequired=false){super(message);} }
 export const currentUser=()=>active?.user||null;
@@ -24,7 +25,7 @@ export async function request<T=Record<string,unknown>>(path:string,method='GET'
 }
 export async function getSession(){return acceptSession(await request<Session>('/session'));}
 export async function signIn(email:string,password:string,code?:string){return acceptSession(await request<Session>('/login','POST',{email,password,code}));}
-export async function register(email:string,password:string,confirmPassword:string,acceptPrivacy:boolean){return acceptSession(await request<Session>('/register','POST',{email,password,confirmPassword,acceptPrivacy}));}
+export async function register(email:string,password:string,confirmPassword:string,acceptPrivacy:boolean,acceptTerms:boolean,adultConfirmed:boolean,legalVersion:string){return acceptSession(await request<Session>('/register','POST',{email,password,confirmPassword,acceptPrivacy,acceptTerms,adultConfirmed,legalVersion}));}
 export async function logout(){await request('/logout','POST',{});active=null;return getSession();}
 export async function socialLogin(provider:Provider['id']){const result=await request<{url:string}>('/oauth/'+provider,'POST',{});const url=new URL(result.url);if(url.protocol!=='https:'||!['accounts.google.com','www.facebook.com','www.instagram.com'].includes(url.hostname))throw Error('Некорректный адрес входа.');window.location.assign(url.href);}
 let saves=Promise.resolve();

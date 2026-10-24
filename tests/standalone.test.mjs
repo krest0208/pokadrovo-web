@@ -1,3 +1,4 @@
+import {prepareLegal,legalAcceptance} from '../server/tests/legal-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, cpSync, existsSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
@@ -78,7 +79,7 @@ test('ready delivery starts without npm, preserves accounts/projects and owner a
   const directory = delivery(), port = await freePort(), origin = `http://127.0.0.1:${port}`;
   const ownerPassword = token(), userPassword = token();
   const store = openStore(join(directory, 'private'));
-  try { await provisionOwner(store, 'standalone_owner', ownerPassword); } finally { store.close(); }
+  try { prepareLegal({store,origin}); await provisionOwner(store, 'standalone_owner', ownerPassword); } finally { store.close(); }
   const originalKey = readFileSync(join(directory, 'private/master.key'));
   let app = launch(directory, port, true);
   try {
@@ -86,7 +87,7 @@ test('ready delivery starts without npm, preserves accounts/projects and owner a
     assert.equal((await fetch(origin)).status, 200);
     const user = client(origin); await user('/api/account/session');
     assert.equal((await user('/api/admin/session')).status, 401);
-    assert.equal((await user('/api/account/register', 'POST', { name: 'Local Author', email: 'local@example.test', password: userPassword, confirmPassword: userPassword, acceptPrivacy: true })).status, 201);
+    assert.equal((await user('/api/account/register', 'POST', { name: 'Local Author', email: 'local@example.test', password: userPassword, confirmPassword: userPassword, ...legalAcceptance })).status, 201);
     const project = { id: 'standalone-project', name: 'Persistent timeline', mode: 'reels', ratio: '9:16', clips: [], audio: [], texts: [], brief: 'Keep this brief', schema: 4, created: Date.now(), modified: Date.now(), master: 1 };
     assert.equal((await user('/api/account/projects', 'PUT', { project })).status, 200);
     assert.equal((await user('/api/admin/users')).status, 401);

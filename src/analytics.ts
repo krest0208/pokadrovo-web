@@ -49,7 +49,7 @@ async function initialise() {
   const panel = document.createElement('section'); panel.className = 'pk-privacy-dialog'; panel.setAttribute('aria-label','Настройка статистики');
   const title = document.createElement('strong'); title.textContent = 'Поможете улучшить студию?';
   const note = document.createElement('p');
-  note.textContent = disabledByBrowser() ? 'События выключены настройкой DNT/GPC вашего браузера.' : 'Разрешить анонимную статистику посещений, сохранений и экспортов? Видео, названия файлов, промпты и пароли не передаются. Отказ не мешает монтажу.';
+  note.textContent = disabledByBrowser() ? 'События выключены настройкой DNT/GPC вашего браузера.' : 'Разрешить статистику посещений, сохранений и экспортов? Видео, названия файлов, промпты и пароли не передаются. Отказ не мешает монтажу.';
   const yes = document.createElement('button'); yes.type = 'button'; yes.textContent = 'Разрешить'; yes.disabled = disabledByBrowser();
   const no = document.createElement('button'); no.type = 'button'; no.textContent = 'Без статистики';
   panel.append(title,note,yes,no); document.body.append(button,panel);

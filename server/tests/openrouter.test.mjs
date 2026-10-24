@@ -1,3 +1,4 @@
+import {prepareLegal,legalAcceptance} from './legal-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -57,7 +58,7 @@ async function fixture(upstream) {
   const dir = mkdtempSync(join(tmpdir(), 'pk-router-')); mkdirSync(join(dir, 'dist')); writeFileSync(join(dir, 'dist/index.html'), '<!doctype html>');
   const options = { now: () => clock, accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(dir, 'private'), dist: join(dir, 'dist'),
     aiFetch: async (url, init) => { calls.push([url, init]); return upstream ? upstream(url, init) : init.method === 'GET' ? catalog(url) : completion(JSON.parse(init.body).model === FREE_MODELS.deepseek ? null : visual()); } };
-  let app = createApp(options); const password = token(); await provisionOwner(app.store, 'router_owner', password);
+  let app = createApp(options);prepareLegal(app); const password = token(); await provisionOwner(app.store, 'router_owner', password);
   app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
   function client() {
     const cookies = new Map(); let csrf = '', accountId = '';
@@ -80,9 +81,9 @@ async function fixture(upstream) {
     configure: (patch = {}, headers = {}) => owner('/api/admin/ai/openrouter', 'PUT', { apiKey: 'fake-openrouter-key-for-tests', analysisModel: FREE_MODELS.gemma,
       editModel: FREE_MODELS.deepseek, dailyLimit: 40, enabled: true, trialEnabled: true, password, ...patch }, headers),
     register: async (email = 'router@example.test') => { const user = client(); await user('/api/account/session'); const password = token();
-      const registered = await user('/api/account/register', 'POST', { email, password, confirmPassword: password, acceptPrivacy: true });
+      const registered = await user('/api/account/register', 'POST', { email, password, confirmPassword: password, ...legalAcceptance });
       assert.equal(registered.status, 201); return { user, id: registered.data.user.id }; },
-    restart: async () => { await new Promise(resolve => app.server.close(resolve)); app = createApp(options); app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening'); },
+    restart: async () => { await new Promise(resolve => app.server.close(resolve)); app = createApp(options);prepareLegal(app); app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening'); },
     close: async () => { await new Promise(resolve => app.server.close(resolve)); rmSync(dir, { recursive: true, force: true }); } };
 }
 

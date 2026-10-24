@@ -1,3 +1,4 @@
+import {prepareLegal,legalAcceptance} from './legal-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -32,7 +33,7 @@ async function fixture(aiFetch) {
   let clock = Date.now();
   const dir = mkdtempSync(join(tmpdir(), 'pk-ai-')); mkdirSync(join(dir, 'dist')); writeFileSync(join(dir, 'dist/index.html'), '<!doctype html>');
   const options = { now: () => clock, accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(dir, 'private'), dist: join(dir, 'dist'), aiFetch };
-  let app = createApp(options);
+  let app = createApp(options);prepareLegal(app);
   const password = token(); await provisionOwner(app.store, 'test_owner', password);
   app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
   function client() {
@@ -55,7 +56,7 @@ async function fixture(aiFetch) {
   const owner = client(); await owner('/api/admin/login', 'POST', { login: 'test_owner', password });
   const configure = async (values = {}) => owner('/api/admin/settings', 'PUT', { provider: 'qwen', model: OMNI_MODEL, endpoint, apiKey: 'test-only-not-a-real-provider-key', aiEnabled: true, analyticsEnabled: false, password, ...values });
   return { get app() { return app; }, owner, client, configure, password, advance: ms => { clock += ms; },
-    restart: async () => { await new Promise(resolve => app.server.close(resolve)); app = createApp(options); app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening'); },
+    restart: async () => { await new Promise(resolve => app.server.close(resolve)); app = createApp(options);prepareLegal(app); app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening'); },
     yandex: (values = {}) => owner('/api/admin/ai/yandex', 'PUT', { model: YANDEX_MODEL, folderId: 'b1gtestfolder12345678', apiKey: 'test-only-independent-yandex-key', enabled: true, password, ...values }),
     close: async () => { await new Promise(resolve => app.server.close(resolve)); rmSync(dir, { recursive: true, force: true }); } };
 }
@@ -85,7 +86,7 @@ test('Omni HTTP pilot is CSRF-protected, opt-in and does not disclose the key', 
     assert.equal((await f.owner('/api/ai/edit-plan','POST',{request:request(),media:media()})).status,400);
     assert.equal((await f.owner('/api/ai/edit-plan','POST',{request:request(),media:media(61),mediaConsent:true})).status,400);
     const user = f.client(); await user('/api/account/session');
-    const p=token(); assert.equal((await user('/api/account/register','POST',{email:'trial@example.test',password:p,confirmPassword:p,acceptPrivacy:true})).status,201);
+    const p=token(); assert.equal((await user('/api/account/register','POST',{email:'trial@example.test',password:p,confirmPassword:p,...legalAcceptance})).status,201);
     assert.equal((await user('/api/ai/edit-plan','POST',{request:request()})).status,503);
     assert.equal((await user('/api/admin/ai/usage')).status,401);
     assert.equal(calls.length,0);
@@ -141,7 +142,7 @@ test('Omni drops a result when its owner session is revoked during inference', a
 
 async function register(f, email = 'trial@example.test') {
   const user = f.client(); await user('/api/account/session'); const password = token();
-  const result = await user('/api/account/register', 'POST', { email, password, confirmPassword: password, acceptPrivacy: true });
+  const result = await user('/api/account/register', 'POST', { email, password, confirmPassword: password, ...legalAcceptance });
   assert.equal(result.status, 201); return { user, password, id: result.data.user.id, email };
 }
 const analyze = () => ({ service: 'reels-trial', request: request(), media: media(), mediaConsent: true });

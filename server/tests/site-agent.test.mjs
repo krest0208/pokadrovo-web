@@ -1,3 +1,4 @@
+import {prepareLegal,legalAcceptance} from './legal-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -39,7 +40,7 @@ async function fixture(options = {}) {
   const config = { now: () => clock, origin, accountsEnabled: true, dataDir: join(dir, 'private'), dist: join(dir, 'dist'), siteAgentAutoStart: false,
     siteAgentFetch: async (url, init) => { calls.push([url, init]); return options.realSite ? globalThis.fetch(url, init) : options.siteFetch ? options.siteFetch(url, init) : publicResponse(url, init); },
     aiFetch: async (url, init) => { aiCalls.push([url, init]); return options.aiFetch ? options.aiFetch(url, init) : aiResponse(url, init); } };
-  let app = createApp(config); const password = token(); await provisionOwner(app.store, 'agent_owner', password);
+  let app = createApp(config);prepareLegal(app); const password = token(); await provisionOwner(app.store, 'agent_owner', password);
   app.server.listen(options.bindPort || 0, '127.0.0.1'); await once(app.server, 'listening');
   function client() {
     const cookies = new Map(); let csrf = '', accountId = '';
@@ -63,8 +64,8 @@ async function fixture(options = {}) {
       analysisModel: FREE_MODELS.gemma, editModel: FREE_MODELS.gemma, dailyLimit: 40, password, ...patch }),
     settings: (patch = {}, extra = {}) => owner('/api/admin/site-agent/settings', 'PUT', { enabled: true, useAi: false, password, ...patch }, extra),
     register: async () => { const user = client(); await user('/api/account/session'); const password = token();
-      const result = await user('/api/account/register', 'POST', { email: 'ordinary@example.test', password, confirmPassword: password, acceptPrivacy: true }); assert.equal(result.status, 201); return user; },
-    restart: async () => { await new Promise(resolve => app.server.close(resolve)); app = createApp(config); app.server.listen(options.bindPort || 0, '127.0.0.1'); await once(app.server, 'listening'); },
+      const result = await user('/api/account/register', 'POST', { email: 'ordinary@example.test', password, confirmPassword: password, ...legalAcceptance }); assert.equal(result.status, 201); return user; },
+    restart: async () => { await new Promise(resolve => app.server.close(resolve)); app = createApp(config);prepareLegal(app); app.server.listen(options.bindPort || 0, '127.0.0.1'); await once(app.server, 'listening'); },
     close: async () => { await new Promise(resolve => app.server.close(resolve)); rmSync(dir, { recursive: true, force: true }); } };
 }
 

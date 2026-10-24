@@ -1,3 +1,4 @@
+import {prepareLegal,legalAcceptance} from './legal-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
@@ -14,16 +15,16 @@ async function fixture(){
  const dir=mkdtempSync(join(tmpdir(),'pk-billing-'));mkdirSync(join(dir,'dist'));writeFileSync(join(dir,'dist/index.html'),'<!doctype html>');
  let clock=Date.now(),failure=false,calls=0;
  const options={origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),accountsEnabled:true,siteAgentAutoStart:false,now:()=>clock,aiFetch:async()=>{calls++;return failure?new Response('failure',{status:502}):new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({analysis:null,summary:'Сохранить формат.',operations:[{type:'ratio',value:'9:16'}]})}}]}),{headers:{'Content-Type':'application/json'}});}};
- let app=createApp(options);const password=token();await provisionOwner(app.store,'billing_owner',password);
+ let app=createApp(options);prepareLegal(app);const password=token();await provisionOwner(app.store,'billing_owner',password);
  async function listen(){app.server.listen(0,'127.0.0.1');await once(app.server,'listening');}await listen();
  function client(){const jar=new Map();let csrf='',account='';const send=(path,method='GET',data,headers={})=>new Promise((resolve,reject)=>{
   const raw=typeof data==='string'?data:data===undefined?undefined:JSON.stringify(data);
   const req=http({hostname:'127.0.0.1',port:app.server.address().port,path,method,headers:{Host:'pokadrovo.test',Origin:origin,'Content-Type':'application/json','X-CSRF-Token':csrf,'X-PK-Account':account,Cookie:[...jar].map(([k,v])=>k+'='+v).join('; '),...headers}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>{for(const cookie of res.headers['set-cookie']||[]){const [k,v]=cookie.split(';')[0].split('=');if(v)jar.set(k,v);else jar.delete(k);}const raw=Buffer.concat(chunks).toString();let value;try{value=JSON.parse(raw);}catch{value=raw;}if(value.csrf)csrf=value.csrf;if(value.user)account=value.user.id;if(path==='/api/admin/login'&&res.statusCode===200)account='owner';resolve({status:res.statusCode,data:value,raw,headers:res.headers});});});req.on('error',reject);if(raw!==undefined)req.write(raw);req.end();});return send;}
  const owner=client(),guest=client();assert.equal((await owner('/api/admin/login','POST',{login:'billing_owner',password})).status,200);
  const keys={testPassword1:token(),testPassword2:token(),password1:token(),password2:token()};
- let config={merchantLogin:'test-shop',algorithm:'sha256',...keys,enabled:false,approved:false,fiscalReady:false,legalReady:false,offerUrl:origin+'/offer',termsVersion:'test-v1',tax:'none',paymentMethod:'full_prepayment',paymentObject:'service',prices:{start:'49.90',author:'199.00',studio:'499.00'}};
+ let config={merchantLogin:'test-shop',algorithm:'sha256',...keys,enabled:false,approved:false,fiscalReady:false,legalReady:false,offerUrl:origin+'/legal/payments',termsVersion:legalAcceptance.legalVersion,tax:'none',paymentMethod:'full_prepayment',paymentObject:'service',prices:{start:'49.90',author:'199.00',studio:'499.00'}};
  async function save(values={}){config={...config,...values};return owner('/api/admin/billing','PUT',{...config,password});}
- async function user(name='one'){const send=client();await send('/api/account/session');const p=token();const r=await send('/api/account/register','POST',{email:name+'@billing.test',password:p,confirmPassword:p,acceptPrivacy:true});assert.equal(r.status,201,r.raw);return {send,id:r.data.user.id};}
+ async function user(name='one'){const send=client();await send('/api/account/session');const p=token();const r=await send('/api/account/register','POST',{email:name+'@billing.test',password:p,confirmPassword:p,...legalAcceptance});assert.equal(r.status,201,r.raw);return {send,id:r.data.user.id};}
  const callback=(id,overrides={},secret)=>{const order=app.store.get('SELECT * FROM payment_orders WHERE id=?',id);const d={OutSum:(order.amount_minor/100).toFixed(6),InvId:String(id),Shp_order:order.nonce,Shp_test:String(order.is_test),...overrides};d.SignatureValue=signature([d.OutSum,d.InvId,secret||app.store.unseal(order.secret2),'Shp_order='+d.Shp_order,'Shp_test='+d.Shp_test],order.algorithm);return new URLSearchParams(d).toString();};
  const postResult=(id,overrides={},secret)=>guest('/api/billing/robokassa/result','POST',callback(id,overrides,secret),{'Content-Type':'application/x-www-form-urlencoded',Origin:'https://auth.robokassa.ru','X-CSRF-Token':'','X-PK-Account':''});
  async function verified(){assert.equal((await save()).status,200);const o=await owner('/api/admin/billing/test-order','POST',{packageId:'start',requestId:token()});assert.equal(o.status,201,o.raw);assert.equal((await postResult(o.data.id)).data,'OK'+o.data.id);}
@@ -31,7 +32,7 @@ async function fixture(){
  async function order(user,pkg='start',more={}){const c=await user('/api/billing/catalog');return user('/api/billing/orders','POST',{packageId:pkg,requestId:token(),version:c.data.version,acceptedTerms:true,...more});}
  return {get app(){return app;},owner,guest,user,save,verified,live,order,postResult,callback,keys,password,time:()=>clock,advance:ms=>clock+=ms,fail:value=>failure=value,get calls(){return calls;},
   configureAi:()=>owner('/api/admin/settings','PUT',{provider:'qwen',model:OMNI_MODEL,endpoint:'https://test-workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',apiKey:token(),aiEnabled:true,trialEnabled:false,analyticsEnabled:false,password}),
-  restart:async()=>{await new Promise(r=>app.server.close(r));app=createApp(options);await listen();},
+  restart:async()=>{await new Promise(r=>app.server.close(r));app=createApp(options);prepareLegal(app);await listen();},
   close:async()=>{await new Promise(r=>app.server.close(r));rmSync(dir,{recursive:true,force:true});}};
 }
 

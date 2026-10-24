@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {currentUser,sessionCsrf} from './api';
 type Package={id:string;coins:number;priceRub:string|null};
-type Catalog={available:boolean;version:string;offerUrl:string;packages:Package[]};
+type Catalog={available:boolean;version:string;offerUrl:string;termsVersion:string;packages:Package[]};
 type Order={id:number;coins:number;priceRub:string;test:boolean;status:string};
 const statuses:Record<string,string>={pending:'Ожидает оплаты',paid:'Оплачен',partially_refunded:'Частичный возврат',refunded:'Возвращён'};
 export default function CoinPurchase({accountId,exempt}:{accountId:string;exempt:boolean}){
@@ -13,7 +13,7 @@ export default function CoinPurchase({accountId,exempt}:{accountId:string;exempt
   check();const data=await response.json();if(!response.ok)throw Error(data.error||'Не удалось получить данные оплаты.');return data;
  }
  const load=async()=>{
-  setError('');try{const [c,h]=await Promise.all([api('catalog'),api('orders')]);if(alive.current){setCatalog(c);setOrders(h.items);}}catch(e){if(alive.current)setError(e instanceof Error?e.message:'Нет связи с сервером.');}
+  setError('');try{const [c,h]=await Promise.all([api('catalog'),api('orders')]);if(alive.current){setCatalog(c);setAccepted(false);setOrders(h.items);}}catch(e){if(alive.current)setError(e instanceof Error?e.message:'Нет связи с сервером.');}
  };
  React.useEffect(()=>{alive.current=true;void load();return()=>{alive.current=false;};},[accountId]);
  async function buy(p:Package){
@@ -27,7 +27,7 @@ export default function CoinPurchase({accountId,exempt}:{accountId:string;exempt
  }
  return <div className="pk-coin-purchase">
   {!catalog&&!error&&<p role="status">Получаем пакеты и историю…</p>}
-  {catalog&&!exempt&&(catalog.available?<><strong>Пополнить баланс</strong><div className="pk-coin-packages">{catalog.packages.map(p=><button key={p.id} type="button" className="pk-balance-action" disabled={!accepted||busy} onClick={()=>void buy(p)}><span>{p.coins.toLocaleString('ru-RU')} монет</span><b>{p.priceRub} ₽</b></button>)}</div><label className="pk-coin-consent"><input type="checkbox" checked={accepted} disabled={busy} onChange={e=>setAccepted(e.target.checked)}/><span>Принимаю <a href={catalog.offerUrl} target="_blank" rel="noopener noreferrer">условия покупки</a></span></label><p>Оплата на защищённой странице Robokassa. Реквизиты карты в Покадрово не вводятся.</p></>:<p>Покупка монет пока недоступна.</p>)}
+  {catalog&&!exempt&&(catalog.available?<><strong>Пополнить баланс</strong><div className="pk-coin-packages">{catalog.packages.map(p=><button key={p.id} type="button" className="pk-balance-action" disabled={!accepted||busy} onClick={()=>void buy(p)}><span>{p.coins.toLocaleString('ru-RU')} монет</span><b>{p.priceRub} ₽</b></button>)}</div><label className="pk-coin-consent"><input type="checkbox" checked={accepted} disabled={busy} onChange={e=>setAccepted(e.target.checked)}/><span>Принимаю <a href={catalog.offerUrl+'?version='+encodeURIComponent(catalog.termsVersion)} target="_blank" rel="noopener noreferrer">условия покупки</a></span></label><p>Оплата на защищённой странице Robokassa. Реквизиты карты в Покадрово не вводятся.</p></>:<p>Покупка монет пока недоступна.</p>)}
   {error&&<><p role="alert">{error}</p><button className="pk-balance-action" type="button" disabled={busy} onClick={()=>void load()}>Повторить проверку</button></>}
   {!!orders.length&&<details className="pk-coin-history"><summary>История покупок</summary><ul>{orders.map(o=><li key={o.id}><strong>№{o.id} · {o.priceRub} ₽</strong><span>{o.coins} монет · {o.test?'Тест · ':''}{statuses[o.status]||'Проверяется'}</span>{o.status==='pending'&&<a className="pk-balance-action" href={'/api/billing/pay/'+o.id}>Продолжить оплату</a>}</li>)}</ul></details>}
  </div>;

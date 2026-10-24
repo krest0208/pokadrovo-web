@@ -97,6 +97,6 @@ export default function AiPlans({theme,onTheme,onHome,onStart,balance}:Props){
       </section>
       <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">Начните с материала</span><h2>Есть кадры?<br/>Откройте студию.</h2></div><button type="button" onClick={onStart}>Открыть студию <ArrowUpRight size={22} aria-hidden="true"/></button></section>
     </main>
-    <footer className="pk-plans-footer"><a href="/" onClick={event=>{event.preventDefault();onHome();}}>← На главную</a><span>© {new Date().getFullYear()} Покадрово</span><a href="#plans-main">Тарифы — мощность — нейросети ↑</a></footer>
+    <footer className="pk-plans-footer"><a href="/" onClick={event=>{event.preventDefault();onHome();}}>← На главную</a><span>© {new Date().getFullYear()} Покадрово</span><a href="/legal/terms">Соглашение</a><a href="/legal/payments">Оплата и возврат</a><a href="/legal/contacts">Реквизиты</a><a href="#plans-main">Тарифы — мощность — нейросети ↑</a></footer>
   </div>;
 }

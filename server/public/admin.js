@@ -11,7 +11,7 @@
     csrf = ''; owner = null; settings = null; clearTimeout(idleTimer); clearTimeout(agentPoll);
     app.hidden = true; $('login-screen').hidden = false; text($('login-error'), message);
     $('login-form').elements.password.value = ''; $('login-form').elements.code.value = '';
-    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog', 'site-agent-reports', 'billing-orders']) $(id).replaceChildren();
+    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog', 'site-agent-reports', 'billing-orders', 'legal-requests']) $(id).replaceChildren();
     for (const form of app.querySelectorAll('form')) form.reset();
     text($('totp-secret'), ''); $('totp-confirm').hidden = true; text($('ai-quota'), '');
   }
@@ -44,7 +44,7 @@
   $('toggle-owner-password').addEventListener('click', () => { const input = $('owner-password'), show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggle-owner-password').setAttribute('aria-pressed', String(show)); text($('toggle-owner-password'), show ? 'Скрыть пароль' : 'Показать пароль'); });
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
-  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', billing: 'Оплата и монеты' };
+  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', legal:'Документы и реквизиты', billing: 'Оплата и монеты' };
   async function switchView(view) {
     currentView = view; if(view!=='agent')clearTimeout(agentPoll);
     for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== view + '-view';
@@ -59,6 +59,7 @@
     if (view === 'oauth') await loadOAuth();
     if (view === 'agent') await loadSiteAgent();
     if (view === 'billing') await loadBilling();
+    if (view === 'legal') await loadLegal();
   }
   for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => switchView(b.dataset.view).catch(e => notify(e.message)));
   $('period').addEventListener('change', () => loadOverview().catch(e => notify(e.message)));
@@ -117,9 +118,23 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     for (const d of [...series].reverse()) { const row = element('tr'); for (const value of [d.day, d.page_requests, d.editor_open, d.project_saved, d.export_completed]) row.append(element('td', '', value)); body.append(row); }
     table.append(head, body); $('chart-table').replaceChildren(table);
   }
+  const legalFields=['operatorType','operatorName','inn','ogrn','address','email','phone','hosting','processors','rknNotice'];
+  const legalChecks=['published','identityConfirmed','hostingConfirmed','processingReviewed','crossBorderReviewed','documentsApproved'];
+  async function loadLegal(){
+    const data=await request('/legal');if(!owner)return;
+    const f=$('legal-form');for(const k of legalFields)f.elements[k].value=data.config[k]||'';for(const k of legalChecks)f.elements[k].checked=data.config[k]===true;
+    text($('legal-state'),data.ready?'Документы опубликованы':'Проект · регистрация приостановлена');text($('legal-version'),'Редакция: '+data.version+'. Платные услуги: '+(data.salesReady?'реквизиты заполнены; нужны остальные проверки оплаты':'юридическая подготовка не завершена'));
+    const table=element('table'),head=element('thead'),hr=element('tr');for(const t of ['Получено','Аккаунт / почта','Запрос','Номер'])hr.append(element('th','',t));head.append(hr);const tb=element('tbody');
+    const kinds={access:'Сведения и доступ',erase:'Удаление аккаунта и данных',withdraw:'Отзыв согласия'};
+    for(const r of data.requests){const tr=element('tr');for(const v of [date(r.created),r.email||r.account_id,kinds[r.kind]||r.kind,r.id])tr.append(element('td','',v));tb.append(tr);}table.append(head,tb);
+    $('legal-requests').replaceChildren(data.requests.length?table:element('p','','Обращений пока нет.'));
+  }
+  bindForm('legal-form',async(data,form)=>{for(const k of legalChecks)data[k]=form.elements[k].checked;await request('/legal',{method:'PUT',data});notify('Редакция документов сохранена');await loadLegal();});
+  $('legal-refresh').addEventListener('click',()=>loadLegal().catch(e=>notify(e.message)));
   async function loadBilling(){
-    const [data,history]=await Promise.all([request('/billing'),request('/billing/orders')]);if(!owner)return;
+    const [data,history,legal]=await Promise.all([request('/billing'),request('/billing/orders'),request('/legal')]);if(!owner)return;
     const f=$('billing-form');for(const k of ['merchantLogin','algorithm','tax','paymentMethod','paymentObject','offerUrl','termsVersion'])f.elements[k].value=data[k];
+    if(!data.offerUrl)f.elements.offerUrl.value=location.origin+'/legal/payments';if(!data.termsVersion&&legal.ready)f.elements.termsVersion.value=legal.version;
     for(const k of ['enabled','approved','fiscalReady','legalReady'])f.elements[k].checked=data[k];
     for(const id of ['start','author','studio'])f.elements['price_'+id].value=data.prices[id]||'';
     for(const input of f.querySelectorAll('input[type=password]'))input.value='';

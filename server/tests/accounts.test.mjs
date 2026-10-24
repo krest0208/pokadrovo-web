@@ -1,3 +1,5 @@
+import {OWNER_PATH} from '../owner-route.mjs';
+import {prepareLegal,legalAcceptance} from './legal-fixture.mjs';
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -15,14 +17,14 @@ before(async()=>{encoded=await hashPassword(password);});
 async function fixture(extra={}){
  const dir=mkdtempSync(join(tmpdir(),'pk-accounts-'));mkdirSync(join(dir,'dist'));writeFileSync(join(dir,'dist/index.html'),'<!doctype html><title>Test</title>');
  let time=Date.now();const origin=extra.origin||'http://localhost:5173';
- const app=createApp({accountsEnabled:true,socialLoginEnabled:true,guestEditingEnabled:false,origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),now:()=>time,...extra});
+ const app=createApp({accountsEnabled:true,socialLoginEnabled:true,guestEditingEnabled:false,origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),now:()=>time,...extra});prepareLegal(app);
  app.store.run('INSERT INTO owner(id,login,password,created) VALUES(1,?,?,?)','owner',encoded,time);
  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');
  const clients=[];
  const client=()=>{let jar=new Map(),csrf='',userId='';const c={async request(path,{method='GET',data,headers={},rawCookies}={}){return new Promise((ok,no)=>{
   const q=httpRequest({host:'127.0.0.1',port:app.server.address().port,path,method,headers:{Host:new URL(origin).host,Origin:origin,'Content-Type':'application/json','X-CSRF-Token':csrf,'X-PK-Account':userId,Cookie:rawCookies===undefined?[...jar].map(([k,v])=>k+'='+v).join('; '):rawCookies,...headers}},r=>{const chunks=[];r.on('data',x=>chunks.push(x));r.on('end',()=>{for(const line of r.headers['set-cookie']||[]){const [k,v]=line.split(';')[0].split('=');if(v)jar.set(k,v);else jar.delete(k);}const raw=Buffer.concat(chunks).toString();let data;try{data=JSON.parse(raw);}catch{data=raw;}if(data.csrf)csrf=data.csrf;if(data.user)userId=data.user.id;ok({status:r.statusCode,body:data,headers:r.headers,raw});});});q.on('error',no);if(data!==undefined)q.write(JSON.stringify(data));q.end();});},
    async init(){return c.request('/api/account/session');},
-   async signup(email='one@example.test'){await c.init();return c.request('/api/account/register',{method:'POST',data:{name:'Test Creator',email,password,confirmPassword:password,acceptPrivacy:true}});},
+   async signup(email='one@example.test'){await c.init();return c.request('/api/account/register',{method:'POST',data:{name:'Test Creator',email,password,confirmPassword:password,...legalAcceptance}});},
    async admin(){const r=await c.request('/api/admin/login',{method:'POST',data:{login:'owner',password}});await c.init();return r;},
    setCsrf(v){csrf=v;},setId(v){userId=v;},cookies(){return [...jar].map(([k,v])=>k+'='+v).join('; ');}
   };clients.push(c);return c;};
@@ -32,9 +34,9 @@ async function using(fn,opts){const f=await fixture(opts);try{await fn(f);}final
 const documentOf=(id='project-1')=>({id,schema:4,name:'Test project',mode:'video',ratio:'16:9',clips:[],audio:[],texts:[],brief:'Private brief',title:'',created:Date.now(),modified:Date.now(),master:1});
 
 test('public session is anonymous with CSRF and disabled unconfigured providers',()=>using(async f=>{const c=f.client(),r=await c.init();assert.equal(r.status,200);assert.equal(r.body.user,null);assert.ok(r.body.csrf);assert.equal(r.body.providers.length,3);assert.ok(r.body.providers.every(p=>!p.ready));}));
-test('registration requires same-origin, CSRF, privacy acknowledgement and strong matching passwords',()=>using(async f=>{const c=f.client();await c.init();const data={name:'User',email:'a@example.test',password,confirmPassword:password,acceptPrivacy:true};assert.equal((await c.request('/api/account/register',{method:'POST',data,headers:{Origin:'https://evil.example'}})).status,403);assert.equal((await c.request('/api/account/register',{method:'POST',data,headers:{'X-CSRF-Token':'wrong'}})).status,403);for(const patch of [{acceptPrivacy:false},{password:'short',confirmPassword:'short'},{confirmPassword:'wrong'},{email:'bad'},{name:'x'}])assert.equal((await c.request('/api/account/register',{method:'POST',data:{...data,...patch}})).status,400);assert.equal(f.store.get('SELECT count(*) n FROM users').n,0);}));
+test('registration requires same-origin, CSRF, privacy acknowledgement and strong matching passwords',()=>using(async f=>{const c=f.client();await c.init();const data={name:'User',email:'a@example.test',password,confirmPassword:password,...legalAcceptance};assert.equal((await c.request('/api/account/register',{method:'POST',data,headers:{Origin:'https://evil.example'}})).status,403);assert.equal((await c.request('/api/account/register',{method:'POST',data,headers:{'X-CSRF-Token':'wrong'}})).status,403);for(const patch of [{acceptPrivacy:false},{password:'short',confirmPassword:'short'},{confirmPassword:'wrong'},{email:'bad'},{name:'x'}])assert.equal((await c.request('/api/account/register',{method:'POST',data:{...data,...patch}})).status,400);assert.equal(f.store.get('SELECT count(*) n FROM users').n,0);}));
 test('registration stores salted hashes, returns a user role and HttpOnly session, not a bearer token',()=>using(async f=>{const c=f.client(),r=await c.signup();assert.equal(r.status,201,r.raw);assert.equal(r.body.user.role,'user');assert.equal(r.body.user.emailVerified,false);assert.equal(r.body.token,undefined);assert.ok(r.headers['set-cookie'].some(v=>v.includes('HttpOnly')&&v.includes('SameSite=Lax')));const u=f.store.get('SELECT * FROM users');assert.notEqual(u.password,password);assert.equal(r.raw.includes(u.password),false);assert.equal((await c.init()).body.user.id,u.id);}));
-test('public registration never grants admin even with forged role or owner id',()=>using(async f=>{const c=f.client();await c.init();const r=await c.request('/api/account/register',{method:'POST',data:{name:'Fake owner',email:'fake@example.test',password,confirmPassword:password,acceptPrivacy:true,role:'owner',id:'owner',admin:true}});assert.equal(r.status,201);assert.notEqual(r.body.user.id,'owner');for(const path of ['/api/admin/overview','/api/admin/users','/api/admin/oauth','/api/admin/settings'])assert.equal((await c.request(path)).status,401,path);assert.equal(f.store.get('SELECT count(*) n FROM owner').n,1);}));
+test('public registration never grants admin even with forged role or owner id',()=>using(async f=>{const c=f.client();await c.init();const r=await c.request('/api/account/register',{method:'POST',data:{name:'Fake owner',email:'fake@example.test',password,confirmPassword:password,...legalAcceptance,role:'owner',id:'owner',admin:true}});assert.equal(r.status,201);assert.notEqual(r.body.user.id,'owner');for(const path of ['/api/admin/overview','/api/admin/users','/api/admin/oauth','/api/admin/settings'])assert.equal((await c.request(path)).status,401,path);assert.equal(f.store.get('SELECT count(*) n FROM owner').n,1);}));
 test('guests and forged cookies cannot open studio, profile or private projects',()=>using(async f=>{const c=f.client();for(const path of ['/studio','/profile']){const r=await c.request(path);assert.equal(r.status,303);assert.equal(r.headers.location,'/?auth=login');}assert.equal((await c.request('/api/account/projects')).status,401);assert.equal((await c.request('/api/account/projects',{rawCookies:'pk-user-local='+token()})).status,401);assert.equal((await c.request('/api/account/projects',{method:'PUT',data:{project:documentOf()}})).status,401);}));
 test('email login is case normalized; duplicate registration does not replace an account',()=>using(async f=>{const a=f.client(),b=f.client();assert.equal((await a.signup('One@example.test')).status,201);assert.equal((await b.signup('one@example.test')).status,409);assert.equal(f.store.get('SELECT count(*) n FROM users').n,1);const r=await b.request('/api/account/login',{method:'POST',data:{email:'ONE@example.test',password}});assert.equal(r.status,200);assert.equal(r.body.user.email,'one@example.test');}));
 test('unknown email and wrong password share one error',()=>using(async f=>{const a=f.client();await a.signup();const b=f.client();await b.init();const r1=await b.request('/api/account/login',{method:'POST',data:{email:'none@example.test',password:'wrong'}}),r2=await b.request('/api/account/login',{method:'POST',data:{email:'one@example.test',password:'wrong'}});assert.equal(r1.status,401);assert.deepEqual(r1.body,r2.body);}));
@@ -81,7 +83,7 @@ test('guest mode keeps owner login, encrypted AI settings and owner project stor
  const settings=await c.request('/api/admin/settings');assert.equal(settings.body.keyConfigured,true);assert.equal(settings.body.connected,false);assert.equal(settings.raw.includes(key),false);
  assert.equal((await c.request('/api/account/projects',{method:'PUT',data:{project:documentOf()}})).status,200);
  assert.equal((await c.request('/api/account/projects')).body.projects.length,1);
- const shell=await c.request('/krest0208!!!');assert.equal(shell.status,200);assert.match(shell.raw,/Подключение нейросети/);
+ const shell=await c.request(OWNER_PATH);assert.equal(shell.status,200);assert.match(shell.raw,/Подключение нейросети/);
 },{accountsEnabled:false}));
 
 test('email-only registration needs no display name and keeps guest editing separate from private APIs',()=>using(async f=>{
@@ -90,7 +92,7 @@ test('email-only registration needs no display name and keeps guest editing sepa
  for(const path of ['/studio','/projects','/%73tudio'])assert.equal((await c.request(path)).status,200,path);
  assert.equal((await c.request('/profile')).status,303);
  assert.equal((await c.request('/api/account/projects')).status,401);
- const registered=await c.request('/api/account/register',{method:'POST',data:{email:'  EDITOR@EXAMPLE.TEST  ',password,confirmPassword:password,acceptPrivacy:true}});
+ const registered=await c.request('/api/account/register',{method:'POST',data:{email:'  EDITOR@EXAMPLE.TEST  ',password,confirmPassword:password,...legalAcceptance}});
  assert.equal(registered.status,201,registered.raw);assert.equal(registered.body.user.name,'Автор');assert.equal(registered.body.user.email,'editor@example.test');assert.equal(registered.body.user.role,'user');
  assert.deepEqual(registered.body.providers,[]);assert.equal(registered.body.guestEditingEnabled,true);
  assert.equal((await c.request('/profile')).status,200);
@@ -135,8 +137,8 @@ test('website login gives only the real owner an admin link and a protected owne
  assert.equal((await c.request('/api/account/login',{method:'POST',headers:{'X-CSRF-Token':'forged'},data:{email:'owner',password}})).status,403);
  const wrong=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password:'wrong'}});assert.equal(wrong.status,401);assert.equal(wrong.body.adminPath,undefined);
  const r=await c.request('/api/account/login',{method:'POST',data:{email:'owner',password}});
- assert.equal(r.status,200,r.raw);assert.equal(r.body.user.role,'owner');assert.equal(r.body.adminPath,'/krest0208!!!');assert.ok(r.headers['set-cookie'].some(v=>v.startsWith('pk-owner-local=')&&v.includes('HttpOnly')&&v.includes('SameSite=Strict')));
- assert.equal((await c.init()).body.adminPath,'/krest0208!!!');assert.equal((await c.request('/api/admin/overview')).status,200);
+ assert.equal(r.status,200,r.raw);assert.equal(r.body.user.role,'owner');assert.equal(r.body.adminPath,OWNER_PATH);assert.ok(r.headers['set-cookie'].some(v=>v.startsWith('pk-owner-local=')&&v.includes('HttpOnly')&&v.includes('SameSite=Strict')));
+ assert.equal((await c.init()).body.adminPath,OWNER_PATH);assert.equal((await c.request('/api/admin/overview')).status,200);
  const ordinary=f.client(),created=await ordinary.signup('normal@example.test');assert.equal(created.status,201);assert.equal(created.body.user.role,'user');assert.equal(created.body.adminPath,undefined);assert.equal((await ordinary.init()).body.adminPath,undefined);assert.equal((await ordinary.request('/api/admin/overview')).status,401);
  await c.request('/api/account/logout',{method:'POST',data:{}});assert.equal((await c.init()).body.adminPath,undefined);assert.equal((await c.request('/api/admin/overview')).status,401);
 },{socialLoginEnabled:false,guestEditingEnabled:true}));

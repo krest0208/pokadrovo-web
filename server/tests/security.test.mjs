@@ -1,3 +1,4 @@
+import {prepareLegal} from './legal-fixture.mjs';
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
@@ -17,6 +18,7 @@ async function fixture({ provision = true, origin = 'http://localhost:5173' } = 
   writeFileSync(join(dir,'dist/index.html'), '<!doctype html><title>Test site</title>');
   let time = Date.now();
   const { server, store } = createApp({ origin, dataDir:join(dir,'private'), dist:join(dir,'dist'), now:()=>time });
+  prepareLegal({store,origin});
   if (provision) store.run('INSERT INTO owner(id,login,password,created) VALUES(1,?,?,?)', 'owner', encoded, time);
   server.listen(0, '127.0.0.1'); await once(server,'listening');
   const base = 'http://127.0.0.1:' + server.address().port;

@@ -4,7 +4,7 @@
 
 ---
 
-Ты продолжаешь разработку **Покадрово**, русскоязычной монтажной студии в браузере с ИИ-помощником. Источник истины — актуальная ветка `main` репозитория **https://github.com/krest0208/pokadrovo-web**. Рабочий сайт — **https://pokadrovo.ru/**, VPS VDSina **138.16.185.3**. Не перепутай домен. Сначала получи текущий `main`, прочитай `AGENTS.md`, этот документ, `package.json` и нужные исходники. Старые отчёты и сообщения не доказывают текущую готовность функций или успешную публикацию. Если документация расходится с работающим кодом, проверь расхождение и объясни его.
+Ты продолжаешь разработку **Покадрово**, русскоязычной монтажной студии в браузере с ИИ-помощником. Источник истины — актуальная ветка `main` репозитория **https://github.com/krest0208/pokadrovo-web**. Рабочий сайт — **https://pokadrovo.ru/**, VPS VDSina **[адрес сервера хранится вне публичного контекста]**. Не перепутай домен. Сначала получи текущий `main`, прочитай `AGENTS.md`, этот документ, `package.json` и нужные исходники. Старые отчёты и сообщения не доказывают текущую готовность функций или успешную публикацию. Если документация расходится с работающим кодом, проверь расхождение и объясни его.
 
 ## Продукт и страницы
 
@@ -13,7 +13,7 @@
 - `/` — главная: первый экран «Ваши кадры. Ваша история.», иллюстрация сборки истории, выбор площадки/формата, процесс в картинках, возможности, поле задания, пакеты монет, последние проекты, FAQ и полный футер с навигацией.
 - `/studio` — редактор; `/projects` — библиотека проектов с созданием, открытием, импортом и резервной копией JSON; `/profile` — профиль после входа. Гостевой монтаж зависит от серверной настройки.
 - `/pricing` — тарифы, мощность и нейросети, сравнение и правила монет. Это каталог, а не доказательство доступности платных услуг.
-- Защищённая админ-панель задаётся `server/owner-route.mjs`; текущий путь — `/krest0208!!!`. Её кнопка доступна только административному аккаунту. Проверка прав обязательна на сервере; скрытый URL не заменяет авторизацию.
+- Защищённая админ-панель задаётся `server/owner-route.mjs`; путь определяется этим модулем. Её кнопка доступна только административному аккаунту. Проверка прав обязательна на сервере; скрытый URL не заменяет авторизацию.
 
 Публичный текст описывает работающие функции. Упоминания внутренних обсуждений, владельца, его тестов и будущих планов удаляются. Названия тарифов, моделей и нейтральные статусы недоступности сохраняются. Не выдавай запланированную функцию за готовую ради маркетинга.
 
@@ -82,3 +82,12 @@ npm start
 Цепочка: GitHub `main` → успешный **Check Pokadrovo Web** для того же SHA → VPS-агент примерно раз в три минуты → изолированная сборка и тесты → переключение с резервной копией/откатом → HTTPS-проверка. GitHub Actions сам не выкладывает сайт. Подтверди установленный SHA через `/pokadrovo-release.json` и метатег `pokadrovo-release`, затем проверь затронутые страницы в браузере. Не меняй DNS, другие домены, биллинг и учётные данные. Полный порядок — `docs/AUTODEPLOY.md`.
 
 Если репозиторий недоступен, используй разделы выше как краткий brief для прототипа и явно назови его новой реализацией. Не утверждай, что восстановил исходный сайт, аккаунты или серверные настройки. Для точного продолжения запроси доступ к репозиторию либо архив исходников с ассетами без приватных данных.
+
+
+## Documents and registration (24 October 2026)
+
+Legal pages and public operator configuration are implemented in `server/legal.mjs`; public URLs are `/legal`, `/legal/terms`, `/legal/privacy`, `/legal/consent`, `/legal/payments`, `/legal/cookies`, `/legal/content`, `/legal/contacts`. They are responsive, printable and available without login/JS. Registration has separate unchecked agreement, data-consent and 18+ choices; the server requires the exact current version and records the acceptance atomically with account creation. Do not backfill acceptance for existing users. Published versions archive full document HTML and operator details; bump LEGAL_EDITION when changing templates.
+
+Owner panel → Documents and details contains genuine operator/contact, hosting/backup, processors/countries and notice/grounds fields. Default is a visibly marked draft: new signup, customer AI requests, optional event telemetry and new sales are gated until the required facts/review are supplied. Existing login, local guest montage, data/balances, aggregate request counts and owner testing are preserved. Do not fabricate public details or infer database localization from IP. A natural person without seller status can identify a free-service operator but cannot enable sales.
+
+Users can register access, erasure and withdrawal requests in their profile. They are visible only to the owner in the legal panel. This is an intake queue, not automatic erasure/refund or a completed legal response; the operator must actually process each request in the legal time limit. See `docs/LEGAL-READINESS.md` for operational prerequisites and the YooKassa handoff. YooKassa is not integrated/approved by this change; no real prices or charges are enabled. Existing Robokassa new-order creation additionally requires actual published seller readiness and the exact current `/legal/payments` version. Existing issued invoices/callbacks retain their processing.

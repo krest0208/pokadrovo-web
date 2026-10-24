@@ -22,7 +22,7 @@ async function formBody(req){
  const data={},keys=new Set();for(const [key,value] of new URLSearchParams(Buffer.concat(chunks).toString('utf8'))){const lower=key.toLowerCase();if(keys.has(lower))deny(400,'Повторяющиеся параметры.');keys.add(lower);data[lower]=value;if(lower.startsWith('shp_')&&!['Shp_order','Shp_test'].includes(key))deny(400,'Неизвестные параметры подписи.');}return data;
 }
 
-export function createBilling({store,now,origin,session,sameOrigin}){
+export function createBilling({store,now,origin,session,sameOrigin,legal}){
  store.db.exec(`CREATE TABLE IF NOT EXISTS coin_wallets(account_id TEXT PRIMARY KEY,coins INTEGER NOT NULL DEFAULT 0 CHECK(coins BETWEEN -1000000000 AND 1000000000));
  CREATE TABLE IF NOT EXISTS coin_ledger(id INTEGER PRIMARY KEY,account_id TEXT NOT NULL,delta INTEGER NOT NULL,reference TEXT UNIQUE NOT NULL,at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS payment_orders(id INTEGER PRIMARY KEY AUTOINCREMENT,account_id TEXT NOT NULL,request_key TEXT NOT NULL,package_id TEXT NOT NULL,coins INTEGER NOT NULL,amount_minor INTEGER NOT NULL,is_test INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created INTEGER NOT NULL,paid_at INTEGER,nonce TEXT NOT NULL,secret2 TEXT NOT NULL,algorithm TEXT NOT NULL,form_fields TEXT NOT NULL,terms_version TEXT NOT NULL,refunded_minor INTEGER NOT NULL DEFAULT 0,revoked_coins INTEGER NOT NULL DEFAULT 0,UNIQUE(account_id,request_key));
@@ -34,7 +34,7 @@ export function createBilling({store,now,origin,session,sameOrigin}){
  function config(){const row=store.get("SELECT value FROM meta WHERE key='robokassa_config'");return row?{...defaults,...JSON.parse(row.value)}:{...defaults};}
  const configured=(c,test)=>!!(c.merchantLogin&&c[test?'testPassword1':'password1']&&c[test?'testPassword2':'password2']);
  const urls={result:origin+'/api/billing/robokassa/result',success:origin+'/api/billing/robokassa/success',fail:origin+'/api/billing/robokassa/fail'};
- function canSell(c){return c.enabled&&c.testVerified&&c.approved&&c.fiscalReady&&c.legalReady&&!!c.offerUrl&&!!c.termsVersion&&configured(c,false)&&packageList.every(p=>Number.isSafeInteger(c.prices[p.id])&&c.prices[p.id]>0);}
+ function canSell(c){return legal.salesReady()&&c.offerUrl===origin+'/legal/payments'&&c.termsVersion===legal.state().version&&c.enabled&&c.testVerified&&c.approved&&c.fiscalReady&&c.legalReady&&!!c.offerUrl&&!!c.termsVersion&&configured(c,false)&&packageList.every(p=>Number.isSafeInteger(c.prices[p.id])&&c.prices[p.id]>0);}
  function balance(account){return account?store.get('SELECT coins FROM coin_wallets WHERE account_id=?',account)?.coins||0:0;}
  // Caller owns the SQLite transaction. Every credit, debit and refund has an immutable unique reference.
  function change(account,delta,reference){
@@ -60,7 +60,7 @@ export function createBilling({store,now,origin,session,sameOrigin}){
   if(!['none','vat0','vat5','vat7','vat10','vat20','vat22','vat105','vat107','vat110','vat120','vat122'].includes(data.tax)||!['full_payment','full_prepayment','prepayment','advance'].includes(data.paymentMethod)||!['service','payment'].includes(data.paymentObject))deny(400,'Проверьте настройки чека с Robokassa.');
   c.tax=data.tax;c.paymentMethod=data.paymentMethod;c.paymentObject=data.paymentObject;
   if(testFingerprint(old)!==testFingerprint(c))c.testVerified=false;
-  if(c.enabled){if(!c.testVerified)deny(400,'Сначала проведите тестовую оплату с подтверждением ResultURL.');if(!canSell(c))deny(400,'Для продаж нужны боевые пароли, цены, одобрение магазина, чеки и опубликованная оферта.');if(!origin.startsWith('https://'))deny(400,'Для настоящих платежей нужен HTTPS.');for(const a of ['password1','password2'])for(const b of ['testPassword1','testPassword2'])if(c[a]&&c[b]&&equal(store.unseal(c[a]),store.unseal(c[b])))deny(400,'Боевые и тестовые пароли должны отличаться.');}
+  if(c.enabled){if(c.offerUrl!==origin+'/legal/payments'||c.termsVersion!==legal.state().version)deny(400,'Укажите /legal/payments и актуальную редакцию опубликованных документов.');if(!legal.salesReady())deny(400,'Сначала опубликуйте проверенные документы и реквизиты исполнителя в разделе «Документы и реквизиты».');if(!c.testVerified)deny(400,'Сначала проведите тестовую оплату с подтверждением ResultURL.');if(!canSell(c))deny(400,'Для продаж нужны боевые пароли, цены, одобрение магазина, чеки и опубликованная оферта.');if(!origin.startsWith('https://'))deny(400,'Для настоящих платежей нужен HTTPS.');for(const a of ['password1','password2'])for(const b of ['testPassword1','testPassword2'])if(c[a]&&c[b]&&equal(store.unseal(c[a]),store.unseal(c[b])))deny(400,'Боевые и тестовые пароли должны отличаться.');}
   c.revision=token();store.run("INSERT INTO meta(key,value) VALUES('robokassa_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(c));store.audit('billing_settings_updated','ok',now());return adminState();
  }
  const publicOrder=r=>({id:r.id,packageId:r.package_id,coins:r.coins,priceRub:amount(r.amount_minor),test:!!r.is_test,status:r.status,created:r.created,paidAt:r.paid_at,refundedRub:amount(r.refunded_minor)});

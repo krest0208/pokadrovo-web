@@ -1,3 +1,4 @@
+import {prepareLegal,legalAcceptance} from './legal-fixture.mjs';
 /** Release regressions: real HTTP + SQLite. Credentials are generated per test run. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ async function fixture() {
   mkdirSync(dist); writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Test</title>');
   let app;
   async function start() {
-    app = createApp({ accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(directory, 'private'), dist });
+    app = createApp({ accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(directory, 'private'), dist });prepareLegal(app);
     app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
   }
   await start();
@@ -50,7 +51,7 @@ async function fixture() {
 async function using(fn) { const f = await fixture(); try { await fn(f); } finally { await f.close(); } }
 async function signup(request, email, password) {
   await request('/api/account/session');
-  return request('/api/account/register', 'POST', { name: 'Release Author', email, password, confirmPassword: password, acceptPrivacy: true });
+  return request('/api/account/register', 'POST', { name: 'Release Author', email, password, confirmPassword: password, ...legalAcceptance });
 }
 
 test('project, image transforms and fonts survive server restart without leaking across accounts', () => using(async f => {

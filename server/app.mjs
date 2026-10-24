@@ -3,6 +3,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAccounts } from './accounts.mjs';
+import { createLegal } from './legal.mjs';
 import { createBilling } from './billing.mjs';
 import { createAi } from './ai.mjs';
 import { createSiteAgent } from './site-agent.mjs';
@@ -97,13 +98,15 @@ export function createApp(options = {}) {
     setCookie(res, sessionName, sid, 12 * 3600);
     return { login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled, socialLoginEnabled };
   }
-const accounts = createAccounts({ store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, ownerPath: OWNER_PATH, ownerLogin: (req, res, data) => authenticateOwner(req, res, { login: data.email, password: data.password, code: data.code }, true), reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
+let accounts;
+  const legal = createLegal({store,now,origin:origin.origin,session:(...args)=>accounts.session(...args),sameOrigin});
+  accounts = createAccounts({ legal, store, now, origin: origin.origin, secure, sameOrigin, ownerSession: session, owner, ownerPath: OWNER_PATH, ownerLogin: (req, res, data) => authenticateOwner(req, res, { login: data.email, password: data.password, code: data.code }, true), reauthOwner: reauth, oauthFetch: options.oauthFetch, accountsEnabled, guestEditingEnabled, socialLoginEnabled, trustLoopbackProxy,
     revokeOwner(req, res) { const s = session(req); store.run('DELETE FROM sessions WHERE id=?', s.id); setCookie(res, sessionName, '', 0); }
   });  function visitor(req) {
     const [id, signature] = cookie(req, visitorName).split('.');
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
-  const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin});
+  const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin,legal});
   const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
   const siteAgent = createSiteAgent({ store, now, origin: origin.origin, session: accounts.session, sameOrigin,
     request: options.siteAgentFetch, autoStart: options.siteAgentAutoStart !== false, suggestIdeas: ai.suggestSiteIdeas,
@@ -131,10 +134,12 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
     if (!hosts.has(req.headers.host)) deny(421, 'Неверный адрес сервера.');
     const path = url.pathname;
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
-    if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics });
+    if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics && legal.ready() });
+    if (await legal.route(req, res, url)) return;
     if (await billing.route(req, res, url)) return;
     if (await siteAgent.route(req, res, url)) return;
     if (await accounts.route(req, res, url)) return;
+    if(req.method==='POST'&&path==='/api/ai/edit-plan'&&!accounts.session(req).owner&&!legal.ready()) deny(503,'ИИ для пользователей временно недоступен: уточняются условия обработки данных.');
     if (await ai.route(req, res, url)) return;
     if (req.method === 'POST' && path === '/api/admin/login') return json(res, 200, await authenticateOwner(req, res, await body(req)));
     if (path.startsWith('/api/admin/')) {
@@ -167,6 +172,8 @@ const accounts = createAccounts({ store, now, origin: origin.origin, secure, sam
         if (!store.consume('site-agent-manual', 2, 60000, now())) deny(429, 'Повторите ручную проверку через минуту.');
         void siteAgent.run(true).catch(() => {}); return json(res, 202, { ok: true, ...siteAgent.status() });
       }
+      if (req.method === 'GET' && path === '/api/admin/legal') return json(res,200,{config:legal.config(),...legal.state(),requests:legal.requests()});
+      if (req.method === 'PUT' && path === '/api/admin/legal') {const data=await body(req,65536);await reauth(req,data);return json(res,200,legal.save(data));}
       if (req.method === 'GET' && path === '/api/admin/ai/usage') return json(res, 200, { items: ai.usage() });
       if (req.method === 'GET' && path === '/api/admin/ai/analytics') return json(res, 200, ai.analytics(Number(url.searchParams.get('days') || 7)));
       if (req.method === 'GET' && path === '/api/admin/ai/openrouter') return json(res, 200, ai.openrouter.adminState());
@@ -239,7 +246,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
         const v = visitor(req); if (v) store.run('DELETE FROM events WHERE visitor=?', store.hmac('metric:' + v));
         setCookie(res, visitorName, '', 0); return json(res, 200, { ok: true });
       }
-      if (!settings().analytics || req.headers.dnt === '1' || req.headers['sec-gpc'] === '1') return json(res, 200, { disabled: true });
+      if (!settings().analytics || !legal.ready() || req.headers.dnt === '1' || req.headers['sec-gpc'] === '1') return json(res, 200, { disabled: true });
       const data = await body(req, 2048);
       if (path === '/api/metrics/start') {
         if (data.consent !== true) deny(400, 'Нужно согласие на анонимные события.');
@@ -268,6 +275,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
       return sendFile(res, join(here, 'public/admin.html'), 'text/html; charset=utf-8', req.method);
     }
+    if(path === '/legal-assets/legal.css' && ['GET','HEAD'].includes(req.method)) return sendFile(res,join(here,'public/legal.css'),'text/css; charset=utf-8',req.method);
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
     if (accountsEnabled && (pagePath === '/profile' || !guestEditingEnabled && ['/studio', '/projects'].includes(pagePath)) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }

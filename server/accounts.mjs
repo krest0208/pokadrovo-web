@@ -11,7 +11,7 @@ const sidOk = value => /^[\w-]{43}$/.test(value);
 const projectIdOk = value => typeof value === 'string' && /^[\w.-]{1,120}$/.test(value);
 const profile = row => ({ id: row.id, name: row.name, email: row.email, emailVerified: !!row.email_verified, role: 'user', created: row.created, passwordSet: !!row.password });
 
-export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSession, owner, ownerPath, ownerLogin, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
+export function createAccounts({ legal, store, now, origin, secure, sameOrigin, ownerSession, owner, ownerPath, ownerLogin, revokeOwner, reauthOwner, oauthFetch, accountsEnabled = false, guestEditingEnabled = !accountsEnabled, socialLoginEnabled = false, trustLoopbackProxy = false }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE COLLATE NOCASE, name TEXT NOT NULL, password TEXT, email_verified INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, last_login INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active');
     CREATE TABLE IF NOT EXISTS identities(provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(provider,subject));
@@ -80,7 +80,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
     // Bound active devices; invalidate oldest ones after five sessions.
     store.run('DELETE FROM user_sessions WHERE user_id=? AND id NOT IN (SELECT id FROM user_sessions WHERE user_id=? ORDER BY created DESC LIMIT 5)', user.id, user.id);
     appendCookie(res, sessionName, sid, 7 * 86400, secure);
-    return { user: profile(user), csrf, providers: providers(), accountsEnabled, guestEditingEnabled, socialLoginEnabled };
+    return { user: profile(user), csrf, providers: providers(), accountsEnabled, guestEditingEnabled, socialLoginEnabled, legal:legal.state() };
   }
   function listProjects(auth) { return store.all('SELECT payload FROM account_projects WHERE account_id=? ORDER BY modified DESC LIMIT 200', auth.key).map(r => JSON.parse(r.payload)); }
   // Only document metadata is stored: never a Blob, object URL, credential or executable HTML.
@@ -99,7 +99,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
     cleanup();
     if (req.method === 'GET' && path === '/api/account/session') {
       const a = session(req, false); const csrf = a?.csrf || (accountsEnabled ? anonymousCsrf(req, res) : '');
-      json(res, 200, { user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled, ...(a?.owner ? { adminPath: ownerPath } : {}) }); return true;
+      json(res, 200, { legal:legal.state(), user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled, ...(a?.owner ? { adminPath: ownerPath } : {}) }); return true;
     }
     if (!socialLoginEnabled && (path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Этот способ входа отключён. Используйте почту и пароль.');
     if (!accountsEnabled && (['/api/account/register', '/api/account/login'].includes(path) || path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Регистрация и вход посетителей отключены. Монтажёр доступен без аккаунта.');
@@ -116,6 +116,7 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
         json(res, 200, { ...result, user: { id: 'owner', name: o.login, email: null, emailVerified: false, role: 'owner', created: o.created, passwordSet: true }, providers: providers(), guestEditingEnabled, adminPath: ownerPath }); return true;
       }
       if (path.endsWith('/register')) {
+        const acceptedVersion=legal.validateRegistration(data);
         if (!email) deny(400, 'Введите корректный адрес почты.');
         const name = data.name === undefined ? 'Автор' : nameOf(data.name); if (name.length < 2) deny(400, 'Имя должно содержать не менее двух символов.');
         try { validatePassword(data.password); } catch (e) { deny(400, e.message); }
@@ -124,7 +125,13 @@ export function createAccounts({ store, now, origin, secure, sameOrigin, ownerSe
         const password = await passwordJob(() => hashPassword(data.password));
         // Check uniqueness again after the asynchronous password hash.
         if (store.get('SELECT id FROM users WHERE email=?', email)) deny(409, 'Этот адрес уже занят. Войдите или используйте другую почту.');
-        const id = token(); store.run('INSERT INTO users(id,email,name,password,created,last_login) VALUES(?,?,?,?,?,?)', id, email, name, password, now(), now());
+        // Recheck after password hashing so an in-flight request cannot accept a replaced document.
+        if(legal.validateRegistration(data)!==acceptedVersion)deny(409,'Документы обновились. Повторите подтверждение.');
+        const id = token();
+        store.db.exec('BEGIN IMMEDIATE');try {
+          store.run('INSERT INTO users(id,email,name,password,created,last_login) VALUES(?,?,?,?,?,?)', id, email, name, password, now(), now());
+          legal.recordAcceptance(id,acceptedVersion);store.db.exec('COMMIT');
+        }catch(e){store.db.exec('ROLLBACK');throw e;}
         store.audit('user_registered', 'ok', now());
         json(res, 201, startSession(res, store.get('SELECT * FROM users WHERE id=?', id))); return true;
       }
