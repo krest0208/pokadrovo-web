@@ -75,3 +75,11 @@ test('unpublishing stops new registration but preserves existing login, balances
  assert.equal((await a.c('/api/ai/edit-plan','POST',{})).status,503);
  assert.equal(f.store.get('SELECT count(*) n FROM account_legal_acceptances').n,1);assert.equal((await c('/api/billing/catalog')).data.available,false);
 }));
+
+
+test('updated document templates require renewed operator review and cannot create unarchived consent versions',()=>fixture(async f=>{
+ prepareLegal(f);const accepted=(await f.guest('/api/legal')).data.version;const previous={...legalTestConfig,reviewedEdition:'previous-edition'};f.store.run("UPDATE meta SET value=? WHERE key='legal_config'",JSON.stringify(previous));
+ const state=(await f.guest('/api/legal')).data;assert.equal(state.ready,false);assert.equal(state.requiresReview,true);assert.equal((await f.register()).result.status,503);assert.match((await f.guest('/legal')).raw,/Проект документов/);
+ const settings=(await f.owner('/api/admin/legal')).data;assert.equal(settings.config.documentsApproved,false);assert.equal((await f.guest('/legal/terms?version='+accepted)).status,200);
+ assert.equal((await f.owner('/api/admin/legal','PUT',{...settings.config,password:f.password})).status,400);const published=await f.owner('/api/admin/legal','PUT',{...legalTestConfig,password:f.password});assert.equal(published.status,200);assert.equal(published.data.ready,true);assert.equal((await f.guest('/legal/terms?version='+published.data.version)).status,200);
+}));

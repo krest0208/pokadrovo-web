@@ -13,7 +13,8 @@
     "start": "node server/app.mjs",
     "admin:setup": "node server/setup.mjs",
     "test:admin": "node --test server/tests/*.test.mjs",
-    "test:accounts": "node --test server/tests/accounts.test.mjs"
+    "test:accounts": "node --test server/tests/accounts.test.mjs",
+    "test:browser-models": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

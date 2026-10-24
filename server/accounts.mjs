@@ -1,3 +1,4 @@
+import {createAccountRecovery} from './account-recovery.mjs';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { token, digest, equal, hashPassword, checkPassword, validatePassword } from './security.mjs';
@@ -69,6 +70,7 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
     sameOrigin(req); const value = cookie(req, csrfName), [stamp, random, sign] = value.split('.');
     if (!sidOk(random || '') || !/^\d{13}$/.test(stamp || '') || +stamp <= now() - 3600000 || +stamp > now() + 30000 || !equal(sign, store.hmac('auth-csrf:' + stamp + '.' + random)) || !equal(value, req.headers['x-csrf-token'])) deny(403, 'Откройте форму входа заново.');
   }
+  const recovery=createAccountRecovery({store,now,session,sameOrigin,publicMutation,passwordJob,limit,accountsEnabled,secure,sessionName});
   function providers() { if (!socialLoginEnabled) return []; return store.all('SELECT * FROM oauth_config').map(c => {
     const ready = !!(c.enabled && c.client_id && c.secret && (c.provider === 'google' || (secure && c.version)));
     return { id: c.provider, ready, professionalOnly: c.provider === 'instagram', note: !c.enabled || !c.client_id || !c.secret ? 'Этот способ входа недоступен.' : c.provider !== 'google' && !secure ? 'Для Meta требуется настроенный HTTPS-домен.' : c.provider !== 'google' && !c.version ? 'Укажите версию API Meta в админ-панели.' : c.provider === 'instagram' ? 'Только профессиональные аккаунты Instagram: Business / Creator.' : '' };
@@ -101,6 +103,7 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
       const a = session(req, false); const csrf = a?.csrf || (accountsEnabled ? anonymousCsrf(req, res) : '');
       json(res, 200, { legal:legal.state(), user: a?.user || null, csrf, providers: accountsEnabled ? providers() : [], accountsEnabled, guestEditingEnabled, socialLoginEnabled, ...(a?.owner ? { adminPath: ownerPath } : {}) }); return true;
     }
+    if(await recovery.route(req,res,url))return true;
     if (!socialLoginEnabled && (path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Этот способ входа отключён. Используйте почту и пароль.');
     if (!accountsEnabled && (['/api/account/register', '/api/account/login'].includes(path) || path.startsWith('/api/account/oauth/') || path.startsWith('/auth/'))) deny(404, 'Регистрация и вход посетителей отключены. Монтажёр доступен без аккаунта.');
     if (req.method === 'POST' && (path === '/api/account/register' || path === '/api/account/login')) {
@@ -127,13 +130,13 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
         if (store.get('SELECT id FROM users WHERE email=?', email)) deny(409, 'Этот адрес уже занят. Войдите или используйте другую почту.');
         // Recheck after password hashing so an in-flight request cannot accept a replaced document.
         if(legal.validateRegistration(data)!==acceptedVersion)deny(409,'Документы обновились. Повторите подтверждение.');
-        const id = token();
+        const id = token();let recoveryCode;
         store.db.exec('BEGIN IMMEDIATE');try {
           store.run('INSERT INTO users(id,email,name,password,created,last_login) VALUES(?,?,?,?,?,?)', id, email, name, password, now(), now());
-          legal.recordAcceptance(id,acceptedVersion);store.db.exec('COMMIT');
+          legal.recordAcceptance(id,acceptedVersion);recoveryCode=recovery.issue(id);store.db.exec('COMMIT');
         }catch(e){store.db.exec('ROLLBACK');throw e;}
         store.audit('user_registered', 'ok', now());
-        json(res, 201, startSession(res, store.get('SELECT * FROM users WHERE id=?', id))); return true;
+        json(res, 201, {...startSession(res, store.get('SELECT * FROM users WHERE id=?', id)),recoveryCode}); return true;
       }
       if (typeof data.email !== 'string' || !data.email.trim() || data.email.length > 254) deny(401, 'Неверная почта, логин или пароль.');
       const u = email ? store.get('SELECT * FROM users WHERE email=?', email) : null;
@@ -203,8 +206,8 @@ export function createAccounts({ legal, store, now, origin, secure, sameOrigin, 
       try { validatePassword(data.newPassword); } catch (e) { deny(400, e.message); }
       const hash = await passwordJob(() => hashPassword(data.newPassword));
       const fresh = session(req); if (fresh.key !== a.key || !equal(store.get('SELECT password FROM users WHERE id=?', a.key).password, u.password)) deny(401, 'Сеанс изменился. Войдите снова.');
-      store.run('UPDATE users SET password=? WHERE id=?', hash, a.key); store.run('DELETE FROM user_sessions WHERE user_id=?', a.key);
-      appendCookie(res, sessionName, '', 0, secure); json(res, 200, { ok: true, reauthenticate: true }); return true;
+      let recoveryCode;store.db.exec('BEGIN IMMEDIATE');try{store.run('UPDATE users SET password=? WHERE id=?', hash, a.key);store.run('DELETE FROM user_sessions WHERE user_id=?', a.key);recoveryCode=recovery.issue(a.key);store.db.exec('COMMIT');}catch(e){store.db.exec('ROLLBACK');throw e;}
+      appendCookie(res, sessionName, '', 0, secure); json(res, 200, { ok: true, reauthenticate: true, recoveryCode }); return true;
     }
     if (req.method === 'GET' && path === '/api/account/projects') { json(res, 200, { projects: listProjects(a), mediaLocalOnly: true }); return true; }
     if (req.method === 'PUT' && path === '/api/account/projects') {

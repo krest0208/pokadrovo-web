@@ -23,3 +23,5 @@ jobs:
         run: node tools/test-editor.cjs
       - name: AI protocol and transformation tests
         run: node tools/test-editor-features.cjs
+      - name: Account storage, restart and browser model checks
+        run: npm run test:browser-models

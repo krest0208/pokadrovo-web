@@ -28,7 +28,7 @@ export class Editor {
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
- private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;
+ private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;private pendingName:string|null=null;
  constructor(private root:HTMLElement,private opts:EditorOptions){
   this.history=new History(normalizeProject(opts.project));this.root.className='pe';this.root.dataset.theme=opts.theme;this.root.dataset.mobile='player';
   this.root.innerHTML=`<header class="pe-top"><div class="pe-brand"><button type="button" class="pe-brand-home" data-action="home" aria-label="Покадрово — на главную" title="На главную">${brand(33,true)}<b>${t.brand}</b></button><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('help','Обучение','help','square pe-help')}${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
@@ -68,6 +68,7 @@ export class Editor {
   this.tour=new EditorTour(this.root,this.account,panel=>this.showPanel(panel),()=>this.engine.pause());
  }
  get project(){return this.history.value;}
+ flushPendingChanges(){this.save(false);return this.project;}
  private $<T extends HTMLElement=HTMLElement>(q:string){return this.root.querySelector<T>(q)!;}
  private listen(target:EventTarget,event:string,fn:(e:Event)=>void){target.addEventListener(event,fn);this.cleanups.push(()=>target.removeEventListener(event,fn));}
  setTheme(theme:'light'|'dark'){this.root.dataset.theme=theme;}
@@ -95,14 +96,15 @@ export class Editor {
   try{const [w,h]=dimensions(this.project.ratio);this.engine.canvas.width=w;this.engine.canvas.height=h;await this.engine.prepare(this.project);if(rev===this.prep&&!this.disposed)this.fitCanvas();}
   catch(e){if(!this.disposed&&rev===this.prep)this.fail(e);}finally{if(rev===this.prep){this.loading=false;this.tools?.sync();}}
  }
- private commit(p:Project,message=t.ready){this.engine.pause();this.history.commit(p);this.cacheChange();this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
+ private commit(p:Project,message=t.ready){if(typeof this.pendingName==='string'){p.name=this.pendingName;this.pendingName=null;}this.engine.pause();this.history.commit(p);this.cacheChange();this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
  private cacheChange(){
   if(this.disposed||storageScope()!==this.account)return;
   try{saveProject(this.project,false);this.opts.onSave(clone(this.project));}catch{this.status(t.storageError);}
   if(this.autosaveTimer)clearTimeout(this.autosaveTimer);
   this.autosaveTimer=setTimeout(()=>this.save(false),500);
  }
- private save(notify=true){if(this.autosaveTimer){clearTimeout(this.autosaveTimer);this.autosaveTimer=null;}if(storageScope()!==this.account)return;try{saveProject(this.project);this.opts.onSave(clone(this.project));if(notify)this.status(t.saved);}catch{this.status(t.storageError);}}
+ private flushProjectName(){if(typeof this.pendingName!=='string')return;const name=this.pendingName;this.pendingName=null;if(name===this.project.name)return;const p=clone(this.project);p.name=name;this.history.commit(p);}
+ private save(notify=true){this.flushProjectName();if(this.autosaveTimer){clearTimeout(this.autosaveTimer);this.autosaveTimer=null;}if(storageScope()!==this.account)return;try{saveProject(this.project);this.opts.onSave(clone(this.project));if(notify)this.status(t.saved);}catch{this.status(t.storageError);}}
  private updateCursor(time:number,playing:boolean){
   this.cursor=time;if(this.disposed)return;
   this.$('.pe-time').textContent=clock(time);this.$('.pe-duration').textContent=clock(totalLength(this.project));const head=this.root.querySelector<HTMLElement>('.pe-head');if(head)head.style.left=(time*this.pixels())+'px';
@@ -127,7 +129,7 @@ export class Editor {
  }
  private render(){if(this.disposed)return;
   const active=document.activeElement as HTMLInputElement|null;const key=active?.dataset.field;const selection=active&&'selectionStart' in active?active.selectionStart:null;
-  this.$<HTMLInputElement>('#pe-name').value=this.project.name;this.$<HTMLSelectElement>('[data-project="ratio"]').value=this.project.ratio;
+  const nameInput=this.$<HTMLInputElement>('#pe-name'),name=this.pendingName??this.project.name;if(nameInput.value!==name)nameInput.value=name;this.$<HTMLSelectElement>('[data-project="ratio"]').value=this.project.ratio;
   this.$('[data-action="mode-video"]').classList.toggle('active',this.project.mode==='video');this.$('[data-action="mode-reels"]').classList.toggle('active',this.project.mode==='reels');
   this.$('[data-action="mode-video"]').setAttribute('aria-pressed',String(this.project.mode==='video'));this.$('[data-action="mode-reels"]').setAttribute('aria-pressed',String(this.project.mode==='reels'));
   for(const name of ['media','audio','text'])this.$(`[data-action="tab-${name}"]`).classList.toggle('active',this.tab===name);
@@ -215,7 +217,7 @@ export class Editor {
   const action=target.closest<HTMLElement>('[data-action]')?.dataset.action;if(!action)return;
   this.runAction(action);
  }
- private runAction(action:string){
+ private runAction(action:string){this.flushProjectName();
   if(this.exporting&&action!=='cancel-export')return;
   this.tools?.beforeAction(action);
   if(action==='home'){this.engine.pause();this.save(false);this.opts.onHome(clone(this.project));return;}
@@ -253,7 +255,7 @@ export class Editor {
   if(action==='move-left'||action==='move-right'){if(s.track!=='video')return;const j=index+(action==='move-left'?-1:1);if(j<0||j>=p.clips.length)return;[p.clips[index],p.clips[j]]=[p.clips[j],p.clips[index]];this.commit(p);return;}
   if(action==='fit-contain'||action==='fit-cover'){this.changeSelected({fit:action==='fit-cover'?'cover':'contain'});}
  }
- private input(e:Event){const target=e.target as HTMLInputElement;if(target.type==='range'&&target.dataset.field){const out=this.root.querySelector(`[data-value="${target.dataset.field}"]`);if(out)out.textContent=target.value;}
+ private input(e:Event){const target=e.target as HTMLInputElement;if(target.dataset.project==='name'&&!this.exporting){this.pendingName=target.value.slice(0,120);if(this.autosaveTimer)clearTimeout(this.autosaveTimer);this.autosaveTimer=setTimeout(()=>this.save(false),500);return;}if(target.type==='range'&&target.dataset.field){const out=this.root.querySelector(`[data-value="${target.dataset.field}"]`);if(out)out.textContent=target.value;}
   if(target.dataset.ui==='zoom'){this.zoom=Number(target.value);this.renderTimeline();}
  }
  private change(e:Event){if(this.exporting)return;const target=e.target as HTMLInputElement;
@@ -261,7 +263,7 @@ export class Editor {
   if(target.matches('.pe-srt-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const captions=parseSrt(s);if(!captions.length)throw Error('No valid SRT cues');const p=clone(this.project);p.texts.push(...captions);this.commit(p);}).catch(e=>this.fail(e));return;}
   if(target.matches('.pe-json-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const parsed=JSON.parse(s);if(!parsed||!Array.isArray(parsed.clips))throw Error('Invalid project');this.engine.pause();this.history=new History(normalizeProject(parsed));this.selected=null;this.cursor=0;this.render();return this.restore();}).catch(e=>this.fail(e));return;}
   if(target.dataset.ui==='safe'){this.safe=target.checked;this.$('.pe-safe').hidden=!this.safe;return;}
-  if(target.dataset.project){const p=clone(this.project);if(target.dataset.project==='name')p.name=target.value;else if(target.dataset.project==='ratio')p.ratio=target.value as Ratio;else p.master=Number(target.value);this.commit(p);return;}
+  if(target.dataset.project){const p=clone(this.project);if(target.dataset.project==='name'){this.pendingName=null;if(target.value===p.name)return;p.name=target.value;}else if(target.dataset.project==='ratio')p.ratio=target.value as Ratio;else p.master=Number(target.value);this.commit(p);return;}
   if(target.dataset.field){const field=target.dataset.field;let value:unknown=target.type==='checkbox'?target.checked:['number','range'].includes(target.type)?Number(target.value):target.value;
    if(typeof value==='number'&&!Number.isFinite(value))return;const c=this.selectedItem();let patch={ [field]:value } as Partial<Clip>&Partial<Caption>;
    if(c&&this.selected?.track!=='text'&&field==='end'&&(c as Clip).kind==='image')patch.duration=Math.max((c as Clip).duration,Number(value));this.changeSelected(patch);

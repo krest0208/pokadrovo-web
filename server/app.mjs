@@ -3,7 +3,8 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAccounts } from './accounts.mjs';
-import { createLegal } from './legal.mjs';
+import {createDatabaseCare} from './database-care.mjs';
+import { createLegal, legalMissing } from './legal.mjs';
 import { createBilling } from './billing.mjs';
 import { createAi } from './ai.mjs';
 import { createSiteAgent } from './site-agent.mjs';
@@ -106,6 +107,7 @@ let accounts;
     const [id, signature] = cookie(req, visitorName).split('.');
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
+  const databaseCare=createDatabaseCare({store,now,autoStart:options.backupsAutoStart??(secure&&accountsEnabled)});
   const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin,legal});
   const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
   const siteAgent = createSiteAgent({ store, now, origin: origin.origin, session: accounts.session, sameOrigin,
@@ -134,7 +136,7 @@ let accounts;
     if (!hosts.has(req.headers.host)) deny(421, 'Неверный адрес сервера.');
     const path = url.pathname;
     if (path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
-    if (req.method === 'GET' && path === '/api/health') return json(res, 200, { ok: true, analyticsEnabled: !!settings().analytics && legal.ready() });
+    if (req.method === 'GET' && path === '/api/health') {const databaseReady=databaseCare.health();return json(res,databaseReady?200:503,{ok:databaseReady,databaseReady,analyticsEnabled:!!settings().analytics&&legal.ready()});}
     if (await legal.route(req, res, url)) return;
     if (await billing.route(req, res, url)) return;
     if (await siteAgent.route(req, res, url)) return;
@@ -172,6 +174,8 @@ let accounts;
         if (!store.consume('site-agent-manual', 2, 60000, now())) deny(429, 'Повторите ручную проверку через минуту.');
         void siteAgent.run(true).catch(() => {}); return json(res, 202, { ok: true, ...siteAgent.status() });
       }
+      if(req.method==='GET'&&path==='/api/admin/database')return json(res,200,{...databaseCare.inspect(),registration:{accountsEnabled,guestEditingEnabled,legalReady:legal.ready(),missing:legalMissing(legal.config())}});
+      if(req.method==='POST'&&path==='/api/admin/database/backup'){const data=await body(req,4096);await reauth(req,data);if(!store.consume('backup-manual',3,3600000,now()))deny(429,'Копия уже запрошена. Повторите позднее.');return json(res,200,await databaseCare.snapshot());}
       if (req.method === 'GET' && path === '/api/admin/legal') return json(res,200,{config:legal.config(),...legal.state(),requests:legal.requests()});
       if (req.method === 'PUT' && path === '/api/admin/legal') {const data=await body(req,65536);await reauth(req,data);return json(res,200,legal.save(data));}
       if (req.method === 'GET' && path === '/api/admin/ai/usage') return json(res, 200, { items: ai.usage() });
@@ -304,9 +308,9 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
   store.cleanup(now()); const housekeeping = setInterval(() => { store.cleanup(now()); accounts.cleanup(); }, 300000); housekeeping.unref();
-  server.on('listening', () => siteAgent.start());
-  server.on('close', () => { clearInterval(housekeeping); siteAgent.stop(); ai.stop(); store.close(); });
-  return { server, store, siteAgent, origin: origin.origin };
+  server.on('listening', () => {siteAgent.start();databaseCare.start();});
+  server.on('close', () => { clearInterval(housekeeping); siteAgent.stop(); ai.stop(); const pendingBackup=databaseCare.stop();if(pendingBackup)void pendingBackup.catch(()=>{}).finally(()=>store.close());else store.close(); });
+  return { server, store, siteAgent, databaseCare, origin: origin.origin };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -59,3 +59,8 @@ Primary references checked 24 October 2026:
 - Personal-data law, published by Ministry of Labour: https://mintrud.gov.ru/docs/laws/130
 
 Verification: isolated HTTP/SQLite tests cover default draft gates, owner authentication/CSRF/reauthentication, incomplete publication, exact consent version and separate choices, atomic receipts, archive immutability, escaped operator text, request isolation and preservation of login/data on unpublishing. Existing accounts, billing, AI, security and delivery tests use explicitly synthetic fixtures in temporary databases only.
+
+
+### Template review renewal
+
+Account-operations update: publication now stores `reviewedEdition`. Changing `LEGAL_EDITION` invalidates a previous template review, clears the effective document-approval checkbox, marks the current pages as drafts and pauses new collection until the operator reads and republishes the text. Old archived HTML remains available to existing acceptance receipts. A prior `published` flag alone cannot approve a new template or make a registration link point at a non-archived version.

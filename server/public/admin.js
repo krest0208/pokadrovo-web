@@ -11,7 +11,7 @@
     csrf = ''; owner = null; settings = null; clearTimeout(idleTimer); clearTimeout(agentPoll);
     app.hidden = true; $('login-screen').hidden = false; text($('login-error'), message);
     $('login-form').elements.password.value = ''; $('login-form').elements.code.value = '';
-    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog', 'site-agent-reports', 'billing-orders', 'legal-requests']) $(id).replaceChildren();
+    for (const id of ['metrics', 'chart', 'chart-table', 'pipeline', 'audit-body', 'breakdowns', 'metric-notes', 'users-body', 'ai-usage', 'ai-metrics', 'ai-model-usage', 'ai-days', 'ai-capacity', 'ai-usage-notes', 'openrouter-catalog', 'site-agent-reports', 'billing-orders', 'legal-requests', 'database-readiness', 'database-checks', 'database-backups']) $(id).replaceChildren();
     for (const form of app.querySelectorAll('form')) form.reset();
     text($('totp-secret'), ''); $('totp-confirm').hidden = true; text($('ai-quota'), '');
   }
@@ -44,7 +44,7 @@
   $('toggle-owner-password').addEventListener('click', () => { const input = $('owner-password'), show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('toggle-owner-password').setAttribute('aria-pressed', String(show)); text($('toggle-owner-password'), show ? 'Скрыть пароль' : 'Показать пароль'); });
   bindForm('login-form', async data => { const response = await request('/login', { method: 'POST', data }); await unlocked(response); });
   $('logout').addEventListener('click', async () => { try { await request('/logout', { method: 'POST', data: {} }); locked(); } catch (e) { notify('Не удалось подтвердить выход на сервере. ' + e.message); } });
-  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', legal:'Документы и реквизиты', billing: 'Оплата и монеты' };
+  const titles = { users: '\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0438', oauth: 'Google / Facebook / Instagram', overview: 'Обзор и статистика', api: 'Подключение нейросети', security: 'Защита доступа', audit: 'Журнал действий', agent: 'Агент сайта', database:'Аккаунты и база', legal:'Документы и реквизиты', billing: 'Оплата и монеты' };
   async function switchView(view) {
     currentView = view; if(view!=='agent')clearTimeout(agentPoll);
     for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== view + '-view';
@@ -60,6 +60,7 @@
     if (view === 'agent') await loadSiteAgent();
     if (view === 'billing') await loadBilling();
     if (view === 'legal') await loadLegal();
+    if (view === 'database') await loadDatabase();
   }
   for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => switchView(b.dataset.view).catch(e => notify(e.message)));
   $('period').addEventListener('change', () => loadOverview().catch(e => notify(e.message)));
@@ -118,12 +119,25 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     for (const d of [...series].reverse()) { const row = element('tr'); for (const value of [d.day, d.page_requests, d.editor_open, d.project_saved, d.export_completed]) row.append(element('td', '', value)); body.append(row); }
     table.append(head, body); $('chart-table').replaceChildren(table);
   }
+  async function loadDatabase(){
+    const d=await request('/database');if(!owner)return;
+    const r=d.registration; text($('database-registration'),!r.accountsEnabled?'Регистрация выключена настройкой сервера':r.legalReady?'Регистрация готова':'Ожидаются документы оператора');
+    const missing={operatorName:'ФИО или наименование оператора',address:'Адрес для обращений',email:'Работающая почта',phone:'Контактный телефон',hosting:'Место базы и копий, правила хранения',processors:'Обработчики и страны передачи',rknNotice:'Уведомления и правовые основания',validEmail:'Корректный адрес почты',validPhone:'Корректный телефон',identityConfirmed:'Подтверждение публичных реквизитов',hostingConfirmed:'Проверка хостинга и локализации',processingReviewed:'Проверка целей и оснований обработки',crossBorderReviewed:'Проверка трансграничной передачи',documentsApproved:'Утверждение текстов документов'};
+    const summary=element('p','',r.legalReady?'Документы опубликованы. Новая регистрация, вход и запись согласий доступны.':'До открытия регистрации заполните и проверьте документы. Существующий вход и гостевой монтаж доступны.');const list=element('ul');if(!r.legalReady&&!r.missing.length)list.append(element('li','','Опубликуйте проверенные документы в разделе реквизитов.'));for(const key of r.missing)list.append(element('li','',missing[key]||key));$('database-readiness').replaceChildren(summary,list);
+    text($('database-health'),d.healthy?'Проверка пройдена':'Нужна проверка');const labels={integrity:'Целостность',writable:'Запись данных',foreignKeys:'Связи таблиц',wal:'Журнал WAL',schemaReady:'Таблицы аккаунтов'};
+    $('database-checks').replaceChildren(...Object.entries(labels).map(([key,label])=>{const card=element('div','metric');card.append(element('span','',label),element('strong','',d[key]?'В порядке':'Проверить'));return card;}));
+    text($('database-counts'),'Аккаунтов: '+number(d.users)+'. Проектов: '+number(d.projects)+'. Аккаунтов с резервным кодом: '+number(d.recovery.accountsWithCode)+'. Подтверждение почты письмом не подключено.');
+    const b=d.backup;text($('database-backup-state'),b.error|| (b.running?'Создаётся копия…':b.lastSuccess?'Последняя успешная копия: '+date(b.lastSuccess):'Успешной копии пока нет. Автоматическая проверка выполняется после запуска сервера.'));
+    const table=element('table'),head=element('thead'),hr=element('tr');for(const x of ['Создана','Размер базы и ключа'])hr.append(element('th','',x));head.append(hr);const tb=element('tbody');for(const item of b.copies){const tr=element('tr');tr.append(element('td','',date(item.created)),element('td','',number(Math.ceil(item.bytes/1024))+' КБ'));tb.append(tr);}table.append(head,tb);$('database-backups').replaceChildren(b.copies.length?table:element('p','','Копий пока нет.'));
+  }
+  $('database-refresh').addEventListener('click',()=>loadDatabase().catch(e=>notify(e.message)));
+  bindForm('database-backup-form',async data=>{await request('/database/backup',{method:'POST',data});notify('Резервная копия создана и проверена');await loadDatabase();});
   const legalFields=['operatorType','operatorName','inn','ogrn','address','email','phone','hosting','processors','rknNotice'];
   const legalChecks=['published','identityConfirmed','hostingConfirmed','processingReviewed','crossBorderReviewed','documentsApproved'];
   async function loadLegal(){
     const data=await request('/legal');if(!owner)return;
     const f=$('legal-form');for(const k of legalFields)f.elements[k].value=data.config[k]||'';for(const k of legalChecks)f.elements[k].checked=data.config[k]===true;
-    text($('legal-state'),data.ready?'Документы опубликованы':'Проект · регистрация приостановлена');text($('legal-version'),'Редакция: '+data.version+'. Платные услуги: '+(data.salesReady?'реквизиты заполнены; нужны остальные проверки оплаты':'юридическая подготовка не завершена'));
+    text($('legal-state'),data.ready?'Документы опубликованы':data.requiresReview?'Тексты обновлены · требуется повторное утверждение':'Проект · регистрация приостановлена');text($('legal-version'),'Редакция: '+data.version+'. Платные услуги: '+(data.salesReady?'реквизиты заполнены; нужны остальные проверки оплаты':'юридическая подготовка не завершена'));
     const table=element('table'),head=element('thead'),hr=element('tr');for(const t of ['Получено','Аккаунт / почта','Запрос','Номер'])hr.append(element('th','',t));head.append(hr);const tb=element('tbody');
     const kinds={access:'Сведения и доступ',erase:'Удаление аккаунта и данных',withdraw:'Отзыв согласия'};
     for(const r of data.requests){const tr=element('tr');for(const v of [date(r.created),r.email||r.account_id,kinds[r.kind]||r.kind,r.id])tr.append(element('td','',v));tb.append(tr);}table.append(head,tb);
