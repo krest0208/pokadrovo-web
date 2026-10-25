@@ -42,3 +42,12 @@ Primary implementation references:
 
 - Node SQLite backup: https://nodejs.org/download/release/latest-jod/docs/api/sqlite.html
 - OWASP recovery guidance: https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html
+
+
+## Signup reliability
+
+Registration never needs an owner to approve each profile. It works automatically after the one-time publication of genuine operator documents and account-feature enablement; SMTP delivery is optional and its absence does not block account creation. This publication prerequisite is still required on the live site until the operator supplies the actual facts. Do not fabricate or silently approve them.
+
+Normal user password work is bounded to two active operations and eight short waiting requests, with an eight-second queue deadline and a clear 429 on overload. The per-IP and global abuse limits still apply. User, consent receipt, offline proof and first login session commit together; storage failure rolls back the whole registration and no account cookie is issued. Optional mail enqueue failure is isolated after commit and recorded with a fixed audit label, so an account is not stranded by an unrelated mail exception. The offline recovery code still returns in the successful response.
+
+Tests cover ten simultaneous synthetic signup requests, duplicate-email races, a failed first-session write, failed mail preparation, bounded password concurrency, queue overload and expiration. These checks are not an unlimited-load guarantee. Existing real accounts, owner authentication, signup consent requirements and document readiness are preserved.

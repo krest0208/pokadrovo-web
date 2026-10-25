@@ -1,3 +1,4 @@
+import {createPasswordWork} from './password-work.mjs';
 import {createAccountEmail} from './account-email.mjs';
 import {createAccountRecovery} from './account-recovery.mjs';
 import { createHash } from 'node:crypto';
@@ -29,8 +30,8 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
   const csrfName = secure ? '__Host-pk-auth-csrf' : 'pk-auth-csrf-local';
   const bindName = secure ? '__Host-pk-oauth-bind' : 'pk-oauth-bind-local';
   const oauth = createOAuthClient(oauthFetch);
-  let passwordWork = 0;
-  async function passwordJob(job) { if (passwordWork >= 2) deny(429, 'Сервер обрабатывает вход. Повторите через несколько секунд.'); passwordWork++; try { return await job(); } finally { passwordWork--; } }
+  const passwordQueue=createPasswordWork();
+  const passwordJob=job=>passwordQueue.run(job);
   const ip = req => {
     const peer = req.socket.remoteAddress || 'local';
     const forwarded = req.headers['x-forwarded-for'];
@@ -78,15 +79,16 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
     const ready = !!(c.enabled && c.client_id && c.secret && (c.provider === 'google' || (secure && c.version)));
     return { id: c.provider, ready, professionalOnly: c.provider === 'instagram', note: !c.enabled || !c.client_id || !c.secret ? 'Этот способ входа недоступен.' : c.provider !== 'google' && !secure ? 'Для Meta требуется настроенный HTTPS-домен.' : c.provider !== 'google' && !c.version ? 'Укажите версию API Meta в админ-панели.' : c.provider === 'instagram' ? 'Только профессиональные аккаунты Instagram: Business / Creator.' : '' };
   }); }
-  function startSession(res, user) {
+  function prepareSession(user) {
     const sid = token(), csrf = token();
     store.run('INSERT INTO user_sessions(id,user_id,csrf,created,last_seen,expires) VALUES(?,?,?,?,?,?)', digest(sid), user.id, csrf, now(), now(), now() + 7 * DAY);
     store.run('UPDATE users SET last_login=? WHERE id=?', now(), user.id);
     // Bound active devices; invalidate oldest ones after five sessions.
     store.run('DELETE FROM user_sessions WHERE user_id=? AND id NOT IN (SELECT id FROM user_sessions WHERE user_id=? ORDER BY created DESC LIMIT 5)', user.id, user.id);
-    appendCookie(res, sessionName, sid, 7 * 86400, secure);
-    return { user: profile(user), csrf, providers: providers(), accountsEnabled, guestEditingEnabled, socialLoginEnabled, legal:legal.state(),mail:{enabled:mail.ready()} };
+    return {sid,data:{ user: profile(user), csrf, providers: providers(), accountsEnabled, guestEditingEnabled, socialLoginEnabled, legal:legal.state(),mail:{enabled:mail.ready()} }};
   }
+  function publishSession(res,prepared){appendCookie(res,sessionName,prepared.sid,7*86400,secure);return prepared.data;}
+  function startSession(res,user){return publishSession(res,prepareSession(user));}
   function listProjects(auth) { return store.all('SELECT payload FROM account_projects WHERE account_id=? ORDER BY modified DESC LIMIT 200', auth.key).map(r => JSON.parse(r.payload)); }
   // Only document metadata is stored: never a Blob, object URL, credential or executable HTML.
   function projectDocument(p) {
@@ -134,14 +136,18 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
         if (store.get('SELECT id FROM users WHERE email=?', email)) deny(409, 'Этот адрес уже занят. Войдите или используйте другую почту.');
         // Recheck after password hashing so an in-flight request cannot accept a replaced document.
         if(legal.validateRegistration(data)!==acceptedVersion)deny(409,'Документы обновились. Повторите подтверждение.');
-        const id = token();let recoveryCode;
+        const id=token();let recoveryCode,prepared;
+        // User, consent, recovery proof and first session either all commit or all roll back.
         store.db.exec('BEGIN IMMEDIATE');try {
-          store.run('INSERT INTO users(id,email,name,password,created,last_login) VALUES(?,?,?,?,?,?)', id, email, name, password, now(), now());
-          legal.recordAcceptance(id,acceptedVersion);recoveryCode=recovery.issue(id);store.db.exec('COMMIT');
+          store.run('INSERT INTO users(id,email,name,password,created,last_login) VALUES(?,?,?,?,?,?)',id,email,name,password,now(),now());
+          legal.recordAcceptance(id,acceptedVersion);recoveryCode=recovery.issue(id);
+          prepared=prepareSession(store.get('SELECT * FROM users WHERE id=?',id));
+          store.audit('user_registered','ok',now());store.db.exec('COMMIT');
         }catch(e){store.db.exec('ROLLBACK');throw e;}
-        store.audit('user_registered', 'ok', now());
-        accountMail.issue(store.get('SELECT * FROM users WHERE id=?',id),'verify');
-        json(res, 201, {...startSession(res, store.get('SELECT * FROM users WHERE id=?', id)),recoveryCode}); return true;
+        // Optional mail is isolated from successful signup; an SMTP/queue fault must not strand a new account.
+        try{accountMail.issue(store.get('SELECT * FROM users WHERE id=?',id),'verify');}
+        catch{try{store.audit('registration_mail_failed','failed',now());}catch{}}
+        json(res,201,{...publishSession(res,prepared),recoveryCode});return true;
       }
       if (typeof data.email !== 'string' || !data.email.trim() || data.email.length > 254) deny(401, 'Неверная почта, логин или пароль.');
       const u = email ? store.get('SELECT * FROM users WHERE email=?', email) : null;
