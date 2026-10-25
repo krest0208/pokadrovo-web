@@ -30,6 +30,8 @@ export function createApp(options = {}) {
   if (!secure) for (const name of ['localhost', '127.0.0.1']) allowed.add(`http://${name}${origin.port ? ':' + origin.port : ''}`);
   const hosts = new Set([...allowed].map(s => new URL(s).host));
   const dist = resolve(options.dist || join(here, '../dist'));
+  const buildServerDir = join(dist, 'server');
+  const isBuildServerFile = file => file === buildServerDir || file.startsWith(buildServerDir + sep);
   const stateDir = resolve(options.dataDir || process.env.POKADROVO_DATA_DIR || join(here, '../.pokadrovo-private'));
   if (stateDir === dist || stateDir.startsWith(dist + sep) || stateDir === resolve(here, '../public') || stateDir.startsWith(resolve(here, '../public') + sep)) throw Error('Private data must be outside public web directories.');
   const store = openStore(stateDir);
@@ -295,9 +297,11 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     if(decoded==='/server'||decoded.startsWith('/server/'))deny(404,'Не найдено.');
     if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some(s => s.startsWith('.'))) deny(404, 'Не найдено.');
     const target = resolve(dist, '.' + (decoded === '/' ? '/index.html' : decoded));
-    if (!target.startsWith(dist + sep)) deny(404, 'Не найдено.');
+    // Check the resolved filesystem destination as well as the URL spelling.
+    // Encoded leading slashes and public symlink aliases must not expose build-only bundles.
+    if (!target.startsWith(dist + sep) || isBuildServerFile(target)) deny(404, 'Не найдено.');
     let real; try { real = await realpath(target); } catch { deny(404, 'Файл не найден. Для сайта сначала выполните npm run build.'); }
-    if (!real.startsWith(dist + sep)) deny(404, 'Не найдено.');
+    if (!real.startsWith(dist + sep) || isBuildServerFile(real)) deny(404, 'Не найдено.');
     if (req.method === 'GET' && decoded === '/' && settings().analytics) {
       const day = new Date(now()).toISOString().slice(0, 10);
       store.run('INSERT INTO page_days(day,requests) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET requests=requests+1', day);

@@ -1,7 +1,7 @@
 import {prepareLegal} from './legal-fixture.mjs';
 import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -106,6 +106,16 @@ test('admin shell has CSP and source/private paths cannot be downloaded',async()
  const shell=await f.request(OWNER_PATH);assert.equal(shell.status,200);assert.match(shell.headers.get('content-security-policy'),/frame-ancestors 'none'/);
  assert.equal(shell.headers.get('x-frame-options'),'DENY');
  for(const path of ['/.pokadrovo-private/master.key','/.env','/server/security.mjs','/owner-assets/../security.mjs','/%2e%2e%2fprivate%2fowner.sqlite']) assert.equal((await f.request(path)).status,404,path);
+}));
+test('build-only server bundles stay private through encoded paths and public symlink aliases',async()=>using(async f=>{
+ const dist=join(f.dir,'dist');mkdirSync(join(dist,'server'));mkdirSync(join(dist,'assets'));
+ writeFileSync(join(dist,'server/internal.cjs'),'synthetic build-only bundle');
+ symlinkSync('../server/internal.cjs',join(dist,'assets/server-alias.cjs'));
+ writeFileSync(join(dist,'server-icons.svg'),'<svg xmlns="http://www.w3.org/2000/svg"/>');
+ const paths=['/server/internal.cjs','/%2fserver/internal.cjs','/%2Fserver%2Finternal.cjs','/%2f%2fserver/internal.cjs','/server//internal.cjs','/assets/server-alias.cjs'];
+ for(const method of ['GET','HEAD'])for(const path of paths){const r=await f.request(path,{method});assert.equal(r.status,404,method+' '+path);assert.ok(!r.raw.includes('synthetic build-only bundle'));}
+ assert.equal((await f.request('/server-icons.svg')).status,200);
+ assert.equal((await f.request('/')).status,200);
 }));
 test('API key is encrypted, write-only and password-confirmed',async()=>using(async f=>{
  const a=await f.login(),key='unit-test-key-'+token(),data={provider:'openai',model:'test-model',apiKey:key,password,analyticsEnabled:true};
