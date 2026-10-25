@@ -8,6 +8,7 @@ import { brandSvg } from '../brand';
 import { EditorTools } from './tools';
 import { EditorTour } from './tour';
 import type { AiProvider } from './ai';
+import {createThemeIconMotion,themeAction,themeIconMarkup} from '../motion/theme-icon';
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const paths:Record<string,string>={
  help:'M9 8a3 3 0 1 1 5 2c-2 1-2 2-2 3M12 17h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',home:'m3 10 9-7 9 7v11h-6v-7H9v7H3Z',video:'M3 5h13v14H3Zm13 5 5-4v12l-5-4',audio:'M9 18V4l12-2v14M9 8l12-2M9 18a3 3 0 1 1-3-3h3M21 16a3 3 0 1 1-3-3h3',text:'M4 4h16M12 4v16M8 20h8',
@@ -24,6 +25,7 @@ export interface EditorOptions { aiProvider?:AiProvider; project:Project; assets
 export class Editor {
  public history:History;public selected:Selection|null=null;public cursor=0;public tab:'media'|'audio'|'text'='media';
  private tools:EditorTools;private tour:EditorTour;
+ private themeMotion:ReturnType<typeof createThemeIconMotion>;
  private inspectorGroups=new Map<string,boolean>();
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
@@ -31,7 +33,7 @@ export class Editor {
  private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;private pendingName:string|null=null;
  constructor(private root:HTMLElement,private opts:EditorOptions){
   this.history=new History(normalizeProject(opts.project));this.root.className='pe';this.root.dataset.theme=opts.theme;this.root.dataset.mobile='player';
-  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand"><button type="button" class="pe-brand-home" data-action="home" aria-label="Покадрово — на главную" title="На главную">${brand(33,true)}<b>${t.brand}</b></button><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('help','Обучение','help','square pe-help')}${button('theme',t.theme,'moon','square')}${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
+  this.root.innerHTML=`<header class="pe-top"><div class="pe-brand"><button type="button" class="pe-brand-home" data-action="home" aria-label="Покадрово — на главную" title="На главную">${brand(33,true)}<b>${t.brand}</b></button><i></i><input id="pe-name" data-project="name" aria-label="${t.newProject}" maxlength="120"/></div><div class="pe-modes" role="group" aria-label="${t.regular} / Reels">${button('mode-video',t.regular)}${button('mode-reels',t.reels)}</div><div class="pe-actions">${button('help','Обучение','help','square pe-help')}<button type="button" data-action="theme" class="square pk-theme-control" title="${themeAction(opts.theme)}" aria-label="${themeAction(opts.theme)}"><span class="pk-theme-icon" data-theme="${opts.theme}" aria-hidden="true">${themeIconMarkup()}</span></button>${button('save',t.save,'save')}${button('export',t.export,'download','primary')}</div></header>
   <div class="pe-brief" hidden></div>
   <nav class="pe-mobile-nav" aria-label="Панели монтажёра">${['library','player','inspector','timeline'].map((v,i)=>button('mobile-'+v,[t.files,t.preview,t.settings,t.timeline][i],['video','play','settings','layers'][i])).join('')}</nav>
   <div class="pe-layout">
@@ -44,6 +46,7 @@ export class Editor {
   <footer class="pe-footer"><span role="status" class="pe-status">${t.ready}</span><span>${t.shortcuts}</span></footer>
   <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".json,application/json" hidden/>
   <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
+  this.themeMotion=createThemeIconMotion(this.$('.pk-theme-icon'),opts.theme);this.cleanups.push(()=>this.themeMotion.dispose());
   this.engine=new PlaybackEngine(this.$('canvas'),opts.assets,(time,playing)=>this.updateCursor(time,playing),e=>this.fail(e));
   this.tools=new EditorTools({
     root:this.root,canvas:this.engine.canvas,assets:this.opts.assets,provider:this.opts.aiProvider,
@@ -71,7 +74,7 @@ export class Editor {
  flushPendingChanges(){this.save(false);return this.project;}
  private $<T extends HTMLElement=HTMLElement>(q:string){return this.root.querySelector<T>(q)!;}
  private listen(target:EventTarget,event:string,fn:(e:Event)=>void){target.addEventListener(event,fn);this.cleanups.push(()=>target.removeEventListener(event,fn));}
- setTheme(theme:'light'|'dark'){this.root.dataset.theme=theme;}
+ setTheme(theme:'light'|'dark'){this.root.dataset.theme=theme;this.themeMotion.update(theme);const toggle=this.$<HTMLButtonElement>('[data-action="theme"]');toggle.title=toggle.ariaLabel=themeAction(theme);}
  private status(message:string){if(!this.disposed)this.$('.pe-status').textContent=message;}
  private fail(e:unknown){this.status(t.error+': '+(e instanceof Error?e.message:String(e)));}
  private async restore(){

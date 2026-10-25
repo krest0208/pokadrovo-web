@@ -1,13 +1,14 @@
 import * as React from 'react';
-import {Film,AudioLines,Check,Moon,Sun} from 'lucide-react';
+import {Film,AudioLines,Check} from 'lucide-react';
 import BrandMark from './BrandMark';
+import ThemeToggle from './motion/ThemeToggle';
 import './ai-plans.css';
 type Props={balance?:React.ReactNode;theme:'light'|'dark';onTheme:()=>void;onHome:()=>void;onStart:()=>void};
 export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
  React.useEffect(()=>{const previous=document.title;document.title='Монтаж с ИИ | Покадрово';return()=>{document.title=previous;};},[]);
  return <div className="pk-plans" data-theme={theme}>
   <a className="pk-plans-skip" href="#plans-main">К содержимому</a>
-  <header className="pk-plans-header"><a href="/" className="pk-plans-brand" onClick={e=>{e.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a><nav aria-label="Навигация по возможностям ИИ"><a href="#ai-workflow">Как это работает</a><a href="#ai-source">Исходники</a></nav><button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Тёмная тема':'Светлая тема'}>{theme==='light'?<Moon size={20}/>:<Sun size={20}/>}</button></header>
+  <header className="pk-plans-header"><a href="/" className="pk-plans-brand" onClick={e=>{e.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a><nav aria-label="Навигация по возможностям ИИ"><a href="#ai-workflow">Как это работает</a><a href="#ai-source">Исходники</a></nav><ThemeToggle className="pk-plans-theme" theme={theme} onToggle={onTheme}/></header>
   <main id="plans-main" tabIndex={-1}>
    <section className="pk-plans-hero"><span className="pk-plans-eyebrow">ПОКАДРОВО AI · QWEN</span><h1>От материала —<br/><em>к понятному монтажу.</em></h1><p>Опишите идею, разберите выбранный исходник и получите план правок. Вы решаете, какие изменения войдут в ролик.</p><button className="pk-ai-primary" type="button" onClick={onStart}>Открыть студию</button></section>
    <section id="ai-workflow" className="pk-ai-workflow" aria-label="Три шага работы с ИИ">{[

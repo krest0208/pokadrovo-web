@@ -13,8 +13,6 @@
  .pk-library-project:hover>b{translate:4px 0}
  .pkh-nav a:hover,.pk-footer-top nav a:hover,.pk-footer-top nav button:hover{translate:3px 0}
 }
-.pkh-header-right>.pkh-theme,.pk-plans-theme{transition:rotate .3s,background-color .2s,color .2s}
-.pkh-header-right>.pkh-theme:active,.pk-plans-theme:active{rotate:25deg}
 .pkh-nav.is-open{animation:pk-menu-enter .24s cubic-bezier(.22,1,.36,1)}
 .pkh-files,.pk-error,.pk-library>p[role=alert]{animation:pk-feedback-enter .2s ease-out}
 .pk-faq details[open]>p,.pk-plans-faq details[open]>p,.pk-plans-faq details[open]>.pk-plans-sources{animation:pk-feedback-enter .25s ease-out}
