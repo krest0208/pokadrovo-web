@@ -33,7 +33,7 @@ test('pricing deep links and refreshes are public without opening private routes
 });
 
 const root=new URL('../..',import.meta.url).pathname;
-const bundle=await build({absWorkingDir:root,stdin:{contents:`export {default as Studio} from './src/Studio';export {default as AiPlans} from './src/AiPlans';export {default as AiHome} from './src/AiHome';export {acceptSession} from './src/account/api';`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-dom'],loader:{'.css':'empty','.webp':'dataurl'}});
+const bundle=await build({absWorkingDir:root,stdin:{contents:`export {default as Studio} from './src/Studio';export {default as AiPlans} from './src/AiPlans';export {default as AiHome} from './src/AiHome';export {acceptSession} from './src/account/api';`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-dom','motion','motion/*'],loader:{'.css':'empty','.webp':'dataurl'}});
 const require=createRequire(import.meta.url),React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
 function browser(path='/pricing'){
   const module={exports:{}},location={pathname:path,protocol:'https:'},storage=new Map(),pushed=[];

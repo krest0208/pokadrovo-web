@@ -1,0 +1,38 @@
+.pkh .pk-result-fan .pk-fan-card{animation:none;transition:transform .48s cubic-bezier(.2,.85,.25,1),scale .48s cubic-bezier(.2,.85,.25,1)}
+.pkh .pk-source-pile>.pk-shot,.pkh .pk-final-fan>.pk-shot{transition:translate .48s cubic-bezier(.2,.85,.25,1),rotate .48s cubic-bezier(.2,.85,.25,1),scale .48s cubic-bezier(.2,.85,.25,1)}
+.pkh .pk-process-art>:is(.pk-import-art,.pk-brief-art,.pk-analysis-art,.pk-plan-art,.pk-edit-art,.pk-export-art),.pkh .pk-process-art .pk-analysis-art>.pk-shot,.pkh .pk-process-art :is(.pk-chat-user,.pk-brief-photo,.pk-analysis-notes>div,.pk-plan-row,.pk-export-landscape,.pk-export-portrait,.pk-media-grid>.pk-shot),.pkh .pk-feature-image>.pk-shot,.pkh .pk-feature-type>.pk-shot{transition:translate .42s cubic-bezier(.2,.85,.25,1),rotate .42s cubic-bezier(.2,.85,.25,1),scale .42s cubic-bezier(.2,.85,.25,1)}
+.pkh .pk-process-art .pk-playhead,.pkh .pk-feature-image .pk-playhead{transition:transform .65s cubic-bezier(.2,.85,.25,1)}
+.pkh .pk-shot>.pk-shot-image{transition:transform .55s cubic-bezier(.2,.85,.25,1)}
+.pkh .pk-result-fan .pk-fan-card.back{z-index:0}.pkh .pk-result-fan .pk-fan-card.middle{z-index:1}.pkh .pk-result-fan .pk-fan-card.front{z-index:2}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+ .pkh .pk-hero-story:hover .pk-source-pile>.pk-shot{rotate:0deg;translate:0 0}
+ .pkh .pk-hero-story:hover .pk-source-pile>.pk-shot:nth-child(1){translate:-3px 4px}
+ .pkh .pk-hero-story:hover .pk-source-pile>.pk-shot:nth-child(2){translate:3px -3px}
+ .pkh .pk-hero-story:hover .pk-fan-card.back{transform:translate(22px,0) rotate(0deg)}
+ .pkh .pk-hero-story:hover .pk-fan-card.middle{transform:translate(11px,-3px) rotate(0deg)}
+ .pkh .pk-hero-story:hover .pk-fan-card.front{transform:translate(0,-6px) rotate(0deg)}
+ .pkh .pk-process-card:hover .pk-import-art,.pkh .pk-process-card:hover .pk-plan-art,.pkh .pk-process-card:hover .pk-edit-art{rotate:0deg;translate:0 -3px;scale:1.015}
+ .pkh .pk-process-card:hover .pk-media-grid>.pk-shot{translate:0 -2px}
+ .pkh .pk-process-card:hover .pk-media-grid>.pk-shot:nth-child(2n){translate:0 2px}
+ .pkh .pk-process-card:hover .pk-chat-user{translate:0 -4px}
+ .pkh .pk-process-card:hover .pk-brief-photo{translate:8px -3px;rotate:0deg}
+ .pkh .pk-process-card:hover .pk-analysis-art>.pk-shot{rotate:0deg;scale:1.025}
+ .pkh .pk-process-card:hover .pk-analysis-notes>div{translate:-4px 0}
+ .pkh .pk-process-card:hover .pk-analysis-notes>div:nth-child(2){transition-delay:.035s}
+ .pkh .pk-process-card:hover .pk-analysis-notes>div:nth-child(3){transition-delay:.07s}
+ .pkh .pk-process-card:hover .pk-plan-row{translate:3px 0}
+ .pkh .pk-process-card:hover .pk-plan-row:nth-child(3){transition-delay:.035s}
+ .pkh .pk-process-card:hover .pk-plan-row:nth-child(4){transition-delay:.07s}
+ .pkh .pk-process-card:hover .pk-playhead,.pkh .pk-feature-large:hover .pk-playhead{transform:translateX(26px)}
+ .pkh .pk-process-card:hover .pk-export-landscape{rotate:0deg;translate:6px -2px}
+ .pkh .pk-process-card:hover .pk-export-portrait{rotate:0deg;translate:-14px 8px}
+ .pkh .pk-feature-grid>article:hover .pk-shot>.pk-shot-image{transform:scale(1.045)}
+ .pkh .pk-final:hover .pk-final-fan>.pk-shot{rotate:0deg;scale:1.015}
+}
+@media(min-width:761px) and (hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+ .pkh .pk-final:hover .pk-final-fan>.pk-shot:nth-child(1){translate:33% -5px}
+ .pkh .pk-final:hover .pk-final-fan>.pk-shot:nth-child(3){translate:-33% -5px}
+}
+@media(prefers-reduced-motion:reduce){
+ .pkh .pk-result-fan .pk-fan-card,.pkh .pk-source-pile>.pk-shot,.pkh .pk-final-fan>.pk-shot,.pkh .pk-process-art *,.pkh .pk-feature-image *,.pkh .pk-feature-type *{animation:none!important;transition:none!important}
+}

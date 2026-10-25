@@ -1,1 +1,6 @@
 @import './home/redesign.css';
+
+.pkh :is(.pk-button,.pkh-signin,.pkh-theme,.pkh-menu,.pk-presets button,.pk-attach):not(:disabled){transition:translate .22s cubic-bezier(.22,1,.36,1),scale .16s cubic-bezier(.22,1,.36,1),background-color .2s,border-color .2s,box-shadow .22s}
+.pkh :is(.pk-button,.pkh-signin,.pkh-theme,.pkh-menu,.pk-presets button,.pk-attach):active:not(:disabled){scale:.97}
+.pkh .pkh-composer:focus-within{border-color:var(--blue)}
+@media(prefers-reduced-motion:reduce){.pkh :is(.pk-button,.pkh-signin,.pkh-theme,.pkh-menu,.pk-presets button,.pk-attach):active:not(:disabled){scale:none}}

@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 import {build} from 'esbuild';
 
 const root=new URL('../..',import.meta.url).pathname;
-const bundle=await build({absWorkingDir:root,stdin:{contents:`export {Editor} from './src/editor/editor';export {default as Studio} from './src/Studio';export {newProject,normalizeClip,History} from './src/editor/model';export {acceptSession} from './src/account/api';`,resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-dom'],loader:{'.css':'empty','.webp':'dataurl'}});
+const bundle=await build({absWorkingDir:root,stdin:{contents:`export {Editor} from './src/editor/editor';export {default as Studio} from './src/Studio';export {newProject,normalizeClip,History} from './src/editor/model';export {acceptSession} from './src/account/api';`,resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',external:['react','react-dom','motion','motion/*'],loader:{'.css':'empty','.webp':'dataurl'}});
 function harness(mobile=false){
  const module={exports:{}},location={pathname:'/',protocol:'https:'};
  vm.runInNewContext(bundle.outputFiles[0].text,{module,exports:module.exports,require:createRequire(import.meta.url),console,crypto,setTimeout,clearTimeout,window:{matchMedia:()=>({matches:mobile}),scrollTo(){}},history:{pushState(_s,_t,path){location.pathname=path;}},location,sessionStorage:{removeItem(){}},localStorage:{getItem:()=>null,setItem(){}},URL,AbortSignal,Response});

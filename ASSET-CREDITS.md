@@ -25,3 +25,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - `src/home/assets/coastal-story.webp`: six original illustrative travel stills generated with the built-in imagegen tool. Not real customer footage or proof of an AI-generated video. The full original prompt and design notes are in `docs/HOMEPAGE-REDESIGN.md`. Stored as WebP for delivery; the generated composition is unchanged.
 - Brand silhouettes in `src/PlatformIcon.tsx` are canonical SVG paths from Simple Icons, CC0-1.0: https://github.com/simple-icons/simple-icons/tree/develop/icons (`instagram.svg`, `tiktok.svg`, `youtube.svg`, `vk.svg`, `telegram.svg`). These identify output platforms, not Pokadrovo social accounts or partners.
+
+
+## Three-story homepage illustrations
+
+- `src/home/assets/coffee-story.webp`: six original illustrative stills of a coffee ritual, generated with the built-in imagegen tool for this site.
+- `src/home/assets/city-story.webp`: six original illustrative stills of a blue-hour city vlog, generated with the built-in imagegen tool for this site.
+- Both are synthetic demonstration series without third-party logos, customer footage or implied endorsement. UI text, captions and timeline diagrams are rendered in code. Production uses the 1536×1024 WebP atlases; `src/preview/media/` contains lighter derivatives for the self-contained chat preview. No external image service or paid subscription is required to view these assets.

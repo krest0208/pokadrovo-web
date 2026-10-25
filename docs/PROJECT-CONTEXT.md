@@ -115,3 +115,10 @@ Live browser audit also found and fixed project-name loss when saving before blu
 ## Automatic signup reliability
 
 `server/password-work.mjs` bounds normal-user scrypt work to two active jobs and eight waiting jobs with an eight-second deadline; overload remains rate-limited. Signup commits user, legal acceptance, offline recovery proof and first session together, then publishes the session cookie. A failed session write rolls everything back. Optional mail queue failure after commit is isolated and audited without turning the successful signup into an error. No per-user manual owner approval or SMTP connection is required for signup. One-time genuine document publication is still a production prerequisite and must not be faked. Isolated stability tests cover concurrent signups, duplicates, queue bounds and storage/mail failures.
+
+
+## Homepage motion and three visual stories
+
+AiHome owns its Motion page controller so scroll reveals also run in the isolated preview. SiteMotion skips the home screen to avoid duplicate observers. Reveal/stagger replays only after complete viewport exit, supports reverse scroll and preserves visible content, focused elements and reduced-motion preference. Buttons retain native behavior with press/hover feedback; anchor links preserve hash and focus the destination. No wheel/scroll hijacking is used.
+
+HomeShowcase exposes `Shot` and `Timeline` collection props for travel, coffee and city. Three photo atlases feed matching hero labels/timelines and varied process/features/final illustrations. Hero story changes use AnimatePresence; fine-pointer hover gathers fans/exports and moves illustration details via transforms. `src/home/showcase-motion.css` owns these effects; legacy home/layers.css is not reintroduced. Preview builds substitute the small matching atlases from src/preview/media and retain the 1MB/no-network bound. Original demo asset notes are in ASSET-CREDITS.md.

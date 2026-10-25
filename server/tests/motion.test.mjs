@@ -27,7 +27,8 @@ function browser({reduced=false,waapi=true,observer=true,throws=false}={}){
   constructor(callback){this.callback=callback;roots.push(this);}
   observe(n){this.targets.add(n);}unobserve(n){this.targets.delete(n);}
   disconnect(){this.disconnected=true;this.targets.clear();}
-  enter(n){if(this.targets.has(n))this.callback([{target:n,isIntersecting:true}]);}
+  enter(n,{ratio=1,top=0}={}){if(this.targets.has(n))this.callback([{target:n,isIntersecting:true,intersectionRatio:ratio,boundingClientRect:{top}}]);}
+  exit(n){if(this.targets.has(n))this.callback([{target:n,isIntersecting:false,intersectionRatio:0}]);}
  }
  class Mutations{
   constructor(callback){this.callback=callback;mutations.push(this);}
@@ -49,7 +50,7 @@ function browser({reduced=false,waapi=true,observer=true,throws=false}={}){
  const start=()=>module.exports.createPageMotion(page);
  return{page,first,second,append,roots,mutations,animations,preference,document,start};
 }
-test('reveals a block only once and restores its original styles after completion',()=>{
+test('reveals once per viewport visit and restores original styles after completion',()=>{
  const b=browser();b.first.style.setProperty('opacity','.8','important');b.first.style.setProperty('transform','rotate(2deg)');
  const stop=b.start();b.roots[0].enter(b.first);assert.equal(b.animations.length,1);assert.equal(b.first.style.getPropertyValue('opacity'),'0');
  b.animations[0].finish();assert.equal(b.first.style.getPropertyValue('opacity'),'.8');assert.equal(b.first.style.getPropertyPriority('opacity'),'important');assert.equal(b.first.style.getPropertyValue('transform'),'rotate(2deg)');
@@ -76,4 +77,14 @@ test('unsupported browser APIs and animation errors leave the page visible and u
  for(const options of [{waapi:false},{observer:false},{throws:true}]){
   const b=browser(options),stop=b.start();b.roots[0]?.enter(b.first);assert.equal(b.first.style.getPropertyValue('opacity'),'');assert.equal(b.first.style.getPropertyValue('transform'),'');stop();
  }
+});
+
+test('full exit permits another reveal upward or downward while boundary changes do not restart it',()=>{
+ const b=browser(),stop=b.start(),observer=b.roots[0];
+ observer.enter(b.first,{ratio:.03});assert.equal(b.animations.length,0);
+ observer.enter(b.first,{ratio:.2});assert.equal(b.animations.length,1);b.animations[0].finish();
+ observer.enter(b.first,{ratio:.04});observer.enter(b.first,{ratio:.2});assert.equal(b.animations.length,1);
+ observer.exit(b.first);observer.enter(b.first,{top:-30,ratio:.2});assert.equal(b.animations.length,2);assert.equal(b.animations[1].keyframes.transform[0],'translateY(-16px)');
+ observer.exit(b.first);assert.equal(b.animations[1].cancelled,true);assert.equal(b.first.style.getPropertyValue('opacity'),'');
+ observer.enter(b.first,{top:700,ratio:.2});assert.equal(b.animations.length,3);assert.equal(b.animations[2].keyframes.transform[0],'translateY(18px)');stop();
 });

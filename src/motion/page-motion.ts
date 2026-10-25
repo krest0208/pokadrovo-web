@@ -15,14 +15,14 @@ const targets=[
 export function createPageMotion(root:HTMLElement):()=>void {
   if(typeof root.animate!=='function'||typeof IntersectionObserver==='undefined'||typeof window.matchMedia!=='function')return ()=>{};
   const preference=window.matchMedia('(prefers-reduced-motion: reduce)');
-  const played=new WeakSet<Element>();let registered=new WeakSet<Element>();
+  const inside=new WeakSet<Element>();let registered=new WeakSet<Element>();
   const active=new Map<HTMLElement,()=>void>();
   let observer:IntersectionObserver|null=null,mutations:MutationObserver|null=null,disposed=false;
 
   const stopAll=()=>{for(const stop of [...active.values()])stop();};
-  const reveal=(node:HTMLElement)=>{
-    if(disposed||preference.matches||!node.isConnected||played.has(node))return;
-    played.add(node);
+  const reveal=(node:HTMLElement,upward=false)=>{
+    if(disposed||preference.matches||!node.isConnected)return;
+    active.get(node)?.();
     if(node.contains(document.activeElement)||document.visibilityState==='hidden')return;
     const opacity=node.style.getPropertyValue('opacity'),opacityPriority=node.style.getPropertyPriority('opacity');
     const transform=node.style.getPropertyValue('transform'),transformPriority=node.style.getPropertyPriority('transform');
@@ -35,12 +35,12 @@ export function createPageMotion(root:HTMLElement):()=>void {
     };
     try{
       const index=node.parentElement?Array.prototype.indexOf.call(node.parentElement.children,node):0;
-      animation=animate(node,{opacity:[0,1],transform:['translateY(18px)','none']},{duration:.44,delay:Math.min(index,3)*.055,ease:[.22,1,.36,1]});
+      animation=animate(node,{opacity:[0,1],transform:[upward?'translateY(-16px)':'translateY(18px)','none']},{duration:.44,delay:Math.min(index,3)*.055,ease:[.22,1,.36,1]});
       active.set(node,restore);animation.then(restore,restore);
     }catch{restore();}
   };
   const register=(node:HTMLElement)=>{
-    if(registered.has(node)||played.has(node))return;
+    if(registered.has(node))return;
     registered.add(node);observer?.observe(node);
   };
   const scan=(node:HTMLElement)=>{
@@ -53,7 +53,12 @@ export function createPageMotion(root:HTMLElement):()=>void {
     registered=new WeakSet();
     try{
     observer=new IntersectionObserver(entries=>{
-      for(const entry of entries){if(entry.isIntersecting){observer?.unobserve(entry.target);reveal(entry.target as HTMLElement);}}
+      for(const entry of entries){
+        const node=entry.target as HTMLElement;
+        if(!entry.isIntersecting){inside.delete(node);active.get(node)?.();continue;}
+        if(inside.has(node)||entry.intersectionRatio!==undefined&&entry.intersectionRatio<.08)continue;
+        inside.add(node);reveal(node,(entry.boundingClientRect?.top??0)<0);
+      }
     },{threshold:.08});
     scan(root);
     if(typeof MutationObserver!=='undefined'){

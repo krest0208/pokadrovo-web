@@ -9,6 +9,11 @@ const assets=resolve(root,'src/editor/assets.ts'),api=resolve(root,'src/account/
 const previewAssets=resolve(root,'src/preview/assets.ts');
 const result=await build({absWorkingDir:root,entryPoints:['src/preview/main.tsx'],bundle:true,minify:true,write:false,outfile:'.compiled/preview/app.js',format:'iife',target:'es2022',metafile:true,loader:{'.webp':'dataurl'},define:{'process.env.NODE_ENV':'"production"'},plugins:[{
   name:'isolated-chat-preview',setup(b){
+    b.onLoad({filter:/home\/assets\/[^/]+\.webp$/},async args=>{
+      const name=args.path.split('/').at(-1);
+      const contents=await readFile(resolve(root,'src/preview/media',name));
+      return {contents,loader:'dataurl'};
+    });
     b.onResolve({filter:/\?raw$/},args=>({path:resolve(args.resolveDir,args.path.slice(0,-4)),namespace:'preview-raw'}));
     b.onLoad({filter:/.*/,namespace:'preview-raw'},async args=>{
       let contents=await readFile(args.path,'utf8');
