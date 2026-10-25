@@ -1,6 +1,6 @@
 import * as React from 'react';
 import CoinMark from './CoinMark';
-import { ArrowUpRight, AudioLines, Check, Film, Layers3, Moon, Sun, Text } from 'lucide-react';
+import { AudioLines, Check, Film, Layers3, Moon, Sun, Text } from 'lucide-react';
 import BrandMark from './BrandMark';
 import yandexModels from '../shared/yandex-models.json';
 import './ai-plans.css';
@@ -49,7 +49,7 @@ export default function AiPlans({theme,onTheme,onHome,onStart,balance}:Props){
         <span className="pk-plans-eyebrow">Тарифы — мощность — нейросети</span>
         <h1>Вашей истории —<br/><em>своя мощность.</em></h1>
         <p>От первого разбора кадров до подробного плана монтажа. Выбирайте глубину работы ИИ под свою задачу.</p>
-        <a className="pk-plans-link" href="#ai-levels">Посмотреть уровни <ArrowUpRight size={18} aria-hidden="true"/></a>
+        <a className="pk-plans-link" href="#ai-levels">Посмотреть уровни</a>
         <div className="pk-plans-draft"><CoinMark size={20} aria-hidden="true"/><p><strong>Цены для сравнения.</strong> Уровни приведены для сравнения. Уровни «Сценарист», «Автор» и «Студия» пока недоступны. Доступность покупки и стоимость пакетов монет указаны в балансе.</p></div>
       </section>
       <section id="ai-levels" className="pk-plans-levels" aria-label="Тарифы и возможности нейросетей">
@@ -74,7 +74,7 @@ export default function AiPlans({theme,onTheme,onHome,onStart,balance}:Props){
         </article>)}</div>
         <div className="pk-plans-context"><Film size={24} aria-hidden="true"/><p><strong>Работа с текстовым контекстом.</strong> Эти подключения получают описание проекта и предыдущий разбор, без исходных видео и аудио. Автоматическая расшифровка речи, субтитры по таймкодам и удаление вдохов недоступны. Лимит описания — 64 КБ.</p></div>
         <p className="pk-russia-note">Модели и характеристики указаны для сравнения. Эти режимы недоступны пользователям. Стоимость API определяется тарифами Yandex Cloud и не равна стоимости в монетах Покадрово.</p>
-        <a className="pk-plans-link" href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">Каталог и характеристики провайдера <ArrowUpRight size={17} aria-hidden="true"/></a>
+        <a className="pk-plans-link" href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">Каталог и характеристики провайдера</a>
       </section>
       <section id="ai-compare" className="pk-plans-comparison" aria-labelledby="ai-compare-title">
         <span className="pk-plans-eyebrow">Разница по делу</span><h2 id="ai-compare-title">Что меняется с уровнем</h2>
@@ -93,10 +93,10 @@ export default function AiPlans({theme,onTheme,onHome,onStart,balance}:Props){
         <details><summary>Что умеет Яндекс в «Сценаристе»?</summary><p>YandexGPT 5.1 Pro получает описание проекта, параметры таймлайна и, если он есть, предыдущий разбор исходника. На этой основе предлагает план монтажа и тексты титров. Исходные видео и звук в этом режиме не передаются. Распознавание речи недоступно.</p><p>Уровень недоступен пользователям. На странице указана стоимость для сравнения — 3 монеты за план.</p></details>
         <details><summary>Можно купить «Автора» или «Студию»?</summary><p>Уровни «Автор» и «Студия» пока недоступны. Купленные монеты расходуются только в подключённых режимах редактора. Характеристики моделей и цены приведены для сравнения; они не меняют стоимость доступных ИИ-запросов.</p></details>
         <details><summary>Что означает мощность модели?</summary><p>Мощность описывает работу модели с контекстом и глубину обработки задания. Это характеристика модели, а не гарантия результата. Доступность каждого уровня указана на его карточке.</p></details>
-        <details><summary>Откуда взяты характеристики моделей?</summary><p>Из документации провайдеров, проверенной 22 октября 2026 года. Это возможности самих моделей; доступные действия Покадрово описаны отдельно выше.</p><div className="pk-plans-sources"><a href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">YandexGPT 5.1 Pro ↗</a><a href="https://openrouter.ai/google/gemma-4-26b-a4b-it:free" target="_blank" rel="noopener noreferrer">Gemma 4 ↗</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-omni-flash" target="_blank" rel="noopener noreferrer">Qwen Omni ↗</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max" target="_blank" rel="noopener noreferrer">Qwen Max ↗</a></div></details>
+        <details><summary>Откуда взяты характеристики моделей?</summary><p>Из документации провайдеров, проверенной 22 октября 2026 года. Это возможности самих моделей; доступные действия Покадрово описаны отдельно выше.</p><div className="pk-plans-sources"><a href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">YandexGPT 5.1 Pro</a><a href="https://openrouter.ai/google/gemma-4-26b-a4b-it:free" target="_blank" rel="noopener noreferrer">Gemma 4</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-omni-flash" target="_blank" rel="noopener noreferrer">Qwen Omni</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max" target="_blank" rel="noopener noreferrer">Qwen Max</a></div></details>
       </section>
-      <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">Начните с материала</span><h2>Есть кадры?<br/>Откройте студию.</h2></div><button type="button" onClick={onStart}>Открыть студию <ArrowUpRight size={22} aria-hidden="true"/></button></section>
+      <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">Начните с материала</span><h2>Есть кадры?<br/>Откройте студию.</h2></div><button type="button" onClick={onStart}>Открыть студию</button></section>
     </main>
-    <footer className="pk-plans-footer"><a href="/" onClick={event=>{event.preventDefault();onHome();}}>← На главную</a><span>© {new Date().getFullYear()} Покадрово</span><a href="/legal/terms">Соглашение</a><a href="/legal/payments">Оплата и возврат</a><a href="/legal/contacts">Реквизиты</a><a href="#plans-main">Тарифы — мощность — нейросети ↑</a></footer>
+    <footer className="pk-plans-footer"><a href="/" onClick={event=>{event.preventDefault();onHome();}}>На главную</a><span>© {new Date().getFullYear()} Покадрово</span><a href="/legal/terms">Соглашение</a><a href="/legal/payments">Оплата и возврат</a><a href="/legal/contacts">Реквизиты</a><a href="#plans-main">Тарифы — мощность — нейросети</a></footer>
   </div>;
 }

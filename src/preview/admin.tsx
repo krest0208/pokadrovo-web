@@ -23,7 +23,7 @@ export function AdminPreview({onOpen,onHome,initialView='overview'}:{onOpen:(id:
     q('#app').hidden=false;
     text('.secure-badge','Предпросмотр');text('#owner-name','Администратор');
     text('.owner-card small','Локальная версия');text('.sidebar-note strong','Проекты в этом браузере');text('.sidebar-note p','Регистрация и серверный вход отключены для предпросмотра.');
-    text('.top-right a','Открыть сайт ↗');
+    text('.top-right a','Открыть сайт');
     text('[data-view="users"]','Проекты');text('[data-view="security"]','Хранение');text('[data-view="audit"]','Журнал действий');
     text('#users-view h2','Проекты студии');text('#users-view .muted','Проекты, созданные в этом предпросмотре.');
     text('#users-view .subtle-note','Исходные видео и музыка остаются на вашем устройстве.');

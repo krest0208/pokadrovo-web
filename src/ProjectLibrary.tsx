@@ -1,5 +1,5 @@
 import React,{useRef,useState} from 'react';
-import { ArrowUpRight, ChevronDown, Clock3, Download, Film, FolderOpen, Plus, Upload } from 'lucide-react';
+import { ChevronDown, Clock3, Download, Film, FolderOpen, Plus, Upload } from 'lucide-react';
 import BrandMark from './BrandMark';
 import {Project,normalizeProject,totalLength,clock} from './editor/model';
 import {saveProject,download} from './editor/assets';
@@ -31,7 +31,7 @@ export default function ProjectLibrary({projects,theme,onHome,onNew,onOpen,onImp
     {error&&<p className="pk-library-error" role="alert">{error}</p>}
     <div className="pk-library-grid">{projects.length?projects.map(project=><button type="button" className="pk-library-project" key={project.id} onClick={()=>onOpen(project.id)}>
       <span className="pk-project-cover"><span className="pk-project-frame" aria-hidden="true" style={{aspectRatio:project.ratio.replace(':','/')}}><Film size={30}/></span><span className="pk-project-format">{project.mode==='reels'?'Reels / Shorts':'Видео'} · {project.ratio}</span><span className="pk-project-strips" aria-hidden="true"><i/><i/><i/></span></span>
-      <span className="pk-project-content"><strong>{project.name}</strong><span className="pk-project-meta"><span><Clock3 size={15} aria-hidden="true"/>{clock(totalLength(project))}</span><span>Клипов: {project.clips.length}</span></span><span className="pk-project-updated">Изменён {new Date(project.modified).toLocaleDateString('ru-RU')}</span><span className="pk-project-open">Продолжить монтаж <ArrowUpRight size={18} aria-hidden="true"/></span></span>
+      <span className="pk-project-content"><strong>{project.name}</strong><span className="pk-project-meta"><span><Clock3 size={15} aria-hidden="true"/>{clock(totalLength(project))}</span><span>Клипов: {project.clips.length}</span></span><span className="pk-project-updated">Изменён {new Date(project.modified).toLocaleDateString('ru-RU')}</span><span className="pk-project-open">Продолжить монтаж</span></span>
     </button>):<section className="pk-library-empty"><div className="pk-library-empty-art" aria-hidden="true"><span/><span/><span><Film size={42}/></span></div><h2>Начните свою первую историю</h2><p>Добавьте видео, фотографии или музыку. Кадры соберутся на таймлайне — дальше дело за вами.</p><button type="button" className="pk-library-primary" onClick={onNew}><Plus size={19} aria-hidden="true"/> Создать проект</button></section>}</div>
     <p className="pk-library-storage">Исходники доступны в том же браузере и на том же устройстве. Сохраните резервную копию монтажа перед переносом проекта.</p>
   </main>;
