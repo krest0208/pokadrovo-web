@@ -1,102 +1,22 @@
 import * as React from 'react';
-import CoinMark from './CoinMark';
-import { AudioLines, Check, Film, Layers3, Moon, Sun, Text } from 'lucide-react';
+import {Film,AudioLines,Check,Moon,Sun} from 'lucide-react';
 import BrandMark from './BrandMark';
-import yandexModels from '../shared/yandex-models.json';
 import './ai-plans.css';
-
-const plans = [
-  { id:'start', name:'Старт', label:'Знакомство с ИИ', power:'Базовая', depth:1, coins:1, unit:'за один разбор или план', status:'Пробный режим', model:'Gemma 4 26B A4B', detail:'Визуальный разбор через OpenRouter', context:'262 тыс. токенов', icon:Film,
-    description:'Когда нужно быстро разобраться в кадрах и найти отправную точку для монтажа.',
-    features:['Содержание кадра и заметные события', 'Советы по последовательности сцен', 'План правок по вашему заданию'],
-    limitation:'Бесплатный визуальный разбор не распознаёт речь и звуковую дорожку.' },
-  { id:'yandex', name:'Сценарист', label:'Яндекс · текстовый план', power:'Расширенная · текст', depth:2, coins:3, unit:'за один план монтажа', status:'Недоступен', model:'YandexGPT 5.1 Pro', detail:'Yandex AI Studio · план по описанию проекта', context:'32 768 токенов', icon:Text,
-    description:'Когда важны структура рассказа, понятные русские формулировки и точное следование вашему заданию.',
-    features:['План по брифу и текущему таймлайну', 'Работа с результатами предыдущего разбора', 'Предложения по сценам и текстам титров'],
-    limitation:'Исходные видео и звук в Яндекс не отправляются. Уровень недоступен пользователям.' },
-  { id:'author', name:'Автор', label:'Кадры + звук', power:'Расширенная', depth:2, coins:5, unit:'за один разбор или план', status:'Недоступен', model:'Qwen3.8-Omni-Flash', detail:'Видео, звук и текст в одной модели', context:'1 млн токенов', icon:AudioLines,
-    description:'Для разговорных роликов, обзоров и историй, в которых важно услышать происходящее.',
-    features:['Совместный разбор видео и звука', 'Учет речи и событий при подготовке советов', 'Предложения по акцентам и титрам'],
-    limitation:'Уровень недоступен. Указаны характеристики модели; обработка в этом тарифе не выполняется.' },
-  { id:'studio', name:'Студия', label:'Подробная работа с историей', power:'Максимальная в линейке', depth:3, coins:15, unit:'за разбор + подробный план', status:'Недоступен', model:'Qwen3.8-Omni-Flash + Qwen3.8-Max', detail:'Omni разбирает материал, Max собирает план', context:'До 1 млн токенов на модель', icon:Layers3,
-    description:'Для задач с подробным брифом, несколькими смысловыми акцентами и точными требованиями к истории.',
-    features:['Разбор материала с Omni', 'Отдельный этап проработки структуры', 'Подробный план по сценам и титрам'],
-    limitation:'Уровень недоступен. Связка Omni и Max в студии не выполняется.' }
-];
-
-const comparison = [
-  ['Основная задача','Разобрать кадры','Составить текстовый план с Яндексом','Понять кадры и звук','Продумать структуру истории'],
-  ['Модель анализа','Gemma 4 26B A4B','Использует предыдущий разбор','Qwen3.8-Omni-Flash','Qwen3.8-Omni-Flash'],
-  ['Работа с речью и звуком','Нет в бесплатном разборе','Без прямой обработки медиа','Недоступна','Недоступна'],
-  ['План монтажа','По заданию и проекту','YandexGPT 5.1 Pro по брифу, таймлайну и предыдущему разбору','С учетом разбора материала','Отдельный этап с Qwen3.8-Max'],
-  ['Справочная цена','1 монета / действие','3 монеты / план','5 монет / действие','15 монет / разбор и план'],
-  ['Доступность','При подключенном пробном ИИ','Недоступен','Недоступен','Недоступен']
-];
-
 type Props={balance?:React.ReactNode;theme:'light'|'dark';onTheme:()=>void;onHome:()=>void;onStart:()=>void};
-export default function AiPlans({theme,onTheme,onHome,onStart,balance}:Props){
-  React.useEffect(()=>{const previous=document.title;document.title='Тарифы — мощность — нейросети | Покадрово';return()=>{document.title=previous;};},[]);
-  return <div className="pk-plans" data-theme={theme}>
-    <a className="pk-plans-skip" href="#plans-main">К тарифам</a>
-    <header className={`pk-plans-header${balance?' pk-has-balance':''}`}>
-      <a href="/" className="pk-plans-brand" onClick={event=>{event.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a>
-      <nav aria-label="Навигация по тарифам"><a href="#ai-levels">Уровни ИИ</a><a href="#ai-russia">Модели в России</a><a href="#ai-compare">Сравнить</a><a href="#ai-coins">Монеты</a></nav>
-      <button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Включить тёмную тему':'Включить светлую тему'}>{theme==='light'?<Moon size={20} aria-hidden="true"/>:<Sun size={20} aria-hidden="true"/>}</button>
-      {balance}
-    </header>
-    <main id="plans-main" tabIndex={-1}>
-      <section className="pk-plans-hero">
-        <span className="pk-plans-eyebrow">Тарифы — мощность — нейросети</span>
-        <h1>Вашей истории —<br/><em>своя мощность.</em></h1>
-        <p>От первого разбора кадров до подробного плана монтажа. Выбирайте глубину работы ИИ под свою задачу.</p>
-        <a className="pk-plans-link" href="#ai-levels">Посмотреть уровни</a>
-        <div className="pk-plans-draft"><CoinMark size={20} aria-hidden="true"/><p><strong>Цены для сравнения.</strong> Уровни приведены для сравнения. Уровни «Сценарист», «Автор» и «Студия» пока недоступны. Доступность покупки и стоимость пакетов монет указаны в балансе.</p></div>
-      </section>
-      <section id="ai-levels" className="pk-plans-levels" aria-label="Тарифы и возможности нейросетей">
-        {plans.map(plan=>{const Icon=plan.icon;return <article key={plan.id} className={'pk-plan-card pk-plan-'+plan.id} aria-labelledby={'plan-'+plan.id}>
-          <div className="pk-plan-card-top"><span>{plan.label}</span><Icon size={25} aria-hidden="true"/></div>
-          <div className="pk-plan-title"><h2 id={'plan-'+plan.id}>{plan.name}</h2><span className="pk-plan-status">{plan.status}</span></div><p className="pk-plan-description">{plan.description}</p>
-          <div className="pk-plan-price"><CoinMark size={26} aria-hidden="true"/><strong>{plan.coins}</strong><span>{plan.coins===1?'монета':plan.coins<5?'монеты':'монет'}</span></div><p className="pk-plan-unit">{plan.unit}</p>
-          <div className="pk-plan-power"><div><span>Мощность</span><strong>{plan.power}</strong></div><div className="pk-plan-meter" aria-hidden="true">{[0,1,2].map(n=><i key={n} className={n<plan.depth?'is-on':''}/>)}</div></div>
-          <div className="pk-plan-model"><span>Нейросеть</span><h3>{plan.model}</h3><p>{plan.detail}</p><small>Контекст модели: {plan.context}</small></div>
-          <ul>{plan.features.map(feature=><li key={feature}><Check size={17} aria-hidden="true"/><span>{feature}</span></li>)}</ul>
-          <p className="pk-plan-limit">{plan.limitation}</p>
-        </article>;})}
-      </section>
-      <section id="ai-russia" className="pk-russia-models" aria-labelledby="ai-russia-title">
-        <span className="pk-plans-eyebrow">Выбор через Yandex AI Studio</span>
-        <h2 id="ai-russia-title">Модели, доступные<br/><em>через платформу в России.</em></h2>
-        <p>Четыре варианта для монтажного плана. Они получают ваше задание, структуру проекта и предыдущий разбор исходника. Нарезку и добавление текста выполняет редактор после вашего подтверждения.</p>
-        <div className="pk-russia-grid">{yandexModels.map(model=><article key={model.id}>
-          <span>Yandex AI Studio</span><h3>{model.name}</h3><strong>{model.role}</strong><p>{model.description}</p>
-          <dl><div><dt>Контекст модели</dt><dd>{model.contextTokens.toLocaleString('ru-RU')} токенов</dd></div><div><dt>В Покадрово</dt><dd>План нарезки и тексты титров по переданному контексту</dd></div></dl>
-          <span className="pk-russia-status">Доступ закрыт</span>
-        </article>)}</div>
-        <div className="pk-plans-context"><Film size={24} aria-hidden="true"/><p><strong>Работа с текстовым контекстом.</strong> Эти подключения получают описание проекта и предыдущий разбор, без исходных видео и аудио. Автоматическая расшифровка речи, субтитры по таймкодам и удаление вдохов недоступны. Лимит описания — 64 КБ.</p></div>
-        <p className="pk-russia-note">Модели и характеристики указаны для сравнения. Эти режимы недоступны пользователям. Стоимость API определяется тарифами Yandex Cloud и не равна стоимости в монетах Покадрово.</p>
-        <a className="pk-plans-link" href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">Каталог и характеристики провайдера</a>
-      </section>
-      <section id="ai-compare" className="pk-plans-comparison" aria-labelledby="ai-compare-title">
-        <span className="pk-plans-eyebrow">Разница по делу</span><h2 id="ai-compare-title">Что меняется с уровнем</h2>
-        <p>Мощность здесь — глубина рабочего процесса. Это не оценка качества в процентах: результат зависит от исходника и задания.</p>
-        <p id="pk-plans-scroll-hint" className="pk-plans-scroll-hint">Таблицу можно прокрутить по горизонтали.</p>
-        <div className="pk-plans-table-wrap" aria-describedby="pk-plans-scroll-hint" tabIndex={0} role="region" aria-label="Сравнение тарифов, таблицу можно прокрутить"><table><caption>Возможности и справочная стоимость уровней ИИ</caption><thead><tr><th scope="col">Возможность</th>{plans.map(plan=><th key={plan.id} scope="col">{plan.name}</th>)}</tr></thead><tbody>{comparison.map(([name,...values])=><tr key={name}><th scope="row">{name}</th>{values.map((value,index)=><td key={index}>{value}</td>)}</tr>)}</tbody></table></div>
-        <div className="pk-plans-context"><Film size={24} aria-hidden="true"/><p><strong>Сейчас в пробе: исходник до 60 секунд и 12 МиБ.</strong> Большое окно контекста у модели не увеличивает лимиты загрузки сайта. Обработка длинных видео, автоматические субтитры по таймкодам и поиск музыки недоступны.</p></div>
-      </section>
-      <section id="ai-coins" className="pk-plans-coins" aria-labelledby="ai-coins-title"><div><span className="pk-plans-eyebrow">Один баланс</span><h2 id="ai-coins-title">Платите за работу ИИ.<br/><em>Монтируйте в своём ритме.</em></h2><p>Монеты Покадрово — единицы оплаты действий в студии. Токены модели — внутренний способ расчёта провайдера; это разные вещи.</p></div><div className="pk-plans-rules">
-        <div><span>01</span><p><strong>Понятная единица</strong>Разбор исходника и создание плана — два отдельных действия. Для уровня «Студия» указана общая стоимость — 15 монет; уровень недоступен.</p></div>
-        <div><span>02</span><p><strong>Подарок на знакомство</strong>В пробном режиме — 3 монеты, один проект и 7 дней с первого запуска. Доступ зависит от подключения и лимитов ИИ-сервиса.</p></div>
-        <div><span>03</span><p><strong>Сначала план, затем правки</strong>ИИ предлагает изменения, вы решаете, какие применить. Работа вручную с таймлайном не расходует ИИ-монеты.</p></div>
-      </div></section>
-      <section className="pk-plans-faq" aria-label="Вопросы о тарифах">
-        <details><summary>Какая нейросеть создаёт план в «Старте»?</summary><p>Gemma указана для визуального анализа. План правок создаёт бесплатная текстовая модель, выбранная в настройках студии. Её доступность проверяется отдельно: у бесплатных сервисов есть ограничения.</p></details>
-        <details><summary>Что умеет Яндекс в «Сценаристе»?</summary><p>YandexGPT 5.1 Pro получает описание проекта, параметры таймлайна и, если он есть, предыдущий разбор исходника. На этой основе предлагает план монтажа и тексты титров. Исходные видео и звук в этом режиме не передаются. Распознавание речи недоступно.</p><p>Уровень недоступен пользователям. На странице указана стоимость для сравнения — 3 монеты за план.</p></details>
-        <details><summary>Можно купить «Автора» или «Студию»?</summary><p>Уровни «Автор» и «Студия» пока недоступны. Купленные монеты расходуются только в подключённых режимах редактора. Характеристики моделей и цены приведены для сравнения; они не меняют стоимость доступных ИИ-запросов.</p></details>
-        <details><summary>Что означает мощность модели?</summary><p>Мощность описывает работу модели с контекстом и глубину обработки задания. Это характеристика модели, а не гарантия результата. Доступность каждого уровня указана на его карточке.</p></details>
-        <details><summary>Откуда взяты характеристики моделей?</summary><p>Из документации провайдеров, проверенной 22 октября 2026 года. Это возможности самих моделей; доступные действия Покадрово описаны отдельно выше.</p><div className="pk-plans-sources"><a href="https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/generation/models" target="_blank" rel="noopener noreferrer">YandexGPT 5.1 Pro</a><a href="https://openrouter.ai/google/gemma-4-26b-a4b-it:free" target="_blank" rel="noopener noreferrer">Gemma 4</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-omni-flash" target="_blank" rel="noopener noreferrer">Qwen Omni</a><a href="https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max" target="_blank" rel="noopener noreferrer">Qwen Max</a></div></details>
-      </section>
-      <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">Начните с материала</span><h2>Есть кадры?<br/>Откройте студию.</h2></div><button type="button" onClick={onStart}>Открыть студию</button></section>
-    </main>
-    <footer className="pk-plans-footer"><a href="/" onClick={event=>{event.preventDefault();onHome();}}>На главную</a><span>© {new Date().getFullYear()} Покадрово</span><a href="/legal/terms">Соглашение</a><a href="/legal/payments">Оплата и возврат</a><a href="/legal/contacts">Реквизиты</a><a href="#plans-main">Тарифы — мощность — нейросети</a></footer>
-  </div>;
+export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
+ React.useEffect(()=>{const previous=document.title;document.title='Монтаж с ИИ | Покадрово';return()=>{document.title=previous;};},[]);
+ return <div className="pk-plans" data-theme={theme}>
+  <a className="pk-plans-skip" href="#plans-main">К содержимому</a>
+  <header className="pk-plans-header"><a href="/" className="pk-plans-brand" onClick={e=>{e.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a><nav aria-label="Навигация по возможностям ИИ"><a href="#ai-workflow">Как это работает</a><a href="#ai-source">Исходники</a></nav><button type="button" className="pk-plans-theme" onClick={onTheme} aria-label={theme==='light'?'Тёмная тема':'Светлая тема'}>{theme==='light'?<Moon size={20}/>:<Sun size={20}/>}</button></header>
+  <main id="plans-main" tabIndex={-1}>
+   <section className="pk-plans-hero"><span className="pk-plans-eyebrow">ПОКАДРОВО AI · QWEN</span><h1>От материала —<br/><em>к понятному монтажу.</em></h1><p>Опишите идею, разберите выбранный исходник и получите план правок. Вы решаете, какие изменения войдут в ролик.</p><button className="pk-ai-primary" type="button" onClick={onStart}>Открыть студию</button></section>
+   <section id="ai-workflow" className="pk-ai-workflow" aria-label="Три шага работы с ИИ">{[
+    {Icon:Film,title:'Добавьте материал',text:'Загрузите видео в проект. Выберите исходник для разбора и подтвердите его передачу в Qwen.'},
+    {Icon:AudioLines,title:'Задайте направление',text:'Опишите смысл, темп и нужные изменения. Qwen может разобрать изображение, речь и звуки выбранного файла.'},
+    {Icon:Check,title:'Проверьте правки',text:'Посмотрите предложенный план и примените его в редакторе. Все изменения можно отменить одним действием.'}
+   ].map(({Icon,title,text},i)=><article className="pk-plan-card" key={title}><div><Icon size={27} aria-hidden="true"/><span>0{i+1}</span></div><h2>{title}</h2><p>{text}</p></article>)}</section>
+   <section id="ai-source" className="pk-ai-source"><div><span className="pk-plans-eyebrow">ВАШИ ИСХОДНИКИ</span><h2>Начните с короткой истории.</h2><p>Для разбора сейчас подходит отдельный MP4 до 60 секунд и 7 МБ. Поддерживаются короткие проекты 9:16 и 16:9.</p><p>Обрезка на таймлайне не уменьшает отправляемый файл. Доступность подключения и лимиты показаны в панели ИИ.</p></div><aside><h3>Вы контролируете результат</h3><p>План по описанию получает структуру проекта и предыдущий разбор. Для понимания самого видео нужно отдельно отправить исходник с согласием.</p><p>Таймкоды и распознанные слова проверяйте по записи. Правки применяются после вашего подтверждения.</p></aside></section>
+   <section className="pk-plans-cta"><div><span className="pk-plans-eyebrow">ЕСТЬ КАДРЫ?</span><h2>Соберите свою историю.</h2></div><button type="button" onClick={onStart}>Начать монтаж</button></section>
+  </main><footer className="pk-plans-footer"><a href="/" onClick={e=>{e.preventDefault();onHome();}}>На главную</a><span>Покадрово · Монтаж с ИИ</span><a href="/legal/privacy">Политика обработки данных</a></footer>
+ </div>;
 }

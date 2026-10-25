@@ -14,7 +14,7 @@ const origin='https://pokadrovo.test';
 async function fixture(){
  const dir=mkdtempSync(join(tmpdir(),'pk-billing-'));mkdirSync(join(dir,'dist'));writeFileSync(join(dir,'dist/index.html'),'<!doctype html>');
  let clock=Date.now(),failure=false,calls=0;
- const options={origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),accountsEnabled:true,siteAgentAutoStart:false,now:()=>clock,aiFetch:async()=>{calls++;return failure?new Response('failure',{status:502}):new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({analysis:null,summary:'Сохранить формат.',operations:[{type:'ratio',value:'9:16'}]})}}]}),{headers:{'Content-Type':'application/json'}});}};
+ const options={ singleAi:false,origin,dataDir:join(dir,'private'),dist:join(dir,'dist'),accountsEnabled:true,siteAgentAutoStart:false,now:()=>clock,aiFetch:async()=>{calls++;return failure?new Response('failure',{status:502}):new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({analysis:null,summary:'Сохранить формат.',operations:[{type:'ratio',value:'9:16'}]})}}]}),{headers:{'Content-Type':'application/json'}});}};
  let app=createApp(options);prepareLegal(app);const password=token();await provisionOwner(app.store,'billing_owner',password);
  async function listen(){app.server.listen(0,'127.0.0.1');await once(app.server,'listening');}await listen();
  function client(){const jar=new Map();let csrf='',account='';const send=(path,method='GET',data,headers={})=>new Promise((resolve,reject)=>{
@@ -32,7 +32,7 @@ async function fixture(){
  async function order(user,pkg='start',more={}){const c=await user('/api/billing/catalog');return user('/api/billing/orders','POST',{packageId:pkg,requestId:token(),version:c.data.version,acceptedTerms:true,...more});}
  return {get app(){return app;},owner,guest,user,save,verified,live,order,postResult,callback,keys,password,time:()=>clock,advance:ms=>clock+=ms,fail:value=>failure=value,get calls(){return calls;},
   configureAi:()=>owner('/api/admin/settings','PUT',{provider:'qwen',model:OMNI_MODEL,endpoint:'https://test-workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',apiKey:token(),aiEnabled:true,trialEnabled:false,analyticsEnabled:false,password}),
-  restart:async()=>{await new Promise(r=>app.server.close(r));app=createApp(options);prepareLegal(app);await listen();},
+  restart:async(overrides={})=>{await new Promise(r=>app.server.close(r));Object.assign(options,overrides);app=createApp(options);prepareLegal(app);await listen();},
   close:async()=>{await new Promise(r=>app.server.close(r));rmSync(dir,{recursive:true,force:true});}};
 }
 
@@ -176,5 +176,16 @@ test('refund after consumption creates debt, blocks paid spending and still ackn
   assert.equal(f.app.store.get('SELECT coins FROM coin_wallets WHERE account_id=?',u.id).coins,-1);
   const calls=f.calls;assert.equal((await u.send('/api/ai/edit-plan','POST',{request:aiRequest()})).status,503);assert.equal(f.calls,calls);
   await f.postResult(o.id);assert.equal(f.app.store.get('SELECT coins FROM coin_wallets WHERE account_id=?',u.id).coins,-1);
+ }finally{await f.close();}
+});
+
+test('pausing tariffs preserves valid issued payment callbacks and existing balances',async()=>{
+ const f=await fixture();try{
+  await f.live();const u=await f.user(),o=(await f.order(u.send)).data;
+  await f.restart({singleAi:true});const catalog=(await u.send('/api/billing/catalog')).data;
+  assert.equal(catalog.available,false);assert.deepEqual(catalog.packages,[]);assert.equal((await f.order(u.send)).status,503);
+  assert.equal((await f.postResult(o.id)).status,200);assert.equal((await f.postResult(o.id)).status,200);
+  assert.equal(f.app.store.get('SELECT coins FROM coin_wallets WHERE account_id=?',u.id).coins,100);
+  assert.equal(f.app.store.get('SELECT count(*) n FROM coin_ledger').n,1);
  }finally{await f.close();}
 });

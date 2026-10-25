@@ -32,7 +32,7 @@ function response(value = { analysis: null, summary: 'Изменить форм�
 async function fixture(aiFetch) {
   let clock = Date.now();
   const dir = mkdtempSync(join(tmpdir(), 'pk-ai-')); mkdirSync(join(dir, 'dist')); writeFileSync(join(dir, 'dist/index.html'), '<!doctype html>');
-  const options = { now: () => clock, accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(dir, 'private'), dist: join(dir, 'dist'), aiFetch };
+  const options = { singleAi:false, now: () => clock, accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(dir, 'private'), dist: join(dir, 'dist'), aiFetch };
   let app = createApp(options);prepareLegal(app);
   const password = token(); await provisionOwner(app.store, 'test_owner', password);
   app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');

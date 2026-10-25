@@ -18,6 +18,7 @@ const DAY = 86400000;
 const isLoopback = host => ['localhost', '127.0.0.1', '[::1]'].includes(host);
 
 export function createApp(options = {}) {
+  const singleAi = options.singleAi ?? true;
   const accountsEnabled = options.accountsEnabled ?? process.env.POKADROVO_ACCOUNTS_ENABLED === '1';
   const guestEditingEnabled = !accountsEnabled || (options.guestEditingEnabled ?? process.env.POKADROVO_GUEST_EDITING === '1');
   const socialLoginEnabled = accountsEnabled && (options.socialLoginEnabled ?? process.env.POKADROVO_SOCIAL_LOGIN_ENABLED === '1');
@@ -100,7 +101,7 @@ export function createApp(options = {}) {
       store.audit('login', 'ok', now()); store.db.exec('COMMIT');
     } catch (e) { store.db.exec('ROLLBACK'); throw e; }
     setCookie(res, sessionName, sid, 12 * 3600);
-    return { login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled, socialLoginEnabled };
+    return { singleAi, login: o.login, csrf: csrfToken, totpEnabled: !!o.totp, accountsEnabled, socialLoginEnabled };
   }
 let accounts;
   const legal = createLegal({store,now,origin:origin.origin,session:(...args)=>accounts.session(...args),sameOrigin});
@@ -112,11 +113,11 @@ let accounts;
     return /^[\w-]{43}$/.test(id || '') && equal(signature, store.hmac('visitor:' + id)) ? id : null;
   }
   const databaseCare=createDatabaseCare({store,now,autoStart:options.backupsAutoStart??(secure&&accountsEnabled)});
-  const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin,legal});
-  const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch });
+  const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin,legal,purchasesEnabled:!singleAi});
+  const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch, singleAi });
   const siteAgent = createSiteAgent({ store, now, origin: origin.origin, session: accounts.session, sameOrigin,
     request: options.siteAgentFetch, autoStart: options.siteAgentAutoStart !== false, suggestIdeas: ai.suggestSiteIdeas,
-    facts: () => ({ aiConfigured: ai.openrouter.state().configured && ai.openrouter.state().enabled, quota: ai.openrouter.quota(),
+    facts: () => ({ aiConfigured: !singleAi && ai.openrouter.state().configured && ai.openrouter.state().enabled, quota: ai.openrouter.quota(),
       aiHour: store.get("SELECT count(*) AS attempts,coalesce(sum(result IN ('failed','interrupted')),0) AS failed FROM ai_runs WHERE at>=? AND at<=?", now()-3600000, now()) }) });
   function overview(days) {
     const to = new Date(now()).toISOString().slice(0, 10), from = new Date(now() - (days - 1) * DAY).toISOString().slice(0, 10);
@@ -160,7 +161,7 @@ let accounts;
       if(req.method==='GET'&&path==='/api/admin/billing/orders')return json(res,200,{items:billing.orders()});
       if(req.method==='POST'&&path==='/api/admin/billing/test-order')return json(res,201,billing.testOrder({key:'owner',owner:true},await body(req,4096)));
       if(req.method==='POST'&&path==='/api/admin/billing/refunds'){const data=await body(req,4096);await reauth(req,data);return json(res,200,billing.reconcileRefund(data));}
-      if (req.method === 'GET' && path === '/api/admin/session') return json(res, 200, { login: owner().login, csrf: s.csrf, totpEnabled: !!owner().totp, expires: s.expires, idleMinutes: 30, accountsEnabled, socialLoginEnabled });
+      if (req.method === 'GET' && path === '/api/admin/session') return json(res, 200, { singleAi, login: owner().login, csrf: s.csrf, totpEnabled: !!owner().totp, expires: s.expires, idleMinutes: 30, accountsEnabled, socialLoginEnabled });
       if (req.method === 'POST' && path === '/api/admin/logout') {
         store.run('DELETE FROM sessions WHERE id=?', s.id); store.audit('logout', 'ok', now()); setCookie(res, sessionName, '', 0); return json(res, 200, { ok: true });
       }
@@ -281,6 +282,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     if (path.startsWith('/api/')) deny(404, 'Метод не найден.');
     if (!['GET', 'HEAD'].includes(req.method)) deny(405, 'Метод не поддерживается.');
     let pagePath; try { pagePath = decodeURIComponent(path); } catch { deny(400, 'Некорректный адрес.'); }
+    if(pagePath==='/pricing'||pagePath==='/pricing/'){res.writeHead(308,{Location:'/ai','Cache-Control':'no-store'});res.end();return;}
     if (pagePath === '/admin' || pagePath.startsWith('/admin/')) deny(404, 'Не найдено.');
     if (pagePath === OWNER_PATH || pagePath === OWNER_PATH + '/') {
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
@@ -293,7 +295,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
     const adminAssets = { '/owner-assets/admin.css': ['admin.css', 'text/css; charset=utf-8'], '/owner-assets/admin.js': ['admin.js', 'text/javascript; charset=utf-8'] };
     if (adminAssets[path]) return sendFile(res, join(here, 'public', adminAssets[path][0]), adminAssets[path][1], req.method);
     if (accountsEnabled && (pagePath === '/profile' || !guestEditingEnabled && ['/studio', '/projects'].includes(pagePath)) && !accounts.session(req, false)) { res.writeHead(303, { Location: '/?auth=login' }); res.end(); return; }
-    let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile','/projects','/pricing','/pricing/'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
+    let decoded; try { decoded = decodeURIComponent(path); if (['/studio','/profile','/projects','/ai','/ai/'].includes(decoded)) decoded = '/'; } catch { deny(400, 'Некорректный адрес.'); }
     if(decoded==='/server'||decoded.startsWith('/server/'))deny(404,'Не найдено.');
     if (decoded.includes('\\') || decoded.includes('\0') || decoded.split('/').some(s => s.startsWith('.'))) deny(404, 'Не найдено.');
     const target = resolve(dist, '.' + (decoded === '/' ? '/index.html' : decoded));

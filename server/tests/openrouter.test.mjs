@@ -56,7 +56,7 @@ test('denied, redirected, malformed, oversized and TLS catalog responses fail cl
 async function fixture(upstream) {
   let clock = Date.UTC(2026, 9, 20, 10); const calls = [];
   const dir = mkdtempSync(join(tmpdir(), 'pk-router-')); mkdirSync(join(dir, 'dist')); writeFileSync(join(dir, 'dist/index.html'), '<!doctype html>');
-  const options = { now: () => clock, accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(dir, 'private'), dist: join(dir, 'dist'),
+  const options = { singleAi:false, now: () => clock, accountsEnabled: true, origin: 'http://localhost:5173', dataDir: join(dir, 'private'), dist: join(dir, 'dist'),
     aiFetch: async (url, init) => { calls.push([url, init]); return upstream ? upstream(url, init) : init.method === 'GET' ? catalog(url) : completion(JSON.parse(init.body).model === FREE_MODELS.deepseek ? null : visual()); } };
   let app = createApp(options);prepareLegal(app); const password = token(); await provisionOwner(app.store, 'router_owner', password);
   app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');

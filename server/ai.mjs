@@ -5,7 +5,7 @@ import { createYandex } from './yandex.mjs';
 import { createOpenRouter } from './openrouter.mjs';
 import { aiAnalytics } from './ai-usage.mjs';
 
-export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 12 * 1024 * 1024, dailyRequests: 12 });
+export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
 export const TRIAL_RULES = Object.freeze({ projects: 1, requests: coinPricing.trialCoins / coinPricing.reelsRequestCoins, days: 7 });
 const SERVICES = ['source-analysis', 'deepseek-edit', 'reels-trial', 'yandex-edit'];
@@ -119,7 +119,7 @@ export function validateAiMedia(input, request) {
   if (!plain(input) || !idOk(input.clipId) || !idOk(input.assetId) ||
       !['video/mp4', 'audio/wav'].includes(input.mime) || typeof input.data !== 'string' ||
       input.data.length > Math.ceil(AI_LIMITS.maxBytes / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(input.data) || input.data.length % 4)
-    deny(400, 'Некорректный медиафайл. Принимаются MP4 и WAV до 12 МБ.');
+    deny(400, 'Некорректный медиафайл. Принимаются MP4 и WAV до 7 МБ.');
   const clip = [...request.project.clips, ...request.project.audio].find(c => c.id === input.clipId && c.assetId === input.assetId);
   if (!clip || (input.mime === 'video/mp4' ? clip.kind !== 'video' : clip.kind !== 'audio')) deny(400, 'Выбранный файл отсутствует в проекте.');
   const bytes = Buffer.from(input.data, 'base64');
@@ -184,7 +184,8 @@ async function readProviderJson(response) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { deny(502, 'Провайдер вернул повреждённый JSON.'); }
 }
 
-export function createAi({ store, now, settings, session, sameOrigin, rateKey, billing, request = globalThis.fetch }) {
+export function createAi({ store, now, settings, session, sameOrigin, rateKey, billing, request = globalThis.fetch, singleAi = true }) {
+  const activeServices = singleAi ? ['reels-trial'] : SERVICES;
   let active = false, closing = false;
   const yandex = createYandex({ store, now });
   store.db.exec(`CREATE TABLE IF NOT EXISTS ai_runs(request_id TEXT PRIMARY KEY, at INTEGER NOT NULL, result TEXT NOT NULL, model TEXT NOT NULL, media_seconds REAL, input_tokens INTEGER, output_tokens INTEGER);
@@ -218,7 +219,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     const c = settings(), endpoint = meta('ai_endpoint'), enabled = meta('ai_enabled') === '1';
     return { c, endpoint, enabled, configured: c.provider === 'qwen' && c.model === OMNI_MODEL && !!c.secret && !!endpoint, verified: meta('ai_verified') === String(c.updated) && c.updated > 0 };
   }
-  function adminState() { const s = state(); return { endpoint: s.endpoint, aiEnabled: s.enabled, configured: s.configured, connected: s.configured && s.enabled && s.verified, verified: s.verified, limits: AI_LIMITS, trialEnabled: trialEnabled(), trialRules: TRIAL_RULES }; }
+  function adminState() { const s = state(); return { singleAi, endpoint: s.endpoint, aiEnabled: s.enabled, configured: s.configured, connected: s.configured && s.enabled && s.verified, verified: s.verified, limits: AI_LIMITS, trialEnabled: trialEnabled(), trialRules: TRIAL_RULES }; }
   function saveConfig(data, next) {
     if (next.provider === 'qwen' && next.model !== OMNI_MODEL) deny(400, `Для пробного анализа выберите ${OMNI_MODEL}.`);
     const endpoint = data.endpoint === undefined ? meta('ai_endpoint') : data.endpoint;
@@ -244,6 +245,8 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     }
     if (service === 'yandex-edit') return { available: owner && y.configured && y.enabled,
       reason: !owner ? 'Этот режим пока не входит в доступные тарифы.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите подключение Яндекса.' : `${yandex.adminState().modelName}: план по заданию и предыдущему разбору. Без списаний монет; расходы API несёт сайт.`, requiresMedia: false };
+    if(singleAi)return {available:q.configured&&q.enabled&&(owner||paid||trialEnabled()&&trial.remaining>0),requiresMedia:!owner&&!paid&&trial.requiresMedia,
+      reason:!q.configured||!q.enabled?'Qwen не подключён. Настройки доступны администратору.':owner?'Qwen: видео, речь и звук. Исходник до 60 секунд и 7 МБ, проект 9:16 или 16:9.':!paid&&!trialEnabled()?'Доступ к ИИ пока не открыт.':!paid&&trial.expired?'Пробный доступ закончился.':!paid&&!trial.remaining?'Пробные запросы использованы.':`Qwen: один проект до 60 секунд. ${paid?'Доступные запросы учитываются сервером.':'Осталось пробных запросов: '+trial.remaining+'.'}`};
     return { available: q.configured && q.enabled && (owner || paid || trialEnabled() && trial.remaining > 0), requiresMedia: !paid && trial.requiresMedia,
       reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
         : !q.configured || !q.enabled || !paid && !trialEnabled() ? 'Бесплатная проба Reels недоступна.' : !paid && trial.expired ? 'Срок бесплатной пробы закончился.' : !paid && !trial.remaining ? 'Подарочные монеты использованы. Проверьте доступность пакетов в балансе.' : paid ? `Баланс: ${coinState(auth,service).remainingCoins} монет. Успешный запрос — ${coinPricing.reelsRequestCoins} монета. Ограничения длины и квоты провайдера сохраняются.` : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Успешный запрос — ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
@@ -255,9 +258,9 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     if(!giftEligible&&(billing?.balance(auth.key)||0)>=coinPricing.reelsRequestCoins)return billing.reserve(auth.key,r.requestId,coinPricing.reelsRequestCoins);
     if (!giftEnabled) deny(503, 'Бесплатная проба недоступна.');
     const old = trialRow(auth);
-    if (old?.project_id && old.project_id !== r.projectId) deny(402, 'Бесплатная проба действует для одного проекта Reels. Откройте начатый проект.');
+    if (old?.project_id && old.project_id !== r.projectId) deny(402, singleAi?'Пробный доступ действует для одного проекта. Откройте начатый проект.':'Бесплатная проба действует для одного проекта Reels. Откройте начатый проект.');
     if (old && old.expires <= now()) deny(402, 'Срок бесплатной пробы закончился.');
-    if (old && old.used >= TRIAL_RULES.requests) deny(402, 'Подарочные монеты использованы. Проверьте доступность пакетов в балансе.');
+    if (old && old.used >= TRIAL_RULES.requests) deny(402, singleAi?'Пробные запросы использованы.':'Подарочные монеты использованы. Проверьте доступность пакетов в балансе.');
     if (!old?.media_analyzed && (!media || media.mime !== 'video/mp4')) deny(422, 'Начните пробу кнопкой анализа MP4-видео.');
     const peer = rateKey ? rateKey(auth.req) : store.hmac(auth.req.socket.remoteAddress || 'local');
     if (!store.consume('ai-trial-ip:' + peer + ':' + new Date(now()).toISOString().slice(0, 10), routerService(service) ? 30 : 6, 86400000, now())) deny(429, 'Дневной лимит бесплатных запросов для этого подключения исчерпан.');
@@ -286,6 +289,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     if (req.method === 'GET' && path === '/api/ai/status') {
       const auth = session(req, false), service = url.searchParams.get('service') || 'reels-trial';
       if (!SERVICES.includes(service)) deny(400, 'Неизвестный режим ИИ.');
+      if (!activeServices.includes(service)) deny(404, 'Этот режим ИИ отключён. Используется Qwen.');
       if (req.headers['x-pk-account'] && !equal(req.headers['x-pk-account'], auth?.key || '')) deny(409, 'Аккаунт изменился. Обновите страницу.');
       const q = state(), selected = modeStatus(auth, service), y = yandex.state(), o = openrouter.state();
       const configured = routerService(service) ? o.configured : service === 'yandex-edit' ? y.configured : q.configured;
@@ -294,7 +298,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         owner: !!auth?.owner, configured: !!auth?.owner && configured,
         verified: !!auth?.owner && verified, model: auth?.owner ? routerService(service) ? openrouter.model(o, service) : service === 'yandex-edit' ? y.c.model : OMNI_MODEL : undefined,
         limits: AI_LIMITS, trial: trialState(auth), billing: coinState(auth, service), tariffConfigured: !!billing?.catalog().available, paymentsEnabled: !!billing?.catalog().available,
-        modes: SERVICES.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника', 'deepseek-edit': 'План монтажа', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'AI Studio · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
+        modes: activeServices.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника', 'deepseek-edit': 'План монтажа', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'AI Studio · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
     }
     if (req.method !== 'POST' || path !== '/api/ai/edit-plan') return false;
     const auth = session(req); sameOrigin(req);
@@ -310,6 +314,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     try {
       const data = await body(req, MAX_BODY), service = data.service || 'reels-trial';
       if (!SERVICES.includes(service)) deny(400, 'Неизвестный режим ИИ.');
+      if (!activeServices.includes(service)) deny(404, 'Этот режим ИИ отключён. Используется Qwen.');
       // Price/role/provider fields from the browser cannot unlock an undefined paid tariff.
       if (service === 'yandex-edit' && !auth.owner) deny(402, 'Этот режим пока не входит в доступные тарифы.');
       const r = validateAiRequest(data.request), q = state(), y = yandex.state(), o = openrouter.state();
@@ -317,9 +322,9 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         validateFreeProject(r.project);
         if (!o.configured || !o.enabled || !auth.owner && !o.trialEnabled && !(billing?.balance(auth.key)>0)) deny(503, 'Настройте и включите OpenRouter в админ-панели.');
         if (service === 'deepseek-edit' && data.media) deny(422, 'План получает только текст и предыдущий анализ, без исходного файла.');
-        if (service === 'source-analysis' && (!data.media || data.media.mime !== 'video/mp4')) deny(422, 'Для визуального разбора выберите MP4 до 60 секунд и 12 МБ.');
+        if (service === 'source-analysis' && (!data.media || data.media.mime !== 'video/mp4')) deny(422, 'Для визуального разбора выберите MP4 до 60 секунд и 7 МБ.');
       } else if (service === 'reels-trial') {
-        validateReelsProject(r.project);
+        if(singleAi)validateFreeProject(r.project);else validateReelsProject(r.project);
         if (!q.configured || !q.enabled) deny(503, 'Сначала настройте и включите Qwen Omni в админ-панели.');
         validateOmniEndpoint(q.endpoint);
       } else {
@@ -346,7 +351,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         const content = [{ type: 'text', text: JSON.stringify(input) }];
         if (media) content.push(media.mime === 'video/mp4' ? { type: 'video_url', video_url: { url: 'data:;base64,' + media.data } } : { type: 'input_audio', input_audio: { data: 'data:audio/wav;base64,' + media.data, format: 'wav' } });
         invocation = { url: q.endpoint + '/chat/completions', headers: { Authorization: 'Bearer ' + store.unseal(q.c.secret), 'Content-Type': 'application/json', Accept: 'application/json' },
-          payload: { model: q.c.model, messages: [{ role: 'system', content: SYSTEM + '\nЭто Reels: сохраняй формат 9:16 и итоговую длительность не более 60 секунд.' }, { role: 'user', content }],
+          payload: { model: q.c.model, messages: [{ role: 'system', content: SYSTEM + (singleAi?'\nСохраняй формат проекта 9:16 или 16:9 и итоговую длительность не более 60 секунд.':'\nЭто Reels: сохраняй формат 9:16 и итоговую длительность не более 60 секунд.') }, { role: 'user', content }],
             modalities: ['text'], reasoning_effort: 'none', response_format: { type: 'json_object' }, stream: false, max_tokens: 4096 } };
       }
       store.db.exec('BEGIN IMMEDIATE');
@@ -392,7 +397,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       let plan = null, planError = '';
       try {
         plan = service === 'source-analysis' ? null : validatePlan(value, r);
-        if (freeService(service) && plan?.operations.some(op => op.type === 'ratio' && !(routerService(service) ? ['9:16', '16:9'].includes(op.value) : op.value === '9:16') || op.type === 'caption' && op.to > 60)) deny(502, 'План вышел за ограничения Reels.');
+        if (freeService(service) && plan?.operations.some(op => op.type === 'ratio' && !(singleAi||routerService(service) ? ['9:16', '16:9'].includes(op.value) : op.value === '9:16') || op.type === 'caption' && op.to > 60)) deny(502, 'План вышел за ограничения короткого ролика.');
       } catch (error) { if (!analysis) throw error; plan = null; planError = 'Анализ готов, но предложенные правки не прошли проверку. Монтаж не изменён.'; }
       if (controller.signal.aborted) deny(504, 'Запрос отменён. Монтаж не изменён.');
       const fresh = session(req), current = settings();
@@ -420,6 +425,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     return true;
   }
   async function suggestSiteIdeas(input, signal) {
+    if(singleAi)return {status:'not-configured',ideas:[]};
     const s = openrouter.state(), start = Math.floor(now() / 86400000) * 86400000;
     if (closing || !s.configured || !s.enabled) return { status: 'not-configured', ideas: [] };
     if (active) return { status: 'busy', ideas: [] };

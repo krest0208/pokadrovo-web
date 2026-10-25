@@ -37,7 +37,7 @@ async function fixture(options = {}) {
   const origin = options.origin || 'https://pokadrovo.ru', dir = mkdtempSync(join(tmpdir(), 'pk-agent-'));
   mkdirSync(join(dir, 'dist')); writeFileSync(join(dir, 'dist/index.html'), home());
   if (options.realSite) { mkdirSync(join(dir,'dist/assets')); writeFileSync(join(dir,'dist/assets/index-123.js'),'console.log(1)'); writeFileSync(join(dir,'dist/assets/index-123.css'),'body{}'); writeFileSync(join(dir,'dist/favicon.svg'),'<svg xmlns="http://www.w3.org/2000/svg"/>'); }
-  const config = { now: () => clock, origin, accountsEnabled: true, dataDir: join(dir, 'private'), dist: join(dir, 'dist'), siteAgentAutoStart: false,
+  const config = { singleAi:false, now: () => clock, origin, accountsEnabled: true, dataDir: join(dir, 'private'), dist: join(dir, 'dist'), siteAgentAutoStart: false,
     siteAgentFetch: async (url, init) => { calls.push([url, init]); return options.realSite ? globalThis.fetch(url, init) : options.siteFetch ? options.siteFetch(url, init) : publicResponse(url, init); },
     aiFetch: async (url, init) => { aiCalls.push([url, init]); return options.aiFetch ? options.aiFetch(url, init) : aiResponse(url, init); } };
   let app = createApp(config);prepareLegal(app); const password = token(); await provisionOwner(app.store, 'agent_owner', password);

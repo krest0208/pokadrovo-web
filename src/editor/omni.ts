@@ -10,10 +10,10 @@ export interface OmniResult {plan:unknown|null;analysis:MediaAnalysis|null;summa
 /** Credentials and provider URLs never enter the browser. Context stays in this editor session. */
 export class OmniAiProvider implements AiProvider {
  readonly name='Покадрово AI';
- readonly modes=[{id:'source-analysis',label:'Разбор исходника'},{id:'deepseek-edit',label:'План монтажа'},{id:'reels-trial',label:'Qwen Omni · видео и звук'},{id:'yandex-edit',label:'AI Studio · план монтажа'}] as const;
- constructor(public service:AiService='source-analysis'){}
- get supportsMedia(){return this.service==='reels-trial'||this.service==='source-analysis';}
- setService(service:AiService){this.service=service;}
+ readonly modes=[{id:'reels-trial',label:'Qwen · видео, речь и звук'}] as const;
+ constructor(public service:AiService='reels-trial'){if(service!=='reels-trial')throw Error('Используется только Qwen.');}
+ get supportsMedia(){return true;}
+ setService(service:AiService){if(service!=='reels-trial')throw Error('Этот режим отключён.');this.service=service;}
  private context:{projectId:string;analysis:MediaAnalysis}|null=null;
  async getStatus(signal?:AbortSignal){
   const r=await fetch('/api/ai/status?service='+this.service,{credentials:'same-origin',redirect:'error',signal,headers:{Accept:'application/json'}});

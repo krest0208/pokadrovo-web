@@ -22,7 +22,7 @@ async function formBody(req){
  const data={},keys=new Set();for(const [key,value] of new URLSearchParams(Buffer.concat(chunks).toString('utf8'))){const lower=key.toLowerCase();if(keys.has(lower))deny(400,'Повторяющиеся параметры.');keys.add(lower);data[lower]=value;if(lower.startsWith('shp_')&&!['Shp_order','Shp_test'].includes(key))deny(400,'Неизвестные параметры подписи.');}return data;
 }
 
-export function createBilling({store,now,origin,session,sameOrigin,legal}){
+export function createBilling({store,now,origin,session,sameOrigin,legal,purchasesEnabled=true}){
  store.db.exec(`CREATE TABLE IF NOT EXISTS coin_wallets(account_id TEXT PRIMARY KEY,coins INTEGER NOT NULL DEFAULT 0 CHECK(coins BETWEEN -1000000000 AND 1000000000));
  CREATE TABLE IF NOT EXISTS coin_ledger(id INTEGER PRIMARY KEY,account_id TEXT NOT NULL,delta INTEGER NOT NULL,reference TEXT UNIQUE NOT NULL,at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS payment_orders(id INTEGER PRIMARY KEY AUTOINCREMENT,account_id TEXT NOT NULL,request_key TEXT NOT NULL,package_id TEXT NOT NULL,coins INTEGER NOT NULL,amount_minor INTEGER NOT NULL,is_test INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created INTEGER NOT NULL,paid_at INTEGER,nonce TEXT NOT NULL,secret2 TEXT NOT NULL,algorithm TEXT NOT NULL,form_fields TEXT NOT NULL,terms_version TEXT NOT NULL,refunded_minor INTEGER NOT NULL DEFAULT 0,revoked_coins INTEGER NOT NULL DEFAULT 0,UNIQUE(account_id,request_key));
@@ -34,7 +34,7 @@ export function createBilling({store,now,origin,session,sameOrigin,legal}){
  function config(){const row=store.get("SELECT value FROM meta WHERE key='robokassa_config'");return row?{...defaults,...JSON.parse(row.value)}:{...defaults};}
  const configured=(c,test)=>!!(c.merchantLogin&&c[test?'testPassword1':'password1']&&c[test?'testPassword2':'password2']);
  const urls={result:origin+'/api/billing/robokassa/result',success:origin+'/api/billing/robokassa/success',fail:origin+'/api/billing/robokassa/fail'};
- function canSell(c){return legal.salesReady()&&c.offerUrl===origin+'/legal/payments'&&c.termsVersion===legal.state().version&&c.enabled&&c.testVerified&&c.approved&&c.fiscalReady&&c.legalReady&&!!c.offerUrl&&!!c.termsVersion&&configured(c,false)&&packageList.every(p=>Number.isSafeInteger(c.prices[p.id])&&c.prices[p.id]>0);}
+ function canSell(c){return purchasesEnabled&&legal.salesReady()&&c.offerUrl===origin+'/legal/payments'&&c.termsVersion===legal.state().version&&c.enabled&&c.testVerified&&c.approved&&c.fiscalReady&&c.legalReady&&!!c.offerUrl&&!!c.termsVersion&&configured(c,false)&&packageList.every(p=>Number.isSafeInteger(c.prices[p.id])&&c.prices[p.id]>0);}
  function balance(account){return account?store.get('SELECT coins FROM coin_wallets WHERE account_id=?',account)?.coins||0:0;}
  // Caller owns the SQLite transaction. Every credit, debit and refund has an immutable unique reference.
  function change(account,delta,reference){
@@ -45,7 +45,7 @@ export function createBilling({store,now,origin,session,sameOrigin,legal}){
  }
  function reserve(account,requestId,cost){if(balance(account)<cost)deny(402,'Недостаточно монет.');change(account,-cost,'ai:'+requestId);return {kind:'paid',accountId:account,requestId,cost};}
  function refund(reservation){if(reservation?.kind==='paid')change(reservation.accountId,reservation.cost,'ai-refund:'+reservation.requestId);}
- function catalog(){const c=config();return {available:canSell(c),provider:'robokassa',version:c.revision,offerUrl:c.offerUrl,termsVersion:c.termsVersion,packages:packageList.map(p=>({...p,priceRub:c.prices[p.id]?amount(c.prices[p.id]):null}))};}
+ function catalog(){const c=config();return {available:canSell(c),provider:'robokassa',version:c.revision,offerUrl:c.offerUrl,termsVersion:c.termsVersion,packages:purchasesEnabled?packageList.map(p=>({...p,priceRub:c.prices[p.id]?amount(c.prices[p.id]):null})):[]};}
  function adminState(){const c=config();return {merchantLogin:c.merchantLogin,algorithm:c.algorithm,enabled:c.enabled,available:canSell(c),approved:c.approved,fiscalReady:c.fiscalReady,legalReady:c.legalReady,offerUrl:c.offerUrl,termsVersion:c.termsVersion,tax:c.tax,paymentMethod:c.paymentMethod,paymentObject:c.paymentObject,prices:Object.fromEntries(packageList.map(p=>[p.id,c.prices[p.id]?amount(c.prices[p.id]):''])),testConfigured:configured(c,true),liveConfigured:configured(c,false),testVerified:!!c.testVerified,urls};}
  function save(data){
   const old=config(),c={...old};
@@ -65,6 +65,7 @@ export function createBilling({store,now,origin,session,sameOrigin,legal}){
  }
  const publicOrder=r=>({id:r.id,packageId:r.package_id,coins:r.coins,priceRub:amount(r.amount_minor),test:!!r.is_test,status:r.status,created:r.created,paidAt:r.paid_at,refundedRub:amount(r.refunded_minor)});
  function makeOrder(auth,data,test=false){
+  if(!purchasesEnabled)deny(503,'Покупка монет временно отключена.');
   const c=config(),p=packageList.find(p=>p.id===data.packageId);if(!p||typeof data.requestId!=='string'||!/^[-\w]{16,100}$/.test(data.requestId))deny(400,'Некорректный заказ.');
   if(Object.keys(data).some(k=>!['packageId','requestId','version','acceptedTerms'].includes(k)))deny(400,'Цена и получатель задаются сервером.');
   if(test){if(!auth.owner)deny(403,'Тест доступен администратору.');if(!configured(c,true))deny(503,'Сначала сохраните магазин и тестовые пароли.');}
