@@ -308,7 +308,7 @@ const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().l
       const day = new Date(now()).toISOString().slice(0, 10);
       store.run('INSERT INTO page_days(day,requests) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET requests=requests+1', day);
     }
-    const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' }[extname(real)] || 'application/octet-stream';
+    const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' }[extname(real)] || 'application/octet-stream';
     return sendFile(res, real, mime, req.method);
   }
   async function sendFile(res, file, type, method) {
