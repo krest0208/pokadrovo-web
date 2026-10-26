@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="pk-brand-mark pk-brand-mark--animated" width="256" height="256" viewBox="0 0 64 64" fill="none" role="img" aria-label="Покадрово — три кадра, одна история"><style>.pk-brand-mark{display:inline-block;flex-shrink:0;vertical-align:middle;overflow:visible}
+<svg xmlns="http://www.w3.org/2000/svg" class="pk-brand-mark pk-brand-mark--animated" width="256" height="256" viewBox="0 0 64 64" fill="none" role="img" aria-label="Покадрово: три кадра, одна история"><style>.pk-brand-mark{display:inline-block;flex-shrink:0;vertical-align:middle;overflow:visible}
 .pk-brand-back,.pk-brand-middle,.pk-brand-front,.pk-brand-play{transform-box:view-box;transform-origin:32px 32px;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
 .pk-brand-mark--animated .pk-brand-back{animation:pk-brand-back-in 1.7s cubic-bezier(.2,.8,.2,1)}
 .pk-brand-mark--animated .pk-brand-middle{animation:pk-brand-middle-in 1.7s cubic-bezier(.2,.8,.2,1)}

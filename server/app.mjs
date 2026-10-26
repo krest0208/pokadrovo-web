@@ -204,7 +204,7 @@ let accounts;
         let secret = old.secret;
         if (data.removeKey === true) secret = null;
         else if (data.apiKey !== undefined && data.apiKey !== '') {
-          if (typeof data.apiKey !== 'string' || !/^[\x21-\x7e]{12,4096}$/.test(data.apiKey)) deny(400, 'Ключ должен содержать 12–4096 символов без пробелов и переносов строк.');
+          if (typeof data.apiKey !== 'string' || !/^[\x21-\x7e]{12,4096}$/.test(data.apiKey)) deny(400, 'Ключ должен содержать 12-4096 символов без пробелов и переносов строк.');
           secret = store.seal(data.apiKey);
         } else if (data.provider !== old.provider && old.secret) deny(400, 'Для другого провайдера укажите новый ключ или удалите прежний.');
         const saveAi = ai.saveConfig(data, { provider: data.provider, model: data.model, secret });
@@ -217,7 +217,7 @@ let accounts;
       if (req.method === 'POST' && path === '/api/admin/password') {
         const data = await body(req); await reauth(req, data);
 const newLogin = data.newLogin === undefined || data.newLogin === '' ? owner().login : data.newLogin;
-        if (typeof newLogin !== 'string' || !/^[a-zA-Z0-9_.-]{3,64}$/.test(newLogin)) deny(400, 'Логин: 3–64 латинских символа, цифры, точка, дефис или подчёркивание.');
+        if (typeof newLogin !== 'string' || !/^[a-zA-Z0-9_.-]{3,64}$/.test(newLogin)) deny(400, 'Логин: 3-64 латинских символа, цифры, точка, дефис или подчёркивание.');
         const before = owner().password; let hash = before;
         if (data.newPassword) {
           if (!equal(data.newPassword, data.confirmPassword)) deny(400, 'Пароли не совпадают.');

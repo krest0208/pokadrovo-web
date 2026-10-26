@@ -74,7 +74,7 @@ export function AdminPreview({onOpen,onHome,initialView='overview'}:{onOpen:(id:
       q('#breakdowns').replaceChildren(...(['video','reels'] as const).map(mode=>{const row=el('div','breakdown-row');row.append(el('span','',mode==='video'?'Обычное видео':'Reels / Shorts'),el('strong','',String(projects.filter(p=>p.mode===mode).length)));return row;}));
       const daily=new Map<string,number>();for(const event of log.filter(e=>e.kind==='editor_open')){const day=new Date(event.at).toLocaleDateString('ru-RU');daily.set(day,(daily.get(day)||0)+1);}
       const chart=el('div','local-chart'),peak=Math.max(1,...daily.values());
-      if(!daily.size)chart.append(el('p','muted','Откройте монтажёр — здесь появится первое событие.'));
+      if(!daily.size)chart.append(el('p','muted','Откройте монтажёр. Здесь появится первое событие.'));
       for(const [day,value]of Array.from(daily).slice(-7)){const row=el('div','local-chart-row'),bar=el('span','local-bar'),fill=el('i');fill.style.width=value/peak*100+'%';bar.append(fill);row.append(el('span','',day),bar,el('strong','',String(value)));chart.append(row);}
       q('#chart').replaceChildren(chart);q('#chart-table').replaceChildren(...Array.from(daily).map(([day,value])=>el('p','',`${day}: ${value} открытий`)));
       q('#audit-body').replaceChildren(...events().slice(-100).reverse().map(event=>{const row=el('tr');for(const value of [new Date(event.at).toLocaleString('ru-RU'),names[event.kind]||event.kind,'Локально'])row.append(el('td','',value));return row;}));renderProjects();

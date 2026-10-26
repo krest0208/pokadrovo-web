@@ -38,6 +38,6 @@ export function syncProject(project:unknown){
   if(storageScope()!==scope)return;
   await request('/projects','PUT',{project:snapshot});
   if(storageScope()===scope)window.dispatchEvent(new CustomEvent('pokadrovo:sync-status',{detail:'Настройки проекта сохранены на сервере. Исходники остаются на устройстве.'}));
- }).catch(error=>{if(storageScope()===scope)window.dispatchEvent(new CustomEvent('pokadrovo:sync-status',{detail:'Локальная копия сохранена, но серверная — нет. '+String(error.message)}));});
+ }).catch(error=>{if(storageScope()===scope)window.dispatchEvent(new CustomEvent('pokadrovo:sync-status',{detail:'Локальная копия сохранена, но сохранить её на сервере не удалось. '+String(error.message)}));});
 }
 export const flushProjectSaves=()=>saves;

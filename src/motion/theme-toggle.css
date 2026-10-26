@@ -1,16 +1,14 @@
 .pk-theme-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex:0 0 24px;pointer-events:none;vertical-align:middle;color:inherit}
-.pk-theme-orbit{display:block;width:24px;height:24px;transform:translateX(0) rotate(0deg)}
+.pk-theme-orbit{display:block;position:relative;width:24px;height:24px;transform:translateX(0)}
 .pk-theme-icon svg{display:block;width:24px;height:24px;overflow:visible}
-.pk-theme-rays,.pk-theme-core{transform-origin:12px 12px;transition:transform .36s cubic-bezier(.22,1,.36,1),opacity .2s ease}
-.pk-theme-core{transform:scale(.71)}
-.pk-theme-cutout{transform:translate(18px,-18px);transition:transform .36s cubic-bezier(.22,1,.36,1)}
-.pk-theme-icon[data-theme=dark] .pk-theme-orbit{transform:translateX(0) rotate(180deg)}
-.pk-theme-icon[data-theme=dark] .pk-theme-rays{transform:rotate(90deg) scale(.35);opacity:0}
-.pk-theme-icon[data-theme=dark] .pk-theme-core{transform:scale(1)}
-.pk-theme-icon[data-theme=dark] .pk-theme-cutout{transform:translate(4px,-4px)}
+.pk-theme-phase{display:block;position:absolute;inset:0;transform-origin:center}
+.pk-theme-sun{opacity:1;transform:scale(1) rotate(0deg)}
+.pk-theme-moon{opacity:0;transform:scale(.16) rotate(-90deg)}
+.pk-theme-dot{display:block;position:absolute;left:10px;top:10px;width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0;transform:scale(0)}
+.pk-theme-icon[data-theme=dark] .pk-theme-sun{opacity:0;transform:scale(.16) rotate(90deg)}
+.pk-theme-icon[data-theme=dark] .pk-theme-moon{opacity:1;transform:scale(1) rotate(0deg)}
 button.pk-theme-control{min-width:44px;min-height:44px;align-items:center;justify-content:center;gap:9px;border-radius:12px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 button.pk-theme-control:focus-visible{outline:3px solid var(--blue,var(--au-blue,#245ce0));outline-offset:3px}
 .pkh .pkh-header-right .pk-theme-control{padding:10px;width:44px}
 .pkh .pkh-nav .pk-mobile-theme{align-items:center;gap:9px}
 @media(max-width:760px){.pkh .pkh-nav .pk-mobile-theme{display:inline-flex}}
-@media(prefers-reduced-motion:reduce){.pk-theme-rays,.pk-theme-core,.pk-theme-cutout{transition:none}}

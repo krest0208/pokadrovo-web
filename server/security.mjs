@@ -115,7 +115,7 @@ export function openStore(directory) {
 }
 
 export async function provisionOwner(store, login, password, replace = false) {
-  if (typeof login !== 'string' || !/^[a-zA-Z0-9_.-]{3,64}$/.test(login)) throw Error('Логин: 3–64 латинских символа, цифры, точка, дефис или подчёркивание.');
+  if (typeof login !== 'string' || !/^[a-zA-Z0-9_.-]{3,64}$/.test(login)) throw Error('Логин: 3-64 латинских символа, цифры, точка, дефис или подчёркивание.');
   const encoded = await hashPassword(password);
   store.db.exec('BEGIN IMMEDIATE');
   try {

@@ -26,7 +26,7 @@ export const t={
  downloadProject:'Скачать проект JSON',importProject:'Открыть JSON',backupHint:'JSON содержит монтаж, но не медиафайлы.',
  brief:'Ваш замысел',duration:'Длительность',master:'Общий звук',
  fontSize:'Размер',background:'Подложка',
- shortcuts:'Пробел — просмотр · S — разделить · Ctrl+Z — отмена',
+ shortcuts:'Пробел: просмотр · S: разделить · Ctrl+Z: отмена',
  selectionRange:'Диапазон вырезается со всех дорожек.',
  download:'Скачать',play:'Воспроизвести',pause:'Пауза',quality:'Разрешение',
 };

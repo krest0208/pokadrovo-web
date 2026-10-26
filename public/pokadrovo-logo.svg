@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-label="Покадрово — кадр за кадром"><rect class="pk-brand-tile" width="64" height="64" rx="18" fill="#111820"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-label="Покадрово: кадр за кадром"><rect class="pk-brand-tile" width="64" height="64" rx="18" fill="#111820"/>
 <g class="pk-brand-back"><path d="M26 12h20a6 6 0 0 1 6 6v20" fill="none" stroke="#8BAEFF" stroke-width="3.5" stroke-linecap="round"/></g>
 <g class="pk-brand-middle"><path d="M19 18h21a6 6 0 0 1 6 6v20" fill="none" stroke="#5585FF" stroke-width="3.5" stroke-linecap="round"/></g>
 <g class="pk-brand-front"><rect x="12" y="24" width="34" height="29" rx="7" fill="#245CE0"/><path d="M18 29h7" stroke="#8BAEFF" stroke-width="2" stroke-linecap="round"/>

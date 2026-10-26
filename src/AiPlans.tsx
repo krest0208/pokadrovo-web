@@ -10,7 +10,7 @@ export default function AiPlans({theme,onTheme,onHome,onStart}:Props){
   <a className="pk-plans-skip" href="#plans-main">К содержимому</a>
   <header className="pk-plans-header"><a href="/" className="pk-plans-brand" onClick={e=>{e.preventDefault();onHome();}}><BrandMark size={40}/><span>покадрово</span></a><nav aria-label="Навигация по возможностям ИИ"><a href="#ai-workflow">Как это работает</a><a href="#ai-source">Исходники</a></nav><ThemeToggle className="pk-plans-theme" theme={theme} onToggle={onTheme}/></header>
   <main id="plans-main" tabIndex={-1}>
-   <section className="pk-plans-hero"><span className="pk-plans-eyebrow">ПОКАДРОВО AI · QWEN</span><h1>От материала —<br/><em>к понятному монтажу.</em></h1><p>Опишите идею, разберите выбранный исходник и получите план правок. Вы решаете, какие изменения войдут в ролик.</p><button className="pk-ai-primary" type="button" onClick={onStart}>Открыть студию</button></section>
+   <section className="pk-plans-hero"><span className="pk-plans-eyebrow">ПОКАДРОВО AI · QWEN</span><h1>От материала<br/><em>к понятному монтажу.</em></h1><p>Опишите идею, разберите выбранный исходник и получите план правок. Вы решаете, какие изменения войдут в ролик.</p><button className="pk-ai-primary" type="button" onClick={onStart}>Открыть студию</button></section>
    <section id="ai-workflow" className="pk-ai-workflow" aria-label="Три шага работы с ИИ">{[
     {Icon:Film,title:'Добавьте материал',text:'Загрузите видео в проект. Выберите исходник для разбора и подтвердите его передачу в Qwen.'},
     {Icon:AudioLines,title:'Задайте направление',text:'Опишите смысл, темп и нужные изменения. Qwen может разобрать изображение, речь и звуки выбранного файла.'},

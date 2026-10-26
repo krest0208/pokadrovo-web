@@ -124,7 +124,7 @@ export function createOpenRouter({ store, now, request }) {
     if (found.available !== true) deny(503, found.reason);
   }
   function reserve() {
-    const q = quota(); if (!q.remaining) deny(429, 'Лимит OpenRouter для сайта исчерпан. Обновление — в 03:00 по Москве.');
+    const q = quota(); if (!q.remaining) deny(429, 'Лимит OpenRouter для сайта исчерпан. Лимит обновляется в 03:00 по Москве.');
     if (!store.consume('ai-openrouter-minute', OPENROUTER_LIMITS.perMinute, 60000, now())) deny(429, 'Минутный лимит OpenRouter исчерпан. Подождите минуту.');
   }
   function prepare(s, service, system, input, media) {
