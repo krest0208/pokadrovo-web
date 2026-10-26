@@ -16,8 +16,8 @@ export class EditorTools {
     this.transforms=new TransformControls(port);this.menu=new TrackMenu(port.root,action=>this.action(action));
     this.ai=new AiPanel(port);
     const button=document.createElement('button');button.type='button';button.dataset.tool='ai';
-    button.className='pe-open-ai';button.title='Смонтировать с помощью ИИ';button.ariaLabel=button.title;
-    button.innerHTML='<span aria-hidden="true">✦</span><span>ИИ-монтаж</span>';
+    button.className='pe-open-ai';button.title='Смонтировать с ИИ';button.ariaLabel=button.title;
+    button.innerHTML='<span aria-hidden="true">✦</span><span>Смонтировать с ИИ</span>';
     port.root.querySelector('.pe-actions')!.prepend(button);this.buttons.push(button);
     const rail=document.createElement('button');rail.type='button';rail.dataset.tool='ai';rail.ariaLabel=button.title;
     rail.innerHTML='<b aria-hidden="true">✦</b><span>ИИ</span>';port.root.querySelector('.pe-rail')!.prepend(rail);this.buttons.push(rail);
@@ -113,7 +113,8 @@ export class EditorTools {
     }
     if(action==='paste'&&this.clipboard){
       const {track}=this.clipboard,c=clone(this.clipboard.item);c.id=uid();
-      if(track==='video'){
+      if(track==='video'&&(c as Clip).layer>0){(c as Clip).at=this.port.cursor();p.clips.push(c as Clip);}
+      else if(track==='video'){
         const selectedIndex=s?.track==='video'?p.clips.findIndex(v=>v.id===s.id):-1;
         let index=selectedIndex>=0?selectedIndex+1:positions(p).findIndex(v=>this.port.cursor()<v.end);
         if(index<0)index=p.clips.length;p.clips.splice(index,0,c as Clip);

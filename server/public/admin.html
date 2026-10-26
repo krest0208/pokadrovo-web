@@ -61,18 +61,18 @@
     </article>
     <div class="settings-grid">
       <article class="card">
-        <div class="card-heading"><div><h3>Alibaba Cloud · Qwen Omni с видео и звуком</h3><p id="key-status" aria-live="polite">Ключ не указан</p></div></div>
+        <div class="card-heading"><div><h3>Монтаж с ИИ · Polza.ai</h3><p id="key-status" aria-live="polite">Ключ не указан</p></div></div>
         <form id="settings-form" class="settings-form">
-          <label>Провайдер нейросети<select name="provider" aria-describedby="ai-provider-note"><option value="qwen">Qwen Omni: видео и звук</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="custom">Другой провайдер</option></select></label>
-          <p id="ai-provider-note" class="field-note">Пробный обработчик подключён для Qwen Omni. Настройки других провайдеров пока только сохраняются.</p>
+          <label>Провайдер нейросети<select name="provider" aria-describedby="ai-provider-note"><option value="polza">Polza.ai · Gemini 2.5 Flash</option><option value="qwen">Qwen Omni: видео и звук</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="custom">Другой провайдер</option></select></label>
+          <p id="ai-provider-note" class="field-note">Активный обработчик: Gemini 2.5 Flash через Polza.ai. Один пополняемый баланс без обязательного автоплатежа. Старые подключения в рабочем режиме отключены.</p>
           <label>Модель<input name="model" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Идентификатор модели" aria-describedby="ai-provider-note"></label>
-          <label>Base URL Model Studio<input name="endpoint" type="url" maxlength="255" autocomplete="off" spellcheck="false" placeholder="https://WORKSPACE.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"></label>
-          <p class="field-note">Скопируйте Chat Completions Base URL из рабочего пространства Alibaba Cloud. Регион ключа и адреса должен совпадать. Допускаются только адреса API Alibaba Cloud.</p>
+          <label>Base URL API<input name="endpoint" type="url" maxlength="255" autocomplete="off" spellcheck="false" placeholder="https://polza.ai/api/v1"></label>
+          <p class="field-note">Адрес: https://polza.ai/api/v1. Получите новый API-ключ в кабинете Polza.ai. Ключ прежнего провайдера не подходит. <a href="https://polza.ai/dashboard" target="_blank" rel="noopener noreferrer">Открыть кабинет и баланс</a>. Пополняйте вручную; автопополнение включать не требуется.</p>
           <label>API-ключ<input name="apiKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="Введите ключ провайдера" aria-describedby="settings-key-note"></label>
           <p id="settings-key-note" class="field-note">Ключ хранится зашифрованным на сервере. Оставьте поле пустым, чтобы сохранить прежний ключ.</p>
           <label class="check-label"><input type="checkbox" name="removeKey"> Удалить сохранённый ключ</label>
-          <label class="check-label"><input type="checkbox" name="aiEnabled"> Включить подключение Qwen</label>
-          <label class="check-label"><input type="checkbox" name="trialEnabled"> Открыть зарегистрированным пользователям бесплатную пробу Reels</label>
+          <label class="check-label"><input type="checkbox" name="aiEnabled"> Включить монтаж с ИИ</label>
+          <label class="check-label"><input type="checkbox" name="trialEnabled"> Открыть зарегистрированным пользователям пробный монтаж с ИИ</label>
           <p class="field-note">Проба: один проект на аккаунт, до трёх запросов за семь дней с первого запуска. Формат Reels: 9:16, не длиннее 60 секунд; исходник до 7 МБ. Общий защитный предел: 12 запросов в сутки на сайт. Расходы API несёт сайт. Сохранение настроек само по себе не вызывает модель.</p>
           <details id="ai-extra-settings"><summary>Дополнительно</summary><label class="check-label"><input type="checkbox" name="analyticsEnabled" checked> Собирать статистику этого сервера</label><p class="field-note">Анонимные события редактора требуют отдельного согласия посетителя.</p></details>
           <label>Текущий пароль администратора<input name="password" type="password" autocomplete="current-password" required></label>
@@ -80,7 +80,7 @@
           <p class="form-error" role="alert"></p>
         </form>
       </article>
-      <aside class="card explanation"><h3>Статус Qwen</h3><p id="ai-connection-note">Укажите ключ и адрес Qwen Omni. Подключение и доступ к бесплатной пробе включаются отдельно.</p><strong>Проверка подключения</strong><p>Включите Reels в редакторе и импортируйте короткий MP4 со звуком. В панели ИИ выберите бесплатную пробу, подтвердите передачу файла в Alibaba Cloud и запустите анализ. Вы получите описание, речь, звуковые события и план правок.</p><p>Для Яндекса выберите соответствующий режим в панели ИИ. Доступ ограничен администратором.</p><p>Файлы Qwen передаются провайдеру по явному действию и не записываются на диск Покадрово. Хранение у провайдера определяется условиями вашего аккаунта.</p><p>Длинные исходники, автоматическая очистка звука, поиск музыки и приём оплаты недоступны.</p><div class="subtle-note">После сохранения ключи не возвращаются браузеру и не попадают в GitHub. Статус «проверен» появляется после успешного запроса.</div></aside>
+      <aside class="card explanation"><h3>Статус подключения</h3><p id="ai-connection-note">Добавьте API-ключ Polza.ai. Для работы нужен положительный баланс провайдера.</p><strong>Как устроен анализ</strong><p>Браузер готовит до 12 кадров с таймкодами и звуковую дорожку выбранного MP4. Через Polza.ai они передаются Gemini 2.5 Flash, которая возвращает разбор и план правок. Прямой MP4 не отправляется провайдеру.</p><p>Между кадрами короткие события могут быть пропущены. Точное вырезание слов и субтитры нужно проверять по исходнику. Правки применяются после подтверждения.</p><p>Запросы оплачиваются с пополняемого баланса Polza.ai. Покадрово не включает автопополнение и не повторяет платные запросы автоматически. Администратор не тратит монеты сайта, но расходует средства провайдера.</p><div class="subtle-note">Сохранение ключа не запускает запрос. Подключение считается проверенным после успешного ответа из редактора. Ключ хранится зашифрованным и не возвращается браузеру.</div></aside>
     </div>
     <article class="card">
       <div class="card-heading"><div><h3>Использование нейросетей</h3><p>Фактические попытки сервера, включая ошибки и запросы администратора.</p></div><div><label>Период<select id="ai-period"><option value="1">Сегодня</option><option value="7" selected>7 дней</option><option value="30">30 дней</option></select></label><button id="ai-refresh" type="button" class="secondary">Обновить</button></div></div>

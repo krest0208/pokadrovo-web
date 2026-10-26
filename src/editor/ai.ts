@@ -25,7 +25,7 @@ export interface AiRequest {
 }
 export interface AiPlan { version:1; requestId:string; projectId:string; revision:string; summary:string; operations:Operation[]; }
 export type AiService='source-analysis'|'deepseek-edit'|'reels-trial'|'yandex-edit';
-export interface AiStatus {available:boolean;reason:string;requiresMedia?:boolean;owner?:boolean;billing?:{requestCostCoins:number|null;remainingCoins:number|null;giftCoins:number;ownerExempt:boolean};trial?:{projectId:string|null;remaining:number|null;expires:number|null};}
+export interface AiStatus {available:boolean;reason:string;mediaTransport?:'frames-audio'|'file';recipient?:string;requiresMedia?:boolean;owner?:boolean;billing?:{requestCostCoins:number|null;remainingCoins:number|null;giftCoins:number;ownerExempt:boolean};trial?:{projectId:string|null;remaining:number|null;expires:number|null};}
 export interface AiProvider {
   readonly name:string;
   readonly supportsMedia?:boolean;
@@ -35,7 +35,7 @@ export interface AiProvider {
   getStatus?(signal?:AbortSignal):Promise<AiStatus>;
   createPlan(request:AiRequest,signal:AbortSignal,media?:AiMedia):Promise<unknown>;
 }
-export interface AiMedia {clipId:string;assetId:string;mime:'video/mp4'|'audio/wav';data:string;}
+export interface AiMedia {clipId:string;assetId:string;mime:'video/mp4'|'audio/wav'|'application/x-pokadrovo-av';data:string;frames?:{at:number;data:string}[];}
 const snapshot=(p:Project)=>JSON.stringify(normalizeProject(p));
 /** Change marker, not an authentication token. Apply also compares the complete snapshot. */
 export async function projectRevision(project:Project):Promise<string>{

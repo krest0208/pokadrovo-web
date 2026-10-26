@@ -8,7 +8,7 @@ export interface Clip {
   fadeIn:number; fadeOut:number; at:number; fit:'contain'|'cover';
   zoom:number; x:number; y:number; rotation:number; flip:boolean;
   brightness:number; contrast:number; saturation:number; opacity:number;
-  visualIn:number; visualOut:number;
+  visualIn:number; visualOut:number; layer:number;
   scaleX:number; scaleY:number; shape:'rect'|'round'|'ellipse';
   corner:number; cropLeft:number; cropRight:number; cropTop:number; cropBottom:number;
 }
@@ -37,7 +37,7 @@ export function normalizeClip(value:unknown):Clip {
  start,end:number(c.end,duration,start+.04,duration),speed:number(c.speed,1,.25,4),volume:number(c.volume,1,0,2),muted:c.muted===true,
  fadeIn:number(c.fadeIn,0,0,30),fadeOut:number(c.fadeOut,0,0,30),at:number(c.at,0,0,86400),fit:c.fit==='cover'?'cover':'contain',
  zoom:number(c.zoom,1,.25,4),x:number(c.x,0,-100,100),y:number(c.y,0,-100,100),rotation:number(c.rotation,0,-180,180),flip:c.flip===true,
- brightness:number(c.brightness,1,0,2),contrast:number(c.contrast,1,0,2),saturation:number(c.saturation,1,0,2),opacity:number(c.opacity,1,0,1),visualIn:number(c.visualIn,0,0,5),visualOut:number(c.visualOut,0,0,5),
+ brightness:number(c.brightness,1,0,2),contrast:number(c.contrast,1,0,2),saturation:number(c.saturation,1,0,2),opacity:number(c.opacity,1,0,1),visualIn:number(c.visualIn,0,0,5),visualOut:number(c.visualOut,0,0,5),layer:Math.trunc(number(c.layer,0,0,8)),
  scaleX:number(c.scaleX,1,.05,8),scaleY:number(c.scaleY,1,.05,8),shape:c.shape==='ellipse'?'ellipse':c.shape==='round'?'round':'rect',
  corner:number(c.corner,.12,0,.5),cropLeft,cropTop,cropRight:number(c.cropRight,0,0,.9-cropLeft),cropBottom:number(c.cropBottom,0,0,.9-cropTop)};
 }
@@ -59,10 +59,11 @@ export function normalizeProject(value:unknown):Project {
  clips,audio,texts,created:number(p.created,Date.now(),0,1e15),modified:number(p.modified,Date.now(),0,1e15),master:number(p.master,1,0,1)};
 }
 export const length=(c:Clip)=>Math.max(.01,(c.end-c.start)/c.speed);
-export const videoLength=(p:Project)=>p.clips.reduce((n,c)=>n+length(c),0);
-export function totalLength(p:Project):number {return Math.max(videoLength(p),0,...p.audio.map(c=>c.at+length(c)),...p.texts.map(c=>c.to));}
-export function positions(p:Project){let at=0;return p.clips.map(c=>{const r={clip:c,at,end:at+length(c)};at=r.end;return r;});}
-export function currentClip(p:Project,time:number){return positions(p).find(c=>time>=c.at&&time<c.end);}
+export const videoLength=(p:Project)=>p.clips.filter(c=>!c.layer).reduce((n,c)=>n+length(c),0);
+export function totalLength(p:Project):number {return Math.max(videoLength(p),0,...p.clips.filter(c=>c.layer>0).map(c=>c.at+length(c)),...p.audio.map(c=>c.at+length(c)),...p.texts.map(c=>c.to));}
+export function positions(p:Project){let at=0;return p.clips.map(c=>{if(c.layer>0)return {clip:c,at:c.at,end:c.at+length(c)};const r={clip:c,at,end:at+length(c)};at=r.end;return r;});}
+export function currentClip(p:Project,time:number){return positions(p).find(c=>!c.clip.layer&&time>=c.at&&time<c.end);}
+export function visibleClips(p:Project,time:number){let mainAt=0;const active:{clip:Clip;at:number;end:number}[]=[];for(const clip of p.clips){const at=clip.layer>0?clip.at:mainAt,end=at+length(clip);if(!clip.layer)mainAt=end;if(time>=at&&time<end)active.push({clip,at,end});}return active.sort((a,b)=>a.clip.layer-b.clip.layer);}
 export function fromAsset(a:Asset):Clip {return normalizeClip({...a,blob:undefined,url:undefined,id:uid(),assetId:a.id,start:0,end:a.duration});}
 export function patchClip(c:Clip,patch:Partial<Clip>){return normalizeClip({...c,...patch});}
 export function splitClip(c:Clip,offset:number):[Clip,Clip]|null {

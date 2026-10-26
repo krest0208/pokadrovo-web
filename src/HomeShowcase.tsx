@@ -22,19 +22,18 @@ function Wave(){return <div className="pk-wave" aria-hidden="true">{Array.from({
 export function Timeline({compact=false,collection='travel'}:{compact?:boolean;collection?:StoryCollection}){
  return <div className={`pk-timeline ${compact?'is-compact':''}`} role="img" aria-label={`Схема монтажа «${stories[collection].title}»: четыре фрагмента, звук и заголовок`}><div className="pk-time-ruler"><span>00:00</span><span>00:10</span><span>00:20</span><span>00:30</span></div><div className="pk-title-track">{stories[collection].title}</div><div className="pk-video-track">{[1,0,2,5].map((n,i)=><Shot key={i} index={n} collection={collection}><span>{['Начало','Детали','Герой','Финал'][i]}</span></Shot>)}</div><Wave/><i className="pk-playhead"/></div>;
 }
-export function HeroStory({scene,onScene}:{scene:number;onScene:(scene:number)=>void}){
+export function HeroStory({scene}:{scene:number}){
  const collection=examples[scene]||examples[0],example=stories[collection],reduced=useReducedMotion();
  return <div className="pk-hero-story" aria-label="Из снятых кадров в монтажную последовательность">
   <div className="pk-story-source"><span className="pk-art-label">Ваши кадры</span><div className="pk-source-pile"><Shot index={0} collection={collection}/><Shot index={3} collection={collection}/><Shot index={4} collection={collection}/></div><span className="pk-source-caption">Видео + фотографии</span></div>
   <span className="pk-story-arrow"><Arrow/></span>
   <AnimatePresence initial={false} mode="wait"><motion.div className="pk-story-result" key={collection} initial={{opacity:0,y:reduced?0:8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:reduced?0:-6}} transition={{duration:reduced?0:.2,ease:'easeOut'}}><div className="pk-result-fan"><div className="pk-fan-card back"><Shot index={5} collection={collection}/></div><div className="pk-fan-card middle"><Shot index={2} collection={collection}/></div><div className="pk-fan-card front"><Shot index={1} collection={collection}><div className="pk-result-title"><span>{example.kicker}</span><strong>{example.title}</strong></div></Shot><div className="pk-result-bar"><span>{example.kind}</span></div></div></div><div className="pk-hero-timeline"><Timeline compact collection={collection}/></div></motion.div></AnimatePresence>
-  <div className="pk-scene-picker" role="group" aria-label="Выбрать формат ролика">{examples.map((key,i)=><button key={key} type="button" aria-label={stories[key].kind} aria-pressed={scene===i} onClick={()=>onScene(i)}><span/>{stories[key].kind}</button>)}</div>
  </div>;
 }
 const steps=[
  {title:'Добавьте то, что сняли',text:'Видео с телефона, фотографии, звук. Соберите материалы в одном проекте.'},
  {title:'Расскажите, какой ролик нужен',text:'Задайте настроение, длительность и главную мысль. Пишите обычными словами.'},
- {title:'Разберите материал с ИИ',text:'Qwen разбирает выбранное видео, речь и звуки. Передача файла только с вашего согласия. Доступность указана в студии.'},
+ {title:'Разберите материал с ИИ',text:'ИИ разбирает выбранное видео, речь и звуки. Передача файла только с вашего согласия. Доступность указана в студии.'},
  {title:'Посмотрите предложенные правки',text:'ИИ предлагает план. Вы решаете, что применить, и сохраняете контроль над монтажом.'},
  {title:'Доведите до своего стиля',text:'Подрежьте кадры, настройте звук и добавьте титры. Любую правку можно отменить.'},
  {title:'Сохраните готовый ролик',text:'Выберите формат, проверьте результат и экспортируйте видео из студии.'}

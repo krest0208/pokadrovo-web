@@ -1,3 +1,4 @@
+import {POLZA_MODEL,POLZA_ENDPOINT,PREPARED_MEDIA,validatePolzaEndpoint,preparePolza} from './polza.mjs';
 import coinPricing from '../shared/coin-pricing.json' with { type: 'json' };
 import { HttpError, body, deny, json } from './http.mjs';
 import { equal, token } from './security.mjs';
@@ -30,10 +31,12 @@ export function validateReelsProject(project) {
     if (!finite(c.start) || !finite(c.end) || !finite(c.speed) || c.start < 0 || c.end <= c.start || c.speed < .25 || c.speed > 4) deny(400, 'Некорректная длительность клипа.');
     return (c.end - c.start) / c.speed;
   };
-  const video = project.clips.reduce((sum, c) => sum + length(c), 0);
+  if(project.clips.some(c=>c.layer!==undefined&&(!Number.isInteger(c.layer)||c.layer<0||c.layer>8)))deny(400,'Некорректный слой видео.');
+  const video = project.clips.filter(c=>!c.layer).reduce((sum,c)=>sum+length(c),0);
+  const overlays=project.clips.filter(c=>c.layer>0).map(c=>{if(!Number.isInteger(c.layer)||c.layer>8||!finite(c.at)||c.at<0)deny(400,'Некорректный слой видео.');return c.at+length(c);});
   const audio = project.audio.map(c => { if (!finite(c.at) || c.at < 0) deny(400, 'Некорректное время аудио.'); return c.at + length(c); });
   const texts = project.texts.map(c => { if (!finite(c.from) || !finite(c.to) || c.from < 0 || c.to <= c.from) deny(400, 'Некорректное время текста.'); return c.to; });
-  if (Math.max(video, ...audio, ...texts) > 60.001) deny(422, 'В бесплатной пробе готовый Reels должен быть не длиннее 60 секунд.');
+  if (Math.max(video, ...overlays, ...audio, ...texts) > 60.001) deny(422, 'В бесплатной пробе готовый Reels должен быть не длиннее 60 секунд.');
 }
 
 export function validateFreeProject(project) {
@@ -114,7 +117,8 @@ function wavDuration(bytes) {
   return rate && data ? data / rate : null;
 }
 
-export function validateAiMedia(input, request) {
+export function validateAiMedia(input, request, prepared = false) {
+  if(prepared&&input?.mime===PREPARED_MEDIA)return validatePreparedMedia(input,request);
   if (input === undefined || input === null) return null;
   if (!plain(input) || !idOk(input.clipId) || !idOk(input.assetId) ||
       !['video/mp4', 'audio/wav'].includes(input.mime) || typeof input.data !== 'string' ||
@@ -128,6 +132,20 @@ export function validateAiMedia(input, request) {
   if (!finite(duration) || duration <= 0 || duration > AI_LIMITS.maxDuration + .1) deny(400, 'Пробный анализ принимает исходники длительностью до 60 секунд. Файл с неизвестной длительностью не отправляется.');
   if (!finite(clip.duration) || Math.abs(clip.duration - duration) > 1) deny(400, 'Длительность исходника изменилась. Импортируйте файл заново.');
   return { clipId: clip.id, assetId: clip.assetId, mime: input.mime, duration, data: input.data };
+}
+
+function validatePreparedMedia(input,request){
+  const clip=request.project.clips.find(c=>c.id===input.clipId&&c.assetId===input.assetId&&c.kind==='video');
+  if(!clip||!finite(clip.duration)||clip.duration<=0||clip.duration>60.1||!Array.isArray(input.frames)||!input.frames.length||input.frames.length>12)deny(400,'Некорректные кадры исходника.');
+  const audio=validateAiMedia({...input,mime:'audio/wav'}, {...request,project:{...request.project,audio:[{...clip,kind:'audio'}],clips:[]}});
+  let size=0,last=-1;
+  const frames=input.frames.map(frame=>{
+    if(!plain(frame)||!finite(frame.at)||frame.at<0||frame.at<=last||frame.at>=audio.duration||typeof frame.data!=='string'||frame.data.length>131072||frame.data.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(frame.data))deny(400,'Некорректный кадр или таймкод.');
+    last=frame.at;const bytes=Buffer.from(frame.data,'base64');size+=bytes.length;
+    if(bytes.toString('base64')!==frame.data||bytes.length<4||bytes[0]!==255||bytes[1]!==216||bytes.at(-2)!==255||bytes.at(-1)!==217||size>1024*1024)deny(400,'Некорректное изображение кадра.');
+    return {at:frame.at,data:frame.data};
+  });
+  return {...audio,mime:PREPARED_MEDIA,frames};
 }
 
 export function validateAnalysis(value, media) {
@@ -217,17 +235,19 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
   }
   function state() {
     const c = settings(), endpoint = meta('ai_endpoint'), enabled = meta('ai_enabled') === '1';
-    return { c, endpoint, enabled, configured: c.provider === 'qwen' && c.model === OMNI_MODEL && !!c.secret && !!endpoint, verified: meta('ai_verified') === String(c.updated) && c.updated > 0 };
+    return { c, endpoint, enabled, configured: (c.provider==='polza'&&c.model===POLZA_MODEL&&endpoint===POLZA_ENDPOINT||!singleAi&&c.provider==='qwen'&&c.model===OMNI_MODEL&&!!endpoint)&&!!c.secret, verified: meta('ai_verified') === String(c.updated) && c.updated > 0 };
   }
   function adminState() { const s = state(); return { singleAi, endpoint: s.endpoint, aiEnabled: s.enabled, configured: s.configured, connected: s.configured && s.enabled && s.verified, verified: s.verified, limits: AI_LIMITS, trialEnabled: trialEnabled(), trialRules: TRIAL_RULES }; }
   function saveConfig(data, next) {
+    if(singleAi&&next.provider!=='polza'&&(data.aiEnabled||data.trialEnabled))deny(400,'Подключите Polza.ai с новым ключом. Прежний провайдер выключен.');
+    if(next.provider==='polza'&&next.model!==POLZA_MODEL)deny(400,'Выберите поддерживаемую модель монтажа в настройках.');
     if (next.provider === 'qwen' && next.model !== OMNI_MODEL) deny(400, `Для пробного анализа выберите ${OMNI_MODEL}.`);
     const endpoint = data.endpoint === undefined ? meta('ai_endpoint') : data.endpoint;
-    const canonical = next.provider === 'qwen' ? validateOmniEndpoint(endpoint) : '';
+    const canonical = next.provider==='polza'?validatePolzaEndpoint(endpoint):next.provider === 'qwen' ? validateOmniEndpoint(endpoint) : '';
     for (const key of ['aiEnabled', 'trialEnabled']) if (data[key] !== undefined && typeof data[key] !== 'boolean') deny(400, 'Некорректный переключатель ИИ.');
     const enabled = data.aiEnabled === true, publicTrial = data.trialEnabled === true;
-    if ((enabled || publicTrial) && (next.provider !== 'qwen' || !next.secret)) deny(400, 'Для пробы укажите Qwen Omni и API-ключ.');
-    if (publicTrial && !enabled) deny(400, 'Сначала включите подключение Qwen.');
+    if ((enabled || publicTrial) && (!['qwen','polza'].includes(next.provider)||!next.secret)) deny(400, 'Укажите подключение и API-ключ для монтажа с ИИ.');
+    if (publicTrial && !enabled) deny(400, 'Сначала включите подключение ИИ.');
     return () => { put('ai_endpoint', canonical); put('ai_enabled', enabled ? '1' : '0'); put('ai_trial_enabled', publicTrial ? '1' : '0'); put('ai_verified', ''); };
   }
   function modeStatus(auth, service) {
@@ -246,7 +266,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     if (service === 'yandex-edit') return { available: owner && y.configured && y.enabled,
       reason: !owner ? 'Этот режим пока не входит в доступные тарифы.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите подключение Яндекса.' : `${yandex.adminState().modelName}: план по заданию и предыдущему разбору. Без списаний монет; расходы API несёт сайт.`, requiresMedia: false };
     if(singleAi)return {available:q.configured&&q.enabled&&(owner||paid||trialEnabled()&&trial.remaining>0),requiresMedia:!owner&&!paid&&trial.requiresMedia,
-      reason:!q.configured||!q.enabled?'Qwen не подключён. Настройки доступны администратору.':owner?'Qwen: видео, речь и звук. Исходник до 60 секунд и 7 МБ, проект 9:16 или 16:9.':!paid&&!trialEnabled()?'Доступ к ИИ пока не открыт.':!paid&&trial.expired?'Пробный доступ закончился.':!paid&&!trial.remaining?'Пробные запросы использованы.':`Qwen: один проект до 60 секунд. ${paid?'Доступные запросы учитываются сервером.':'Осталось пробных запросов: '+trial.remaining+'.'}`};
+      reason:!q.configured||!q.enabled?'Монтаж с ИИ не подключён. Настройки доступны администратору.':owner?'Смонтировать с ИИ: видео, речь и звук. Исходник до 60 секунд и 7 МБ, проект 9:16 или 16:9.':!paid&&!trialEnabled()?'Доступ к ИИ пока не открыт.':!paid&&trial.expired?'Пробный доступ закончился.':!paid&&!trial.remaining?'Пробные запросы использованы.':`Смонтировать с ИИ: один проект до 60 секунд. ${paid?'Доступные запросы учитываются сервером.':'Осталось пробных запросов: '+trial.remaining+'.'}`};
     return { available: q.configured && q.enabled && (owner || paid || trialEnabled() && trial.remaining > 0), requiresMedia: !paid && trial.requiresMedia,
       reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
         : !q.configured || !q.enabled || !paid && !trialEnabled() ? 'Бесплатная проба Reels недоступна.' : !paid && trial.expired ? 'Срок бесплатной пробы закончился.' : !paid && !trial.remaining ? 'Подарочные монеты использованы. Проверьте доступность пакетов в балансе.' : paid ? `Баланс: ${coinState(auth,service).remainingCoins} монет. Стоимость успешного запроса: ${coinPricing.reelsRequestCoins} монета. Ограничения длины и квоты провайдера сохраняются.` : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Стоимость успешного запроса: ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
@@ -254,14 +274,14 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
   function reserveTrial(auth, r, media, service) {
     if (auth.owner) return null;
     const candidate=trialRow(auth), giftEnabled=routerService(service)?openrouter.state().trialEnabled:trialEnabled();
-    const giftEligible=giftEnabled&&(!candidate||candidate.project_id===r.projectId&&candidate.expires>now()&&candidate.used<TRIAL_RULES.requests)&&(candidate?.media_analyzed||media?.mime==='video/mp4');
+    const giftEligible=giftEnabled&&(!candidate||candidate.project_id===r.projectId&&candidate.expires>now()&&candidate.used<TRIAL_RULES.requests)&&(candidate?.media_analyzed||media?.mime==='video/mp4'||media?.mime===PREPARED_MEDIA);
     if(!giftEligible&&(billing?.balance(auth.key)||0)>=coinPricing.reelsRequestCoins)return billing.reserve(auth.key,r.requestId,coinPricing.reelsRequestCoins);
     if (!giftEnabled) deny(503, 'Бесплатная проба недоступна.');
     const old = trialRow(auth);
     if (old?.project_id && old.project_id !== r.projectId) deny(402, singleAi?'Пробный доступ действует для одного проекта. Откройте начатый проект.':'Бесплатная проба действует для одного проекта Reels. Откройте начатый проект.');
     if (old && old.expires <= now()) deny(402, 'Срок бесплатной пробы закончился.');
     if (old && old.used >= TRIAL_RULES.requests) deny(402, singleAi?'Пробные запросы использованы.':'Подарочные монеты использованы. Проверьте доступность пакетов в балансе.');
-    if (!old?.media_analyzed && (!media || media.mime !== 'video/mp4')) deny(422, 'Начните пробу кнопкой анализа MP4-видео.');
+    if (!old?.media_analyzed && (!media||!['video/mp4',PREPARED_MEDIA].includes(media.mime))) deny(422, 'Начните пробу кнопкой анализа MP4-видео.');
     const peer = rateKey ? rateKey(auth.req) : store.hmac(auth.req.socket.remoteAddress || 'local');
     if (!store.consume('ai-trial-ip:' + peer + ':' + new Date(now()).toISOString().slice(0, 10), routerService(service) ? 30 : 6, 86400000, now())) deny(429, 'Дневной лимит бесплатных запросов для этого подключения исчерпан.');
     if (!old) store.run('INSERT INTO ai_trial_usage(account_id,project_id,started,expires,used) VALUES(?,?,?,?,1)', auth.key, r.projectId, now(), now() + TRIAL_RULES.days * 86400000);
@@ -289,16 +309,17 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     if (req.method === 'GET' && path === '/api/ai/status') {
       const auth = session(req, false), service = url.searchParams.get('service') || 'reels-trial';
       if (!SERVICES.includes(service)) deny(400, 'Неизвестный режим ИИ.');
-      if (!activeServices.includes(service)) deny(404, 'Этот режим ИИ отключён. Используется Qwen.');
+      if (!activeServices.includes(service)) deny(404, 'Этот режим ИИ отключён.');
       if (req.headers['x-pk-account'] && !equal(req.headers['x-pk-account'], auth?.key || '')) deny(409, 'Аккаунт изменился. Обновите страницу.');
       const q = state(), selected = modeStatus(auth, service), y = yandex.state(), o = openrouter.state();
       const configured = routerService(service) ? o.configured : service === 'yandex-edit' ? y.configured : q.configured;
       const verified = routerService(service) ? o.c[service === 'source-analysis' ? 'analysis_verified' : 'edit_verified'] === o.c.revision && !!o.c.revision : service === 'yandex-edit' ? y.verified : q.verified;
       json(res, 200, { ...selected, service, ownerOnly: service === 'yandex-edit', freeTrialRequiresAccount: true,
         owner: !!auth?.owner, configured: !!auth?.owner && configured,
-        verified: !!auth?.owner && verified, model: auth?.owner ? routerService(service) ? openrouter.model(o, service) : service === 'yandex-edit' ? y.c.model : OMNI_MODEL : undefined,
+        verified: !!auth?.owner && verified, model: auth?.owner ? routerService(service) ? openrouter.model(o, service) : service === 'yandex-edit' ? y.c.model : q.c.model : undefined,
+        mediaTransport:q.c.provider==='polza'?'frames-audio':'file',recipient:q.c.provider==='polza'?'Polza.ai и Google':'Alibaba Cloud',
         limits: AI_LIMITS, trial: trialState(auth), billing: coinState(auth, service), tariffConfigured: !!billing?.catalog().available, paymentsEnabled: !!billing?.catalog().available,
-        modes: activeServices.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника', 'deepseek-edit': 'План монтажа', 'reels-trial': 'Qwen Omni · видео и звук', 'yandex-edit': 'AI Studio · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
+        modes: activeServices.map(id => ({ id, label: { 'source-analysis': 'Разбор исходника', 'deepseek-edit': 'План монтажа', 'reels-trial': 'Смонтировать с ИИ', 'yandex-edit': 'AI Studio · план монтажа' }[id], ...modeStatus(auth, id) })) }); return true;
     }
     if (req.method !== 'POST' || path !== '/api/ai/edit-plan') return false;
     const auth = session(req); sameOrigin(req);
@@ -314,7 +335,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     try {
       const data = await body(req, MAX_BODY), service = data.service || 'reels-trial';
       if (!SERVICES.includes(service)) deny(400, 'Неизвестный режим ИИ.');
-      if (!activeServices.includes(service)) deny(404, 'Этот режим ИИ отключён. Используется Qwen.');
+      if (!activeServices.includes(service)) deny(404, 'Этот режим ИИ отключён.');
       // Price/role/provider fields from the browser cannot unlock an undefined paid tariff.
       if (service === 'yandex-edit' && !auth.owner) deny(402, 'Этот режим пока не входит в доступные тарифы.');
       const r = validateAiRequest(data.request), q = state(), y = yandex.state(), o = openrouter.state();
@@ -325,14 +346,15 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         if (service === 'source-analysis' && (!data.media || data.media.mime !== 'video/mp4')) deny(422, 'Для визуального разбора выберите MP4 до 60 секунд и 7 МБ.');
       } else if (service === 'reels-trial') {
         if(singleAi)validateFreeProject(r.project);else validateReelsProject(r.project);
-        if (!q.configured || !q.enabled) deny(503, 'Сначала настройте и включите Qwen Omni в админ-панели.');
-        validateOmniEndpoint(q.endpoint);
+        if (!q.configured || !q.enabled) deny(503, 'Сначала настройте и включите монтаж с ИИ в админ-панели.');
+        if(q.c.provider==='polza')validatePolzaEndpoint(q.endpoint);else validateOmniEndpoint(q.endpoint);
       } else {
         if (!y.configured || !y.enabled) deny(503, 'Настройте и включите Яндекс AI Studio в админ-панели.');
         if (data.media) deny(422, 'В этом режиме Яндекс получает задание и структуру проекта, без исходного видео.');
       }
       if (data.media && data.mediaConsent !== true) deny(400, 'Подтвердите отправку выбранного файла провайдеру.');
-      const media = service === 'reels-trial' || service === 'source-analysis' ? validateAiMedia(data.media, r) : null;
+      const media = service === 'reels-trial' || service === 'source-analysis' ? validateAiMedia(data.media, r, q.c.provider==='polza') : null;
+      if(q.c.provider==='polza'&&media?.mime==='video/mp4')deny(422,'Подготовьте кадры и звук в редакторе. Прямая отправка MP4 этому провайдеру не поддерживается.');
       let context = null;
       if (data.context !== undefined && data.context !== null) {
         const c = data.context, clip = r.project.clips.concat(r.project.audio).find(c1 => c1.id === c?.clipId && c1.assetId === c?.assetId);
@@ -347,6 +369,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         await openrouter.ensureAvailable(o, service, controller.signal);
         invocation = openrouter.prepare(o, service, SYSTEM, input, media);
       } else if (service === 'yandex-edit') invocation = yandex.prepare(y, SYSTEM, input);
+      else if(q.c.provider==='polza')invocation=preparePolza(q,SYSTEM,input,media,store.unseal(q.c.secret));
       else {
         const content = [{ type: 'text', text: JSON.stringify(input) }];
         if (media) content.push(media.mime === 'video/mp4' ? { type: 'video_url', video_url: { url: 'data:;base64,' + media.data } } : { type: 'input_audio', input_audio: { data: 'data:audio/wav;base64,' + media.data, format: 'wav' } });
@@ -361,7 +384,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         else if (!store.consume('ai-pilot:' + new Date(now()).toISOString().slice(0, 10), AI_LIMITS.dailyRequests, 86400000, now())) deny(429, 'Общий пробный лимит: 12 запросов в сутки. Лимит обновляется в 03:00 по Москве.');
         requestId = r.requestId;
         store.run('INSERT INTO ai_runs(request_id,at,result,model,media_seconds,account_id,mode,access_kind,customer_charge_minor,coin_charge,project_id) VALUES(?,?,?,?,?,?,?,?,0,?,?)', requestId, now(), 'started', service === 'yandex-edit' ? y.c.model : q.c.model, media?.duration ?? null, auth.key, service, auth.owner ? 'owner_test' : reservation?.kind==='paid'?'paid_coins':'free_trial', auth.owner ? 0 : coinPricing.reelsRequestCoins, r.projectId);
-        store.run('UPDATE ai_runs SET provider=?,task=? WHERE request_id=?', routerService(service) ? 'openrouter' : service === 'yandex-edit' ? 'yandex' : 'alibaba', media ? 'analysis' : 'edit', requestId);
+        store.run('UPDATE ai_runs SET provider=?,task=? WHERE request_id=?', routerService(service) ? 'openrouter' : service === 'yandex-edit' ? 'yandex' : q.c.provider==='polza'?'polza':'alibaba', media ? 'analysis' : 'edit', requestId);
         if (routerService(service)) store.run('UPDATE ai_runs SET model=? WHERE request_id=?', openrouter.model(o, service), requestId);
         store.db.exec('COMMIT');
       } catch (error) { store.db.exec('ROLLBACK'); requestId = undefined; reservation = null; throw error; }
@@ -371,7 +394,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       store.run('UPDATE ai_runs SET upstream_status=? WHERE request_id=?', response.status, requestId);
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});
-        deny(response.status === 429 ? 429 : 502, [401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Обратитесь в поддержку сайта.' : response.status === 429 ? 'Лимит провайдера исчерпан. Повторите позже.' : response.status === 404 ? 'Бесплатная модель сейчас недоступна. Платная замена не запускается.' : 'Провайдер отклонил запрос. Монтаж не изменён.');
+        deny(response.status === 402?503:response.status === 429 ? 429 : 502, response.status===402?'На балансе сервиса обработки недостаточно средств. Обратитесь к администратору.':[401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Обратитесь в поддержку сайта.' : response.status === 429 ? 'Лимит провайдера исчерпан. Повторите позже.' : response.status === 404 ? 'Бесплатная модель сейчас недоступна. Платная замена не запускается.' : 'Провайдер отклонил запрос. Монтаж не изменён.');
       }
       const result = await readProviderJson(response);
       let value, usage;
@@ -389,6 +412,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         try { value = JSON.parse(choice.message.content); } catch { deny(502, 'Модель вернула неполный JSON. Монтаж не изменён.'); }
       }
       const analysis = validateAnalysis(value.analysis, media);
+      if(analysis&&media?.mime===PREPARED_MEDIA)analysis.limitations=['Изображение анализировалось по отдельным кадрам (до 12). Между выборками события могут быть пропущены. Таймкоды приблизительные.',...analysis.limitations].slice(0,12);
       if (analysis && service === 'source-analysis') {
         analysis.scope = 'visual'; analysis.speech = ''; analysis.audio = '';
         analysis.events = analysis.events.map(e => ({ ...e, audio: '', speech: '' }));

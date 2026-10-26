@@ -16,6 +16,18 @@ export function mediaBox(c:Clip,a:Pick<Asset,'width'|'height'>,w:number,h:number
   return {cx:w*(.5+c.x/100),cy:h*(.5+c.y/100),width:sw*k*c.scaleX,height:sh*k*c.scaleY,angle:c.rotation,
     sx,sy,sw,sh};
 }
+export function hitsMedia(c:Clip,a:Pick<Asset,'width'|'height'>,x:number,y:number,w:number,h:number){
+ if(c.opacity<=0)return false;
+ const b=mediaBox(c,a,w,h),rad=b.angle*Math.PI/180,dx=x-b.cx,dy=y-b.cy;
+ const localX=dx*Math.cos(rad)+dy*Math.sin(rad),localY=-dx*Math.sin(rad)+dy*Math.cos(rad);
+ if(Math.abs(localX)>b.width/2||Math.abs(localY)>b.height/2)return false;
+ if(c.shape==='ellipse')return (localX/(b.width/2))**2+(localY/(b.height/2))**2<=1;
+ if(c.shape==='round'){
+  const r=Math.min(b.width,b.height)*c.corner;
+  const cx=Math.max(0,Math.abs(localX)-(b.width/2-r)),cy=Math.max(0,Math.abs(localY)-(b.height/2-r));return cx*cx+cy*cy<=r*r;
+ }
+ return true;
+}
 export function clipPath(ctx:CanvasRenderingContext2D,c:Clip,w:number,h:number){
   ctx.beginPath();
   if(c.shape==='ellipse')ctx.ellipse(0,0,w/2,h/2,0,0,Math.PI*2);

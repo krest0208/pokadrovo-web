@@ -94,7 +94,7 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
   function projectDocument(p) {
     if (!p || typeof p !== 'object' || !projectIdOk(p.id)) deny(400, 'Некорректный проект.');
     for (const key of ['clips', 'audio', 'texts']) if (!Array.isArray(p[key]) || p[key].length > 1000) deny(400, 'Слишком много элементов проекта.');
-    const clipKeys = 'id assetId name kind duration start end speed volume muted fadeIn fadeOut at fit zoom x y rotation flip brightness contrast saturation opacity visualIn visualOut scaleX scaleY shape corner cropLeft cropRight cropTop cropBottom'.split(' ');
+    const clipKeys = 'id assetId name kind duration start end speed volume muted fadeIn fadeOut at fit zoom x y rotation flip brightness contrast saturation opacity visualIn visualOut layer scaleX scaleY shape corner cropLeft cropRight cropTop cropBottom'.split(' ');
     const textKeys = 'id text from to x y size color background fontId weight italic align'.split(' ');
     function pick(o, keys) { if (!o || typeof o !== 'object') deny(400, 'Некорректный элемент.'); const r = {}; for (const k of keys) { const v = o[k]; if (typeof v === 'string' && v.length <= 10000 || typeof v === 'number' && Number.isFinite(v) || typeof v === 'boolean') r[k] = v; } return r; }
     return { ...pick(p, ['id','name','schema','mode','ratio','title','brief','created','modified','master']), clips: p.clips.map(c => pick(c, clipKeys)), audio: p.audio.map(c => pick(c, clipKeys)), texts: p.texts.map(c => pick(c, textKeys)) };

@@ -1,4 +1,4 @@
-import { Clip, Project, clone, currentClip, totalLength, clamp } from './model';
+import { Clip, Project, clone, visibleClips, clamp } from './model';
 import { Box, Handle, mediaBox, dragTransform } from './geometry';
 import type { ToolPort } from './tool-port';
 
@@ -25,8 +25,7 @@ export class TransformControls {
   }
   private current(p=this.port.project()):Clip|undefined{
     const sel=this.port.selected();if(sel?.track!=='video')return;
-    const active=currentClip(p,Math.min(this.port.cursor(),Math.max(0,totalLength(p)-.001)));
-    return active?.clip.id===sel.id?active.clip:undefined;
+    return visibleClips(p,this.port.cursor()).find(c=>c.clip.id===sel.id)?.clip;
   }
   sync(p=this.draft||this.port.project()){
     if(this.cancelDrag)return;

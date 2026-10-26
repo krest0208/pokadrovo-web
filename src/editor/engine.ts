@@ -1,4 +1,4 @@
-import { Asset, Caption, Clip, Project, currentClip, dimensions, fadeGain, length, totalLength } from './model';
+import { Asset, Caption, Clip, Project, visibleClips, dimensions, fadeGain, length, totalLength } from './model';
 import { mediaReady } from './assets';
 import { mediaBox, clipPath } from './geometry';
 import { ensureFonts, fontStyle } from './fonts';
@@ -54,8 +54,8 @@ export class PlaybackEngine {
  }
  async seek(time:number){
   if(!this.project||this.disposed)return;this.pause();this.time=Math.max(0,Math.min(totalLength(this.project),time));this.tick(this.time,false);
-  const c=currentClip(this.project,Math.min(this.time,Math.max(0,totalLength(this.project)-.001)));
-  if(c){const r=this.resources.get(c.clip.id);if(r){await r.ready;if(r.element instanceof HTMLMediaElement)await this.seekMedia(r.element,c.clip.start+(this.time-c.at)*c.clip.speed);}}
+  const clips=visibleClips(this.project,Math.min(this.time,Math.max(0,totalLength(this.project)-.001)));
+  await Promise.all(clips.map(async c=>{const r=this.resources.get(c.clip.id);if(r){await r.ready;if(r.element instanceof HTMLMediaElement)await this.seekMedia(r.element,c.clip.start+(this.time-c.at)*c.clip.speed);}}));
   if(!this.disposed){this.draw();this.tick(this.time,false);}
  }
  async play(){if(!this.project||!totalLength(this.project))return;
@@ -71,8 +71,8 @@ export class PlaybackEngine {
   this.sync();this.draw();this.tick(this.time,true);this.raf=requestAnimationFrame(this.loop);
  };
  private sync(){
-  if(!this.project)return;const p=this.project,active=currentClip(p,this.time);const live=new Map<string,{clip:Clip;offset:number}>();
-  if(active)live.set(active.clip.id,{clip:active.clip,offset:this.time-active.at});
+  if(!this.project)return;const p=this.project,active=visibleClips(p,this.time);const live=new Map<string,{clip:Clip;offset:number}>();
+  for(const c of active)live.set(c.clip.id,{clip:c.clip,offset:this.time-c.at});
   for(const clip of p.audio){const offset=this.time-clip.at;if(offset>=0&&offset<length(clip))live.set(clip.id,{clip,offset});}
   if(this.master)this.master.gain.value=p.master;
   for(const [id,r] of this.resources){
@@ -88,8 +88,7 @@ export class PlaybackEngine {
  draw(){
   const p=this.project;if(!p)return;const ctx=this.canvas.getContext('2d');if(!ctx)return;
   const w=this.canvas.width,h=this.canvas.height;ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.filter='none';ctx.fillStyle='#0d1420';ctx.fillRect(0,0,w,h);
-  const active=currentClip(p,Math.min(this.time,Math.max(0,totalLength(p)-.001)));
-  if(active){const c=active.clip,r=this.resources.get(c.id);if(r){const el=r.element;
+  for(const active of visibleClips(p,Math.min(this.time,Math.max(0,totalLength(p)-.001)))){const c=active.clip,r=this.resources.get(c.id);if(r){const el=r.element;
    const sw=el instanceof HTMLImageElement?el.naturalWidth:(el as HTMLVideoElement).videoWidth,sh=el instanceof HTMLImageElement?el.naturalHeight:(el as HTMLVideoElement).videoHeight;
    if(sw&&sh){
     const off=this.time-active.at,d=length(c),fade=Math.max(0,Math.min(1,c.visualIn?off/c.visualIn:1,c.visualOut?(d-off)/c.visualOut:1));

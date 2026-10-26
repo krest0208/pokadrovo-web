@@ -1,3 +1,4 @@
+import {prepareSamples} from './media-samples';
 import { clone, clock, totalLength } from './model';
 import { download } from './assets';
 import { AiPlan, AiRequest, AiMedia, AiService, createAiRequest, validateAiPlan, applyAiPlan, simulateAiPlan } from './ai';
@@ -25,7 +26,7 @@ export class AiPanel {
     this.node=document.createElement('aside');this.node.className='pe-ai-panel';this.node.hidden=true;
     this.node.ariaLabel='Задание для ИИ-монтажёра';
     this.node.innerHTML=`<header><div><span class="pe-ai-symbol">✦</span><strong>Покадрово AI<small>Ваш замысел. Ваш контроль.</small></strong></div><button type="button" data-ai="close" aria-label="Закрыть панель ИИ">×</button></header>
-    <div class="pe-ai-scroll"><div class="pe-ai-connection"><i></i><span>${port.provider?(port.provider.getStatus?'Проверяем настройки ':'Подключён: ')+esc(port.provider.name):'Нейросеть недоступна'}</span></div>
+    <div class="pe-ai-scroll"><div class="pe-ai-connection"><i></i><span>${port.provider?(port.provider.getStatus?'Проверяем настройки ':'Подключён: ')+esc(port.provider.name):'Монтаж с ИИ недоступен'}</span></div>
     <label class="pe-ai-mode-label" ${(port.provider?.modes?.length||0)>1?'':'hidden'}>Режим монтажа<select class="pe-ai-mode" aria-label="Режим монтажа">${port.provider?.modes?.map(m=>`<option value="${m.id}">${esc(m.label)}</option>`).join('')||''}</select></label><p class="pe-ai-mode-note pe-ai-note"></p>
     <label for="pe-ai-prompt">Как смонтировать видео?</label><textarea id="pe-ai-prompt" maxlength="4000" rows="6" placeholder="Опишите задачу: какие кадры оставить, какой темп и настроение нужны…"></textarea>
     <div class="pe-ai-presets">${examples.map((s,i)=>`<button type="button" data-ai="example-${i}">${['Темп и звук','Вертикальный ролик','Убрать лишнее'][i]}</button>`).join('')}</div>
@@ -34,8 +35,8 @@ export class AiPanel {
     <p class="pe-ai-media-description">MP4 до 60 секунд и 7 МБ. Анализируется весь выбранный файл.</p>
     <label>Исходник из проекта<select class="pe-ai-media-source" aria-label="Файл для анализа"></select></label>
     <label class="pe-ai-consent"><input type="checkbox" class="pe-ai-media-consent"/> <span class="pe-ai-consent-copy">Разрешаю отправить выбранный файл провайдеру для анализа.</span></label>
-    <button type="button" class="pe-ai-submit" data-ai="analyze">Разобрать файл и предложить монтаж</button></section>
-    <p class="pe-ai-note pe-ai-billing-note">Qwen · видео, речь и звук. Файл отправляется только с вашего согласия и не сохраняется на сервере Покадрово.</p>
+    <button type="button" class="pe-ai-submit" data-ai="analyze">Смонтировать с ИИ</button></section>
+    <p class="pe-ai-note pe-ai-billing-note">Смонтировать с ИИ: видео, речь и звук. Файл отправляется только с вашего согласия и не сохраняется на сервере Покадрово.</p>
     <button type="button" class="pe-ai-cancel" data-ai="cancel" hidden>Отменить запрос</button>
     <p class="pe-ai-note">${port.provider?'Первая кнопка отправляет только задание, структуру проекта и предыдущий анализ этого файла. Для передачи самого видео используйте отдельную кнопку с согласием.':'Сервис недоступен. Вы можете сохранить задание в проекте.'}</p>
     <button type="button" class="pe-ai-save" data-ai="save">Сохранить задание в проекте</button>
@@ -64,10 +65,10 @@ export class AiPanel {
   private async checkConnection(){
     const provider=this.port.provider;if(!provider?.getStatus||this.disposed)return;const generation=++this.statusGeneration;
     try{const status=await provider.getStatus(this.connectionAbort.signal);if(this.disposed||generation!==this.statusGeneration)return;
-     this.available=status.available;this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
+     this.available=status.available;this.mediaTransport=status.mediaTransport||'file';this.recipient=status.recipient||'';this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
      if(provider.service!=='yandex-edit'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
      this.node.querySelector('.pe-ai-connection span')!.textContent=reason;
-     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Расход API учитывается в аккаунте Alibaba Cloud. Автоматического повторения запросов нет.':`Доступность запроса проверяется сервером. ${status.trial?.remaining!==undefined?'Осталось пробных запросов: '+status.trial.remaining+'.':''}`;
+     this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Расход API учитывается на балансе сервиса обработки. Автоматического повторения запросов нет.':`Доступность запроса проверяется сервером. ${status.trial?.remaining!==undefined?'Осталось пробных запросов: '+status.trial.remaining+'.':''}`;
     }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
     finally{if(!this.disposed&&generation===this.statusGeneration)this.refresh();}
   }
@@ -101,10 +102,10 @@ export class AiPanel {
     this.node.querySelector<HTMLSelectElement>('.pe-ai-mode')!.disabled=!!this.abort;
     this.node.querySelector<HTMLElement>('.pe-ai-media')!.hidden=!this.port.provider?.supportsMedia;
     this.node.querySelector('.pe-ai-media-title')!.textContent=visual?'Визуальный разбор и советы':'Разобрать видео и звук';
-    this.node.querySelector('.pe-ai-media-description')!.textContent=visual?'MP4 до 60 секунд и 7 МБ. Модель анализирует изображение; речь и звуковая дорожка не распознаются.':'MP4 до 60 секунд и 7 МБ. После первого анализа доступен WAV. Анализируется весь выбранный файл.';
-    this.node.querySelector('.pe-ai-consent-copy')!.textContent=visual?'Разрешаю передать выбранный файл целиком через OpenRouter выбранной в настройках модели. Звук в этом режиме не анализируется.':'Разрешаю передать выбранный файл целиком, включая звук, в Qwen через Alibaba Cloud для анализа.';
-    this.node.querySelector('[data-ai="analyze"]')!.textContent=visual?'Разобрать исходник и дать советы':'Разобрать файл и предложить монтаж';
-    this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'✦ Подготовить план монтажа';
+    this.node.querySelector('.pe-ai-media-description')!.textContent=this.mediaTransport==='frames-audio'?'MP4 со звуком до 60 секунд и 7 МБ. Браузер подготовит до 12 кадров и звуковую дорожку. Между кадрами возможен пропуск коротких событий. Также подходит WAV.':visual?'MP4 до 60 секунд и 7 МБ. Модель анализирует изображение; речь и звуковая дорожка не распознаются.':'MP4 до 60 секунд и 7 МБ. После первого анализа доступен WAV. Анализируется весь выбранный файл.';
+    this.node.querySelector('.pe-ai-consent-copy')!.textContent=this.mediaTransport==='frames-audio'?`Разрешаю передать кадры с таймкодами и звук выбранного файла через ${this.recipient||'сервис обработки'} для анализа с ИИ. Между выборками кадров изображение не анализируется.`:visual?'Разрешаю передать выбранный файл целиком через OpenRouter выбранной в настройках модели. Звук в этом режиме не анализируется.':'Разрешаю передать выбранный файл целиком, включая звук, сервису обработки для анализа с ИИ. Получатель указан ниже перед отправкой.';
+    this.node.querySelector('[data-ai="analyze"]')!.textContent=visual?'Разобрать исходник и дать советы':'Смонтировать с ИИ';
+    this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'Смонтировать с ИИ';
     this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Используйте проект 9:16 или 16:9 длительностью до 60 секунд.'):'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Доступ закрыт.';
     (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!this.available||!!this.abort||this.port.busy()||!validReels||this.requiresMedia;
     const source=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;
@@ -142,6 +143,7 @@ export class AiPanel {
     const request=await createAiRequest(this.port.project(),this.input.value,this.port.cursor(),this.port.selected());
     this.request=request;this.plan=null;this.renderPlan();this.refresh();return request;
   }
+  private mediaTransport='file';private recipient='';
   private async prepareMedia():Promise<AiMedia>{
     if(!this.node.querySelector<HTMLInputElement>('.pe-ai-media-consent')!.checked)throw Error('Подтвердите отправку файла провайдеру.');
     const p=this.port.project(),clip=[...p.clips,...p.audio].find(c=>c.id===this.mediaClipId),asset=clip&&this.port.assets.get(clip.assetId);
@@ -150,12 +152,13 @@ export class AiPanel {
     const video=clip.kind==='video',mime=video?'video/mp4':'audio/wav';
     if(video?!(/\.mp4$/i.test(asset.name)||asset.blob.type==='video/mp4'):!(/\.wav$/i.test(asset.name)||['audio/wav','audio/x-wav','audio/wave'].includes(asset.blob.type)))throw Error('Для пробы используйте MP4-видео или WAV-аудио.');
     this.port.pause();
+    if(this.mediaTransport==='frames-audio')return prepareSamples(asset,clip,this.abort!.signal);
     const bytes=new Uint8Array(await asset.blob.arrayBuffer());let binary='';
     for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
     return {clipId:clip.id,assetId:clip.assetId,mime,data:btoa(binary)};
   }
   private async send(withMedia=false){
-    if(!this.port.provider){this.saveBrief();this.say('Нейросеть не подключена. Задание сохранено.',true);return;}
+    if(!this.port.provider){this.saveBrief();this.say('Монтаж с ИИ не подключён. Задание сохранено.',true);return;}
     if(this.abort)return;
     if(!this.available){this.say('Сначала настройте подключение в админ-панели.',true);void this.checkConnection();return;}
     const gen=++this.generation;
@@ -165,7 +168,7 @@ export class AiPanel {
       this.abort=new AbortController();this.refresh();this.say(withMedia?'Подготавливаем выбранный файл…':'Ожидаем план от сервиса…');
       const media=withMedia?await this.prepareMedia():undefined;
       if(this.disposed||gen!==this.generation||this.abort.signal.aborted)return;
-      this.say(withMedia?(this.port.provider.service==='source-analysis'?'Анализируем изображение и готовим советы. Звук не распознаётся. До 90 секунд…':'Qwen анализирует изображение, речь и звуки. До 90 секунд…'):'Ожидаем план от сервиса…');
+      this.say(withMedia?(this.port.provider.service==='source-analysis'?'Анализируем изображение и готовим советы. Звук не распознаётся. До 90 секунд…':'ИИ анализирует изображение, речь и звуки. До 90 секунд…'):'Ожидаем план от сервиса…');
       const raw=await this.port.provider.createPlan(request,this.abort.signal,media);
       if(this.disposed||gen!==this.generation)return;
       if(raw&&typeof raw==='object'&&'plan' in raw&&'analysis' in raw){

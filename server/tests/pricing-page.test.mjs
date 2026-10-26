@@ -59,12 +59,19 @@ test('back navigation restores pricing and the logo returns to the homepage',()=
   b.studio.navigate('pricing');assert.equal(b.location.pathname,'/ai');assert.equal(b.studio.state.screen,'pricing');
 });
 
-test('the public AI guide and homepage expose one model without plans, prices or purchase controls',()=>{
+test('the public AI guide and homepage use generic AI copy without model names, prices or purchase controls',()=>{
   const b=browser(),noop=()=>{};
   const guide=renderToStaticMarkup(React.createElement(b.api.AiPlans,{theme:'dark',onTheme:noop,onHome:noop,onStart:noop}));
-  assert.match(guide,/data-theme="dark"/);assert.match(guide,/Qwen/);assert.match(guide,/60 секунд/);assert.match(guide,/7 МБ/);
+  assert.match(guide,/data-theme="dark"/);assert.match(guide,/СМОНТИРОВАТЬ С ИИ/);assert.doesNotMatch(guide,/Qwen|Gemini|Alibaba/);assert.match(guide,/60 секунд/);assert.match(guide,/7 МБ/);
   assert.doesNotMatch(guide,/Yandex|DeepSeek|Gemma|монет|Тариф|>Купить|pk-plan-price/i);
   const home=renderToStaticMarkup(React.createElement(b.api.AiHome,{theme:'light',onToggleTheme:noop,onCreate:noop,onContinue:noop,onImport:noop,onOpenProject:noop,projects:[]}));
   assert.doesNotMatch(home,/pkh-pricing|Тариф|монет|купить|ArrowUpRight/i);
-  assert.match(home,/<a href="\/ai">Монтаж с ИИ<\/a>/);
+  assert.match(home,/<a href="\/ai">Смонтировать с ИИ<\/a>/);
+});
+
+test('every start-editing CTA opens the editor directly and project links stay out of the homepage',()=>{
+ const b=browser(),calls=[],noop=()=>{},home=new b.api.AiHome({theme:'light',onToggleTheme:noop,onCreate:brief=>calls.push(brief),onContinue:noop,onImport:noop,onOpenProject:noop,projects:[]});
+ const buttons=[];const visit=node=>{if(!node||typeof node!=='object')return;if(node.type==='button'&&node.props.children==='Начать монтаж')buttons.push(node);React.Children.forEach(node.props?.children,visit);};visit(home.render());
+ assert.equal(buttons.length,4);for(const button of buttons)button.props.onClick();assert.equal(calls.length,4);
+ const html=renderToStaticMarkup(home.render());assert.doesNotMatch(html,/Мои проекты|Монтажная студия в браузере|pk-scene-picker|Qwen|Gemini|Alibaba/);assert.match(html,/Снимай больше/);assert.match(html,/Монтируй проще/);
 });

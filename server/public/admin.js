@@ -93,7 +93,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     const names = { desktop: 'Компьютеры', mobile: 'Телефоны', tablet: 'Планшеты', unknown: 'Без категории', video: 'Обычное видео', reels: 'Reels / Shorts', webm: 'Экспорт WebM', mp4: 'Экспорт MP4' };
     const rows = [...data.breakdown.devices, ...data.breakdown.modes, ...data.breakdown.formats];
     $('breakdowns').replaceChildren(...(rows.length ? rows.map(r => { const row = element('div', 'breakdown-row'); row.append(element('span', '', names[r.label] || 'Другой'), element('strong', '', number(r.count))); return row; }) : [element('p', 'muted', 'Событий пока нет. Распределение появится после использования студии.') ]));
-    $('metric-notes').replaceChildren(...(owner.singleAi?['Активна одна модель Qwen. Исторические запросы к другим моделям сохраняются в статистике.','Показан фактический расход токенов, если его вернул провайдер. Неизвестная стоимость не считается нулевой.','Автоматические запросы ИИ-идей отключены; технические проверки сайта продолжаются.']:data.notes).map(note => element('p', '', note)));
+    $('metric-notes').replaceChildren(...(owner.singleAi?['Один активный сервис монтажа с ИИ через Polza.ai. История прежних запросов сохраняется в статистике.','Показан фактический расход токенов, если его вернул провайдер. Неизвестная стоимость не считается нулевой.','Автоматические запросы ИИ-идей отключены; технические проверки сайта продолжаются.']:data.notes).map(note => element('p', '', note)));
     drawChart(data.series); makeTable(data.series);
   }
   function drawChart(series) {
@@ -191,13 +191,14 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
   async function loadSettings() {
     settings = await request('/settings'); if (!owner) return;
     const form = $('settings-form'); form.elements.provider.value = settings.provider; form.elements.model.value = settings.model;
-    if(owner.singleAi){for(const option of form.elements.provider.options){option.hidden=option.value!=='qwen';option.disabled=option.value!=='qwen';}form.elements.provider.value='qwen';form.elements.model.value='qwen3.8-omni-flash';form.elements.model.readOnly=true;}
+    if(owner.singleAi){for(const option of form.elements.provider.options){option.hidden=option.value!=='polza';option.disabled=option.value!=='polza';}form.elements.provider.value='polza';form.elements.model.value='google/gemini-2.5-flash';form.elements.model.readOnly=true;}
     form.elements.endpoint.value = settings.endpoint || ''; form.elements.aiEnabled.checked = settings.aiEnabled;
     form.elements.trialEnabled.checked = settings.trialEnabled;
+    if(owner.singleAi){form.elements.endpoint.value='https://polza.ai/api/v1';form.elements.endpoint.readOnly=true;if(settings.provider!=='polza'){form.elements.aiEnabled.checked=false;form.elements.trialEnabled.checked=false;}}
     form.elements.apiKey.value = ''; form.elements.password.value = ''; form.elements.removeKey.checked = false; form.elements.analyticsEnabled.checked = settings.analyticsEnabled;
     text($('key-status'), settings.keyConfigured ? 'Ключ сохранён на сервере' : 'Ключ не указан');
     text($('ai-connection-status'), settings.connected ? 'Проверена запросом' : settings.configured && settings.aiEnabled ? 'Готова к пробе' : 'Не включена');
-    text($('ai-connection-note'), settings.connected ? 'Qwen успешно ответил на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели проверяется запросом из редактора.' : 'Для запуска выберите Qwen Omni, укажите ключ и Base URL, затем включите пробный режим.');
+    text($('ai-connection-note'), settings.connected ? 'Подключение успешно ответило на запрос. Можно продолжать пробные анализы в редакторе.' : settings.configured && settings.aiEnabled ? 'Настройки сохранены. Доступ к модели проверяется запросом из редактора.' : 'Для запуска укажите новый API-ключ Polza.ai. Баланс пополняется вручную в кабинете провайдера. Прежний ключ не используется.');
     updateAiFields();
     await Promise.all([loadAiUsage(),...(owner.singleAi?[]:[loadOpenRouter(),loadYandex()])]);
   }
@@ -231,12 +232,12 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     let cards=[['Попытки',t.attempts,'Включая ошибки после отправки'],['Успешно',t.succeeded,'Проверенный результат'],['Ошибки / прервано',t.failed,'Подарочные монеты возвращены'],['Пользователи',t.users,'Без администратора'],['Токены API',t.inputTokens+t.outputTokens,`Учтены у ${t.meteredRequests||0} запросов`],['Списано монет',t.coins,'Внутренний баланс Покадрово']];
     if(owner.singleAi)cards=cards.filter(([label])=>label!=='Списано монет');
     $('ai-metrics').replaceChildren(...cards.map(([label,value,note])=>{const card=element('article','metric');card.append(element('span','metric-label',label),element('strong','metric-number',number(value)),element('span','metric-note',note));return card;}));
-    const q=data.quota;text($('ai-quota'),owner.singleAi?'Активная модель: Qwen3.8-Omni-Flash. Защитный лимит подключения: до 12 запросов в сутки, один одновременно. Расход токенов показан в таблице; стоимость неизвестна, если провайдер её не сообщил.':`OpenRouter сегодня: ${q.used} из ${q.limit} попыток сайта. Осталось ${q.remaining}. Бесплатная квота аккаунта: до ${q.providerFreeDailyLimit} в сутки; лимит сайта оставляет запас. Сброс: ${new Date(q.resetsAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК. Одновременно выполняется один ИИ-запрос.`);
+    const q=data.quota;text($('ai-quota'),owner.singleAi?'Подключение: Polza.ai, Gemini 2.5 Flash. Защитный лимит подключения: до 12 запросов в сутки, один одновременно. Расход токенов показан в таблице; стоимость неизвестна, если провайдер её не сообщил.':`OpenRouter сегодня: ${q.used} из ${q.limit} попыток сайта. Осталось ${q.remaining}. Бесплатная квота аккаунта: до ${q.providerFreeDailyLimit} в сутки; лимит сайта оставляет запас. Сброс: ${new Date(q.resetsAt).toLocaleString('ru-RU',{timeZone:'Europe/Moscow'})} МСК. Одновременно выполняется один ИИ-запрос.`);
     function row(values){const tr=element('tr');for(const v of values)tr.append(element('td','',v));return tr;}
     $('ai-model-usage').replaceChildren(...(data.models.length?data.models.map(m=>row([`${m.model} · ${m.task==='analysis'?'разбор':m.task==='ideas'?'идеи агента':'план'}`,m.attempts,`${m.succeeded} / ${m.failed}`,`${number(m.inputTokens)} / ${number(m.outputTokens)} (${m.meteredRequests||0} учтено)`,m.averageMs===null?'Нет данных':(m.averageMs/1000).toFixed(1)+' сек.',`${cost(m.reportedCostUsd)}${m.costReportedRequests?' · '+m.costReportedRequests+' учтено':''}`])):[row(['Запросов за период нет','Нет данных','Нет данных','Нет данных','Нет данных','Нет данных'])]));
     $('ai-days').replaceChildren(...data.series.map(d=>row([d.day,d.attempts,d.succeeded,d.failed,d.users])));
     $('ai-capacity').replaceChildren(...data.capacity.map(c=>row([c.label,c.requests,c.totalRequests,c.fitsSiteLimit?'Хватает без запаса на ошибки':'Превышен',c.fitsProviderFreeLimit?'Хватает без запаса на ошибки':'Превышен'])));
-    $('ai-usage-notes').replaceChildren(...(owner.singleAi?['Активна одна модель Qwen. Исторические запросы к другим моделям сохраняются в статистике.','Показан фактический расход токенов, если его вернул провайдер. Неизвестная стоимость не считается нулевой.','Автоматические запросы ИИ-идей отключены; технические проверки сайта продолжаются.']:data.notes).map(note=>element('p','',note)));
+    $('ai-usage-notes').replaceChildren(...(owner.singleAi?['Один активный сервис монтажа с ИИ через Polza.ai. История прежних запросов сохраняется в статистике.','Показан фактический расход токенов, если его вернул провайдер. Неизвестная стоимость не считается нулевой.','Автоматические запросы ИИ-идей отключены; технические проверки сайта продолжаются.']:data.notes).map(note=>element('p','',note)));
     $('ai-usage').replaceChildren(...(usage.items.length?usage.items.map(r=>element('p','field-note',`${new Date(r.at).toLocaleString('ru-RU')} · ${r.model} · ${r.task==='analysis'?'Разбор':r.task==='ideas'?'Идеи агента':'План'} · ${r.access_kind==='free_trial'?'Проба':'Администратор'} · ${r.result==='ok'?'Готово':r.result==='started'?'Выполняется':'Не завершён'}${r.upstream_status===null?'':' · HTTP '+r.upstream_status}${r.duration_ms===null?'':' · '+(r.duration_ms/1000).toFixed(1)+' сек.'}${r.input_tokens===null?'':' · токены '+r.input_tokens+' / '+r.output_tokens}`)):[element('p','field-note','Запросов ещё нет.')]));
   }
   $('ai-refresh').addEventListener('click',()=>loadAiUsage().catch(e=>notify(e.message)));
@@ -262,13 +263,13 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     await request('/ai/yandex',{method:'PUT',data});form.reset();await loadYandex();notify('Настройки Яндекса сохранены отдельно. Платный запрос не запускался, пользовательский тариф ещё закрыт.');
   });
   function updateAiFields() {
-    const form = $('settings-form'), qwen = form.elements.provider.value === 'qwen';
+    const form = $('settings-form'), qwen = ['qwen','polza'].includes(form.elements.provider.value);
     form.elements.endpoint.disabled = !qwen; form.elements.endpoint.required = qwen;
     form.elements.aiEnabled.disabled = !qwen; if (!qwen) form.elements.aiEnabled.checked = false;
     form.elements.trialEnabled.disabled = !qwen; if (!qwen) form.elements.trialEnabled.checked = false;
   }
   $('settings-form').elements.provider.addEventListener('change', () => {
-    const form = $('settings-form'); if (form.elements.provider.value === 'qwen') form.elements.model.value = 'qwen3.8-omni-flash'; updateAiFields();
+    const form = $('settings-form'); if(form.elements.provider.value==='polza'){form.elements.model.value='google/gemini-2.5-flash';form.elements.endpoint.value='https://polza.ai/api/v1';}else if(form.elements.provider.value==='qwen')form.elements.model.value='qwen3.8-omni-flash'; updateAiFields();
   });
   $('settings-form').elements.trialEnabled.addEventListener('change', () => {
     const form=$('settings-form'); if(form.elements.trialEnabled.checked)form.elements.aiEnabled.checked=true;
@@ -278,7 +279,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
   });
   bindForm('settings-form', async (data, form) => {
     data.analyticsEnabled = form.elements.analyticsEnabled.checked; data.removeKey = form.elements.removeKey.checked;
-    data.aiEnabled = !data.removeKey && form.elements.provider.value === 'qwen' && form.elements.aiEnabled.checked;
+    data.aiEnabled = !data.removeKey && ['qwen','polza'].includes(form.elements.provider.value) && form.elements.aiEnabled.checked;
     data.trialEnabled = data.aiEnabled && form.elements.trialEnabled.checked;
     if (data.removeKey && !confirm('Удалить API-ключ с сервера?')) return;
     await request('/settings', { method: 'PUT', data }); form.reset(); await loadSettings(); notify('Настройки сохранены. Платный запрос не запускался. Проверка запускается из ИИ-панели редактора.');

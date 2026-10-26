@@ -199,7 +199,7 @@ let accounts;
       if (req.method === 'PUT' && path === '/api/admin/settings') {
         const data = await body(req); await reauth(req, data);
         const old = settings();
-        if (!['openai', 'anthropic', 'google', 'custom', 'qwen'].includes(data.provider) || typeof data.model !== 'string' || !/^[\w./:-]{0,120}$/.test(data.model)) deny(400, 'Проверьте провайдера и имя модели.');
+        if (!['openai', 'anthropic', 'google', 'custom', 'qwen', 'polza'].includes(data.provider) || typeof data.model !== 'string' || !/^[\w./:-]{0,120}$/.test(data.model)) deny(400, 'Проверьте провайдера и имя модели.');
         if (typeof data.analyticsEnabled !== 'boolean') deny(400, 'Некорректная настройка аналитики.');
         let secret = old.secret;
         if (data.removeKey === true) secret = null;

@@ -1,4 +1,4 @@
-import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, clone, clock, currentClip, cutRange, dimensions, fromAsset, length, normalizeCaption, normalizeClip, normalizeProject, parseSrt, patchClip, positions, splitClip, totalLength, uid, videoLength } from './model';
+import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, clone, clock, currentClip, cutRange, dimensions, fromAsset, length, normalizeCaption, normalizeClip, normalizeProject, parseSrt, patchClip, positions, splitClip, totalLength, uid, videoLength, visibleClips } from './model';
 import { download, inspectFile, persistAsset, saveProject } from './assets';
 import { restoreProjectAssets } from './media-recovery';
 import { storageScope } from '../account/api';
@@ -7,6 +7,7 @@ import { t } from './copy';
 import { brandSvg } from '../brand';
 import { EditorTools } from './tools';
 import { EditorTour } from './tour';
+import {hitsMedia} from './geometry';
 import type { AiProvider } from './ai';
 import {createThemeIconMotion,themeAction,themeIconMarkup} from '../motion/theme-icon';
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -28,6 +29,7 @@ export class Editor {
  private themeMotion:ReturnType<typeof createThemeIconMotion>;
  private inspectorGroups=new Map<string,boolean>();
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
+ private overlayRows=1;private importLayer=0;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
  private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;private pendingName:string|null=null;
@@ -42,7 +44,7 @@ export class Editor {
    <section class="pe-panel pe-player" data-panel="player"><header><span>${t.preview}</span><span class="pe-player-meta"></span>${button('expand-player',t.expand,'expand','square')}</header><div class="pe-player-options"><select data-project="ratio" aria-label="Формат кадра">${['16:9','9:16','1:1','4:5'].map(v=>`<option>${v}</option>`).join('')}</select><label><input type="checkbox" data-ui="safe"/> ${t.safe}</label>${button('expand-player',t.expand,'expand','square pe-view-expand')}</div><div class="pe-viewport"><div class="pe-screen"><canvas tabindex="0" role="button" aria-label="Выбрать клип в кадре для редактирования" title="Нажмите на видео, чтобы редактировать"></canvas><div class="pe-safe" hidden><span>9:16 / ${t.safe}</span></div><div class="pe-empty">${brand()}<h3>${t.empty}</h3><p>${t.emptyHint}</p>${button('import',t.import,'upload','primary')}</div></div></div><div class="pe-transport"><output class="pe-time">00:00.000</output><div>${button('back','Назад на секунду','left','square')}${button('play',t.play,'play','pe-play square')}${button('forward','Вперёд на секунду','right','square')}</div><output class="pe-duration">00:00.000</output></div></section>
    <section class="pe-panel pe-inspector" data-panel="inspector"><header>${t.settings}${button('expand-inspector',t.expand,'expand','square')}</header><div class="pe-inspector-body"></div></section>
   </div>
-  <section class="pe-panel pe-timeline" data-panel="timeline"><header><strong>${t.timeline}</strong><div class="pe-tools">${button('undo',t.undo,'undo','square')}${button('redo',t.redo,'redo','square')}<i></i>${button('split',t.split+' (S)','split')}${button('duplicate',t.duplicate,'copy','square')}${button('delete',t.remove,'trash','square')}</div><label class="pe-zoom">${t.zoom}<input type="range" min=".35" max="3" step=".05" value="1" data-ui="zoom" aria-label="${t.zoom}"/></label>${button('expand-timeline',t.expand,'expand','square')}</header><div class="pe-track-scroll"><div class="pe-track-grid"><div class="pe-track-labels"></div><div class="pe-track-content"></div></div></div><details class="pe-range-panel"><summary>Вырезать диапазон</summary><div class="pe-range">${button('mark-in',t.markIn)}<output id="pe-in">00:00.000</output>${button('mark-out',t.markOut)}<output id="pe-out">00:00.000</output>${button('cut',t.cut,'split')}<span>${t.selectionRange}</span></div></details></section>
+  <section class="pe-panel pe-timeline" data-panel="timeline"><header><strong>${t.timeline}</strong><div class="pe-tools">${button('undo',t.undo,'undo','square')}${button('redo',t.redo,'redo','square')}<i></i>${button('add-layer','Добавить слой','layers')}${button('split',t.split+' (S)','split')}${button('duplicate',t.duplicate,'copy','square')}${button('delete',t.remove,'trash','square')}</div><label class="pe-zoom">${t.zoom}<input type="range" min=".35" max="3" step=".05" value="1" data-ui="zoom" aria-label="${t.zoom}"/></label>${button('expand-timeline',t.expand,'expand','square')}</header><div class="pe-track-scroll"><div class="pe-track-grid"><div class="pe-track-labels"></div><div class="pe-track-content"></div></div></div><details class="pe-range-panel"><summary>Вырезать диапазон</summary><div class="pe-range">${button('mark-in',t.markIn)}<output id="pe-in">00:00.000</output>${button('mark-out',t.markOut)}<output id="pe-out">00:00.000</output>${button('cut',t.cut,'split')}<span>${t.selectionRange}</span></div></details></section>
   <footer class="pe-footer"><span role="status" class="pe-status">${t.ready}</span><span>${t.shortcuts}</span></footer>
   <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".json,application/json" hidden/>
   <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
@@ -83,13 +85,13 @@ export class Editor {
   try{missing=await restoreProjectAssets(this.project,this.opts.assets,()=>!this.disposed&&storageScope()===this.account);if(!missing.length)this.status(t.ready);}
   catch(e){this.fail(e);}finally{this.loading=false;if(!this.disposed){this.render();await this.prepare();if(missing.length)this.status('Не удалось восстановить файлы: '+missing.join(', ')+'. Остальные исходники загружены. Добавьте недостающие файлы повторно.');}}
  }
- async importFiles(files:FileList|File[]|null){if(!files?.length||this.exporting||this.importing||this.disposed)return;this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
+ async importFiles(files:FileList|File[]|null,layer=0){if(!files?.length||this.exporting||this.importing||this.disposed)return;this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
   for(const file of Array.from(files)){if(this.disposed)break;try{
    this.status(`${t.loading}: ${file.name}`);const a=await inspectFile(file);if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
    try{await persistAsset(a);}catch{storageFailed=true;}
    if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
    this.opts.assets.set(a.id,a);const next=clone(this.project);
-   const c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
+   const c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{if(layer>0){c.layer=layer;c.at=this.cursor;c.zoom=.4;c.x=25;c.y=20;}next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
    this.history.commit(next);this.save(false);this.render();
   }catch(e){problems.push(file.name+': '+(e instanceof Error?e.message:String(e)));}}
   this.loading=false;this.importing=false;if(added&&!this.disposed)await this.prepare();
@@ -118,9 +120,11 @@ export class Editor {
   const w=Math.max(1,Math.min(rect.width-32,(rect.height-24)*ratio));screen.style.width=w+'px';screen.style.height=(w/ratio)+'px';this.tools?.sync();
  }
  private showPanel(panel:string){this.root.dataset.mobile=panel;this.root.querySelectorAll<HTMLElement>('.pe-mobile-nav [data-action]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.action==='mobile-'+panel)));requestAnimationFrame(()=>{if(!this.disposed)this.fitCanvas();});}
- private selectPreview(){
+ private selectPreview(event?:MouseEvent){
   if(this.loading||this.exporting||this.tour?.active)return;
-  const active=currentClip(this.project,Math.min(this.cursor,Math.max(0,totalLength(this.project)-.001)));
+  const visible=visibleClips(this.project,Math.min(this.cursor,Math.max(0,totalLength(this.project)-.001))).reverse();
+  const rect=event?this.engine.canvas.getBoundingClientRect():null;
+  const active=event&&rect?visible.find(({clip})=>{const asset=this.opts.assets.get(clip.assetId);return asset&&hitsMedia(clip,asset,(event.clientX-rect.left)*this.engine.canvas.width/rect.width,(event.clientY-rect.top)*this.engine.canvas.height/rect.height,this.engine.canvas.width,this.engine.canvas.height);}):visible[0];
   if(!active)return;this.engine.pause();this.selected={track:'video',id:active.clip.id};
   this.renderInspector();this.renderTimeline();this.tools.sync();
   if(window.matchMedia('(max-width: 900px)').matches)this.showPanel('inspector');
@@ -167,7 +171,8 @@ export class Editor {
   }else{
    const c=item as Clip,isAudio=this.selected!.track==='audio';
    html=`<div class="pe-selected-file">${icon(isAudio?'audio':'video',23)}<span><small>${isAudio?t.audio:t.selected}</small><b title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</b></span></div><h4>${t.trim}</h4><div class="pe-pair">${this.number(t.start,'start',c.start,0,c.end-.04)}${this.number(t.end,'end',c.end,c.start+.04,c.kind==='image'?600:c.duration)}</div>`;
-   if(isAudio)html+=this.number(t.at,'at',c.at,0,86400);
+   if(isAudio||c.layer>0)html+=this.number(t.at,'at',c.at,0,86400);
+   if(!isAudio)html+=this.number('Слой (0: основное видео)','layer',c.layer,0,8,1);
    html+=`<div class="pe-pair pe-trim-actions">${button('trim-start',t.trimLeft,'split')}${button('trim-end',t.trimRight,'split')}</div>`;
    if(c.kind!=='image'){
     html+=`<h4>${t.speed}</h4>${this.range(t.speed,'speed',c.speed,.25,4,.05,'x')}<div class="pe-speeds">${[.5,1,1.5,2].map(v=>`<button data-speed="${v}" class="${c.speed===v?'active':''}">${v}x</button>`).join('')}</div><p class="pe-note">${t.duration}: ${length(c).toFixed(2)} s</p>`;
@@ -202,19 +207,20 @@ export class Editor {
  private pixels(){return 62*this.zoom;}
  private renderTimeline(){
   const scale=this.pixels(),duration=totalLength(this.project),width=Math.max(620,this.$('.pe-track-scroll').clientWidth-105,(duration+1)*scale);
+  const layers=Array.from({length:Math.max(this.overlayRows,...this.project.clips.map(c=>c.layer))},(_,i)=>i+1).reverse();
   const rowH=58;const audioRows=Math.max(1,this.project.audio.length),textRows=Math.max(1,this.project.texts.length);
   const content=this.$('.pe-track-content');content.style.width=width+'px';
-  this.$('.pe-track-labels').innerHTML=`<span>${t.tracks}</span><div>${icon('video',14)}${t.videoTrack}</div>${Array.from({length:audioRows},(_,i)=>`<div>${icon('audio',14)}${t.audioTrack} ${i+1}</div>`).join('')}${Array.from({length:textRows},(_,i)=>`<div>${icon('text',14)}${t.text} ${i+1}</div>`).join('')}`;
+  this.$('.pe-track-labels').innerHTML=`<span>${t.tracks}</span>${layers.map(layer=>`<div>${icon('layers',14)}Слой ${layer}</div>`).join('')}<div>${icon('video',14)}${t.videoTrack}</div>${Array.from({length:audioRows},(_,i)=>`<div>${icon('audio',14)}${t.audioTrack} ${i+1}</div>`).join('')}${Array.from({length:textRows},(_,i)=>`<div>${icon('text',14)}${t.text} ${i+1}</div>`).join('')}`;
   const tickStep=this.zoom>=1?1:2;const ticks=Array.from({length:Math.ceil(width/scale/tickStep)},(_,i)=>`<span style="left:${i*tickStep*scale}px">${clock(i*tickStep).slice(0,5)}</span>`).join('');
   const draw=(track:'video'|'audio'|'text',id:string,name:string,at:number,d:number)=>`<button class="pe-clip ${track} ${this.selected?.id===id?'selected':''}" type="button" draggable="true" data-select="${track}:${id}" data-track="${track}" data-clip="${id}" style="left:${at*scale}px;width:${Math.max(3,d*scale)}px" title="${escapeHtml(name)}"><i data-resize="start"></i><span>${icon(track==='audio'?'audio':track==='text'?'text':'video',12)}<b>${escapeHtml(name)}</b></span><small>${d.toFixed(1)} s</small><i data-resize="end"></i></button>`;
-  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div><div class="pe-time-row" data-drop="video">${positions(this.project).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip))).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
+  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div>`+layers.map(layer=>`<div class="pe-time-row pe-overlay-row" data-drop="video" data-layer="${layer}">${positions(this.project).filter(c=>c.clip.layer===layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip))).join('')}<button class="pe-layer-add" data-action="overlay-import-${layer}" title="Добавить фото или видео на слой ${layer}" aria-label="Добавить фото или видео на слой ${layer}">${icon('plus',14)}</button></div>`).join('')+`<div class="pe-time-row" data-drop="video" data-layer="0">${positions(this.project).filter(c=>!c.clip.layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip))).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
    (this.project.audio.length?this.project.audio.map(c=>`<div class="pe-time-row" data-drop="audio">${draw('audio',c.id,c.name,c.at,length(c))}</div>`).join(''):`<div class="pe-time-row" data-drop="audio"><button class="pe-track-add" data-action="tab-audio">${t.audio}: ${t.import}</button></div>`)+
-   (this.project.texts.length?this.project.texts.map(c=>`<div class="pe-time-row" data-drop="text">${draw('text',c.id,c.text,c.from,c.to-c.from)}</div>`).join(''):`<div class="pe-time-row" data-drop="text"><button class="pe-track-add" data-action="add-text">${t.addText}</button></div>`)+`<div class="pe-head" style="left:${this.cursor*scale}px;height:${(1+audioRows+textRows)*rowH+25}px"><span></span></div>`;
+   (this.project.texts.length?this.project.texts.map(c=>`<div class="pe-time-row" data-drop="text">${draw('text',c.id,c.text,c.from,c.to-c.from)}</div>`).join(''):`<div class="pe-time-row" data-drop="text"><button class="pe-track-add" data-action="add-text">${t.addText}</button></div>`)+`<div class="pe-head" style="left:${this.cursor*scale}px;height:${(1+layers.length+audioRows+textRows)*rowH+25}px"><span></span></div>`;
   this.$('#pe-in').textContent=clock(this.markIn);this.$('#pe-out').textContent=clock(this.markOut);this.$<HTMLButtonElement>('[data-action="cut"]').disabled=Math.abs(this.markIn-this.markOut)<.04;
  }
  private async seek(time:number){if(this.loading||this.exporting)return;try{await this.engine.seek(clamp(time,0,totalLength(this.project)));}catch(e){this.fail(e);}}
  private select(track:string,id:string){if(!['video','audio','text'].includes(track))return;this.engine.pause();this.selected={track:track as Selection['track'],id};this.cursor=this.selectedAt();this.renderInspector();this.renderTimeline();void this.seek(this.cursor);}
- private click(e:Event){const target=e.target as Element;if(target===this.engine.canvas){this.selectPreview();return;}if(target.matches('.pe-panel-shade')&&this.expanded){this.expand(this.expanded);return;}const sel=target.closest<HTMLElement>('[data-select]');if(sel&&!target.closest('[data-resize]')){const [track,id]=sel.dataset.select!.split(':');this.select(track,id);return;}
+ private click(e:Event){const target=e.target as Element;if(target===this.engine.canvas){this.selectPreview(e as MouseEvent);return;}if(target.matches('.pe-panel-shade')&&this.expanded){this.expand(this.expanded);return;}const sel=target.closest<HTMLElement>('[data-select]');if(sel&&!target.closest('[data-resize]')){const [track,id]=sel.dataset.select!.split(':');this.select(track,id);return;}
   const asset=target.closest<HTMLElement>('[data-asset]');if(asset){const a=this.opts.assets.get(asset.dataset.asset!);if(!a)return;const p=clone(this.project),c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;p.audio.push(c);}else p.clips.push(c);this.selected={track:a.kind==='audio'?'audio':'video',id:c.id};this.commit(p);return;}
   const speed=target.closest<HTMLElement>('[data-speed]');if(speed){this.changeSelected({speed:Number(speed.dataset.speed)});return;}
   const action=target.closest<HTMLElement>('[data-action]')?.dataset.action;if(!action)return;
@@ -231,7 +237,9 @@ export class Editor {
   if(action.startsWith('tab-')){this.tab=action.slice(4) as typeof this.tab;this.showPanel('library');this.renderLibrary();for(const name of ['media','audio','text'])this.$(`[data-action="tab-${name}"]`).classList.toggle('active',this.tab===name);return;}
   if(action.startsWith('mobile-')){this.showPanel(action.slice(7));return;}
   if(action.startsWith('expand-')){this.expand(action.slice(7));return;}
-  if(action==='import'){const input=this.$<HTMLInputElement>('.pe-file-input');input.accept=this.tab==='audio'?'audio/*':'video/*,image/*,audio/*';input.click();return;}
+  if(action==='add-layer'){const max=Math.max(this.overlayRows,...this.project.clips.map(c=>c.layer));if(max>=8){this.status('Можно добавить до 8 слоёв поверх основного видео.');return;}this.overlayRows=max+1;this.showPanel('timeline');this.renderTimeline();return;}
+  if(action.startsWith('overlay-import-')){this.importLayer=clamp(Number(action.slice(15)),1,8);const input=this.$<HTMLInputElement>('.pe-file-input');input.accept='video/*,image/*';input.click();return;}
+  if(action==='import'){this.importLayer=0;const input=this.$<HTMLInputElement>('.pe-file-input');input.accept=this.tab==='audio'?'audio/*':'video/*,image/*,audio/*';input.click();return;}
   if(action==='srt'){this.$<HTMLInputElement>('.pe-srt-input').click();return;}
   if(action==='json-import'){this.$<HTMLInputElement>('.pe-json-input').click();return;}
   if(action==='json-export'){download(new Blob([JSON.stringify(this.project,null,2)],{type:'application/json'}),this.project.name+'.json');return;}
@@ -248,27 +256,28 @@ export class Editor {
   const item=this.selectedItem(),s=this.selected;if(!item||!s)return;
   const p=clone(this.project),list=s.track==='video'?p.clips:s.track==='audio'?p.audio:p.texts,index=list.findIndex(c=>c.id===s.id);
   if(action==='delete'){list.splice(index,1);this.selected=null;this.commit(p);return;}
-  if(action==='duplicate'){const c=clone(item);c.id=uid();if(s.track==='text'){const a=c as Caption;const d=a.to-a.from;a.from=a.to;a.to+=d;p.texts.push(a);}else if(s.track==='audio'){(c as Clip).at+=length(c as Clip);p.audio.push(c as Clip);}else p.clips.splice(index+1,0,c as Clip);this.selected={track:s.track,id:c.id};this.commit(p);return;}
+  if(action==='duplicate'){const c=clone(item);c.id=uid();if(s.track==='text'){const a=c as Caption;const d=a.to-a.from;a.from=a.to;a.to+=d;p.texts.push(a);}else if(s.track==='audio'){(c as Clip).at+=length(c as Clip);p.audio.push(c as Clip);}else{if((c as Clip).layer>0)(c as Clip).at+=length(c as Clip);p.clips.splice(index+1,0,c as Clip);}this.selected={track:s.track,id:c.id};this.commit(p);return;}
   if(action==='split'){
    if(s.track==='text'){const c=item as Caption;if(this.cursor<=c.from+.04||this.cursor>=c.to-.04)return;p.texts.splice(index,1,{...c,to:this.cursor},{...c,id:uid(),from:this.cursor});}
    else{const halves=splitClip(item as Clip,this.cursor-this.selectedAt());if(!halves)return;(s.track==='video'?p.clips:p.audio).splice(index,1,...halves);}this.commit(p);return;
   }
-  if(action==='trim-start'||action==='trim-end'){if(s.track==='text'){const c=item as Caption;this.changeSelected(action==='trim-start'?{from:clamp(this.cursor,0,c.to-.04)}:{to:Math.max(c.from+.04,this.cursor)});}else{const c=item as Clip,v=c.start+(this.cursor-this.selectedAt())*c.speed;this.changeSelected(action==='trim-start'?{start:clamp(v,c.start,c.end-.04),...(s.track==='audio'?{at:this.cursor}:{})}:{end:clamp(v,c.start+.04,c.end)});}return;}
+  if(action==='trim-start'||action==='trim-end'){if(s.track==='text'){const c=item as Caption;this.changeSelected(action==='trim-start'?{from:clamp(this.cursor,0,c.to-.04)}:{to:Math.max(c.from+.04,this.cursor)});}else{const c=item as Clip,v=c.start+(this.cursor-this.selectedAt())*c.speed;this.changeSelected(action==='trim-start'?{start:clamp(v,c.start,c.end-.04),...(s.track==='audio'||c.layer>0?{at:this.cursor}:{})}:{end:clamp(v,c.start+.04,c.end)});}return;}
   if(action==='detach'&&s.track==='video'){const c=p.clips[index];p.audio.push({...c,id:uid(),kind:'audio',at:this.selectedAt()});c.muted=true;this.commit(p);return;}
-  if(action==='move-left'||action==='move-right'){if(s.track!=='video')return;const j=index+(action==='move-left'?-1:1);if(j<0||j>=p.clips.length)return;[p.clips[index],p.clips[j]]=[p.clips[j],p.clips[index]];this.commit(p);return;}
+  if(action==='move-left'||action==='move-right'){if(s.track!=='video')return;const c=p.clips[index],direction=action==='move-left'?-1:1;if(c.layer>0){c.at=Math.max(0,c.at+direction*.5);}else{const mains=p.clips.filter(v=>!v.layer),j=mains.findIndex(v=>v.id===c.id)+direction;if(j<0||j>=mains.length)return;const other=p.clips.indexOf(mains[j]);[p.clips[index],p.clips[other]]=[p.clips[other],p.clips[index]];}this.commit(p);return;}
   if(action==='fit-contain'||action==='fit-cover'){this.changeSelected({fit:action==='fit-cover'?'cover':'contain'});}
  }
  private input(e:Event){const target=e.target as HTMLInputElement;if(target.dataset.project==='name'&&!this.exporting){this.pendingName=target.value.slice(0,120);if(this.autosaveTimer)clearTimeout(this.autosaveTimer);this.autosaveTimer=setTimeout(()=>this.save(false),500);return;}if(target.type==='range'&&target.dataset.field){const out=this.root.querySelector(`[data-value="${target.dataset.field}"]`);if(out)out.textContent=target.value;}
   if(target.dataset.ui==='zoom'){this.zoom=Number(target.value);this.renderTimeline();}
  }
  private change(e:Event){if(this.exporting)return;const target=e.target as HTMLInputElement;
-  if(target.matches('.pe-file-input')){const files=Array.from(target.files||[]);target.value='';void this.importFiles(files);return;}
+  if(target.matches('.pe-file-input')){const files=Array.from(target.files||[]);target.value='';const layer=this.importLayer;this.importLayer=0;void this.importFiles(files,layer);return;}
   if(target.matches('.pe-srt-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const captions=parseSrt(s);if(!captions.length)throw Error('No valid SRT cues');const p=clone(this.project);p.texts.push(...captions);this.commit(p);}).catch(e=>this.fail(e));return;}
   if(target.matches('.pe-json-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const parsed=JSON.parse(s);if(!parsed||!Array.isArray(parsed.clips))throw Error('Invalid project');this.engine.pause();this.history=new History(normalizeProject(parsed));this.selected=null;this.cursor=0;this.render();return this.restore();}).catch(e=>this.fail(e));return;}
   if(target.dataset.ui==='safe'){this.safe=target.checked;this.$('.pe-safe').hidden=!this.safe;return;}
   if(target.dataset.project){const p=clone(this.project);if(target.dataset.project==='name'){this.pendingName=null;if(target.value===p.name)return;p.name=target.value;}else if(target.dataset.project==='ratio')p.ratio=target.value as Ratio;else p.master=Number(target.value);this.commit(p);return;}
   if(target.dataset.field){const field=target.dataset.field;let value:unknown=target.type==='checkbox'?target.checked:['number','range'].includes(target.type)?Number(target.value):target.value;
    if(typeof value==='number'&&!Number.isFinite(value))return;const c=this.selectedItem();let patch={ [field]:value } as Partial<Clip>&Partial<Caption>;
+   if(c&&this.selected?.track==='video'&&field==='layer'&&Number(value)>0&&!(c as Clip).layer)patch.at=this.selectedAt();
    if(c&&this.selected?.track!=='text'&&field==='end'&&(c as Clip).kind==='image')patch.duration=Math.max((c as Clip).duration,Number(value));this.changeSelected(patch);
   }
  }
@@ -277,14 +286,20 @@ export class Editor {
   const handle=target.closest<HTMLElement>('[data-resize]'),clip=handle?.closest<HTMLElement>('[data-clip]');if(!handle||!clip)return;
   e.preventDefault();e.stopPropagation();const [track,id]=clip.dataset.select!.split(':');this.selected={track:track as Selection['track'],id};const item=clone(this.selectedItem());if(!item)return;const startX=e.clientX;this.engine.pause();
   const move=(event:PointerEvent)=>{const delta=(event.clientX-startX)/this.pixels();clip.style.opacity='.65';clip.style.translate=(handle.dataset.resize==='start'?delta*this.pixels():0)+'px 0';};
-  const end=(event:PointerEvent)=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',cancel);const delta=(event.clientX-startX)/this.pixels();if(track==='text'){const c=item as Caption;this.changeSelected(handle.dataset.resize==='start'?{from:clamp(c.from+delta,0,c.to-.04)}:{to:Math.max(c.from+.04,c.to+delta)});}else{const c=item as Clip;this.changeSelected(handle.dataset.resize==='start'?{start:clamp(c.start+delta*c.speed,0,c.end-.04),...(track==='audio'?{at:Math.max(0,c.at+delta)}:{})}:{end:clamp(c.end+delta*c.speed,c.start+.04,c.duration)});}};
+  const end=(event:PointerEvent)=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',cancel);const delta=(event.clientX-startX)/this.pixels();if(track==='text'){const c=item as Caption;this.changeSelected(handle.dataset.resize==='start'?{from:clamp(c.from+delta,0,c.to-.04)}:{to:Math.max(c.from+.04,c.to+delta)});}else{const c=item as Clip;this.changeSelected(handle.dataset.resize==='start'?{start:clamp(c.start+delta*c.speed,0,c.end-.04),...(track==='audio'||c.layer>0?{at:Math.max(0,c.at+delta)}:{})}:{end:clamp(c.end+delta*c.speed,c.start+.04,c.duration)});}};
   const cancel=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',cancel);this.renderTimeline();};
   document.addEventListener('pointermove',move);document.addEventListener('pointerup',end);document.addEventListener('pointercancel',cancel);this.cleanups.push(cancel);
  }
  private dragStart(e:DragEvent){const target=(e.target as Element).closest<HTMLElement>('[data-clip]');if(!target)return;e.dataTransfer?.setData('application/x-pokadrovo',target.dataset.select!);}
- private drop(e:DragEvent){e.preventDefault();if(this.exporting)return;if(e.dataTransfer?.files.length){void this.importFiles(Array.from(e.dataTransfer.files));return;}
-  const raw=e.dataTransfer?.getData('application/x-pokadrovo');if(!raw)return;const [track,id]=raw.split(':'),p=clone(this.project);const rect=this.$('.pe-track-content').getBoundingClientRect(),at=Math.max(0,(e.clientX-rect.left)/this.pixels());
-  if(track==='video'){const index=p.clips.findIndex(c=>c.id===id);if(index<0)return;const target=positions(p).find(c=>at<c.end)?.clip.id;const dest=target?p.clips.findIndex(c=>c.id===target):p.clips.length;const [c]=p.clips.splice(index,1);p.clips.splice(Math.max(0,dest-(index<dest?1:0)),0,c);}
+ private drop(e:DragEvent){e.preventDefault();if(this.exporting||this.loading)return;
+  const row=(e.target as Element).closest<HTMLElement>('[data-drop]'),layer=Number(row?.dataset.layer||0);
+  if(e.dataTransfer?.files.length){void this.importFiles(Array.from(e.dataTransfer.files),layer);return;}
+  const raw=e.dataTransfer?.getData('application/x-pokadrovo');if(!raw)return;const [track,id]=raw.split(':');if(!['video','audio','text'].includes(track))return;
+  if(row&&row.dataset.drop!==track)return;
+  const p=clone(this.project),rect=this.$('.pe-track-content').getBoundingClientRect(),at=Math.max(0,(e.clientX-rect.left)/this.pixels());
+  if(track==='video'){const index=p.clips.findIndex(c=>c.id===id);if(index<0)return;const c=p.clips[index];
+   if(layer>0){c.layer=layer;c.at=at;}else{const target=positions(p).find(v=>!v.clip.layer&&at<v.end)?.clip.id;const dest=target?p.clips.findIndex(v=>v.id===target):p.clips.length;p.clips.splice(index,1);c.layer=0;p.clips.splice(Math.max(0,dest-(index<dest?1:0)),0,c);}
+  }
   if(track==='audio'){const c=p.audio.find(c=>c.id===id);if(c)c.at=at;}
   if(track==='text'){const c=p.texts.find(c=>c.id===id);if(c){c.to=at+(c.to-c.from);c.from=at;}}
   this.selected={track:track as Selection['track'],id};this.commit(p);
