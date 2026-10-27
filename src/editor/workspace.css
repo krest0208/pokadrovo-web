@@ -1,4 +1,9 @@
 /* Editing workspace: media, viewer, inspector, timeline. */
+.pe .pe-asset-card{display:flex;flex-direction:column;min-width:0;gap:4px}
+.pe .pe-asset-card>.pe-asset{width:100%;flex:1}
+.pe .pe-asset-overlay{width:100%;min-height:32px;padding:5px 6px;gap:4px;font-size:11px;color:var(--p-blue);background:var(--p-selected);white-space:normal}
+.pe .pe-layer-add.pe-layer-empty{width:auto;max-width:calc(100% - 12px);height:44px;min-height:44px;padding:6px 10px;gap:7px;display:inline-flex;opacity:1;font-size:12px}
+@media(max-width:900px){.pe .pe-asset-overlay{min-height:44px}.pe .pe-overlay-import{min-height:40px}}
 /* Track identity remains legible without relying on colour or thumbnails alone. */
 .pe{--p-image-bg:#f9e9c8;--p-image-border:#b78d3f;--p-image-ink:#684817}
 .pe[data-theme=dark]{--p-image-bg:#514024;--p-image-border:#a1844e;--p-image-ink:#ffdf9d}

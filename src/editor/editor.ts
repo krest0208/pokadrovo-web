@@ -9,6 +9,7 @@ import { EditorTools } from './tools';
 import { EditorTour } from './tour';
 import {hitsMedia} from './geometry';
 import {TimelineThumbnails} from './timeline-thumbnails';
+import {TimelineNavigation,freeOverlayLayer} from './timeline-navigation';
 import type { AiProvider } from './ai';
 import {createThemeIconMotion,themeAction,themeIconMarkup} from '../motion/theme-icon';
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -26,11 +27,11 @@ const button=(action:string,label:string,glyph='',cls='',extra='')=>`<button typ
 export interface EditorOptions { aiProvider?:AiProvider; project:Project; assets:Map<string,Asset>; theme:'light'|'dark'; onHome:(project:Project)=>void; onSave:(project:Project)=>void; onTheme:()=>void; }
 export class Editor {
  public history:History;public selected:Selection|null=null;public cursor=0;public tab:'media'|'audio'|'text'='media';
- private tools:EditorTools;private tour:EditorTour;private thumbnails:TimelineThumbnails;
+ private tools:EditorTools;private tour:EditorTour;private thumbnails:TimelineThumbnails;private navigation:TimelineNavigation;
  private themeMotion:ReturnType<typeof createThemeIconMotion>;
  private inspectorGroups=new Map<string,boolean>();
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
- private overlayRows=0;private importLayer=0;
+ private overlayRows=1;private importLayer=0;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
  private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;private pendingName:string|null=null;
@@ -45,13 +46,14 @@ export class Editor {
    <section class="pe-panel pe-player" data-panel="player"><header><span>${t.preview}</span><span class="pe-player-meta"></span>${button('expand-player',t.expand,'expand','square')}</header><div class="pe-player-options"><select data-project="ratio" aria-label="Формат кадра">${['16:9','9:16','1:1','4:5'].map(v=>`<option>${v}</option>`).join('')}</select><label><input type="checkbox" data-ui="safe"/> ${t.safe}</label>${button('expand-player',t.expand,'expand','square pe-view-expand')}</div><div class="pe-viewport"><div class="pe-screen"><canvas tabindex="0" role="button" aria-label="Выбрать клип в кадре для редактирования" title="Нажмите на видео, чтобы редактировать"></canvas><div class="pe-safe" hidden><span>9:16 / ${t.safe}</span></div><div class="pe-empty">${brand()}<h3>${t.empty}</h3><p>${t.emptyHint}</p>${button('import',t.import,'upload','primary')}</div></div></div><div class="pe-transport"><output class="pe-time">00:00.000</output><div>${button('back','Назад на секунду','left','square')}${button('play',t.play,'play','pe-play square')}${button('forward','Вперёд на секунду','right','square')}</div><output class="pe-duration">00:00.000</output></div></section>
    <section class="pe-panel pe-inspector" data-panel="inspector"><header>${t.settings}${button('expand-inspector',t.expand,'expand','square')}</header><div class="pe-inspector-body"></div></section>
   </div>
-  <section class="pe-panel pe-timeline" data-panel="timeline"><header><strong>${t.timeline}</strong><div class="pe-tools">${button('undo',t.undo,'undo','square')}${button('redo',t.redo,'redo','square')}<i></i>${button('add-layer','Добавить слой','layers')}${button('split',t.split+' (S)','split')}${button('duplicate',t.duplicate,'copy','square')}${button('delete',t.remove,'trash','square')}</div><label class="pe-zoom">${t.zoom}<input type="range" min=".35" max="3" step=".05" value="1" data-ui="zoom" aria-label="${t.zoom}"/></label>${button('expand-timeline',t.expand,'expand','square')}</header><div class="pe-track-scroll"><div class="pe-track-grid"><div class="pe-track-labels"></div><div class="pe-track-content"></div></div></div><details class="pe-range-panel"><summary>Вырезать диапазон</summary><div class="pe-range">${button('mark-in',t.markIn)}<output id="pe-in">00:00.000</output>${button('mark-out',t.markOut)}<output id="pe-out">00:00.000</output>${button('cut',t.cut,'split')}<span>${t.selectionRange}</span></div></details></section>
+  <section class="pe-panel pe-timeline" data-panel="timeline"><header><strong>${t.timeline}</strong><div class="pe-tools">${button('undo',t.undo,'undo','square')}${button('redo',t.redo,'redo','square')}<i></i>${button('add-layer','Добавить слой','layers')}${button('split',t.split+' (S)','split')}${button('duplicate',t.duplicate,'copy','square')}${button('delete',t.remove,'trash','square')}</div><label class="pe-zoom" title="Колёсико над дорожками: масштаб. Shift + колёсико: прокрутка по времени. Над названиями дорожек: прокрутка вверх и вниз.">${t.zoom}<input type="range" min=".35" max="3" step=".0001" value="1" data-ui="zoom" aria-valuetext="100%" aria-label="${t.zoom}"/></label>${button('expand-timeline',t.expand,'expand','square')}</header><div class="pe-track-scroll"><div class="pe-track-grid"><div class="pe-track-labels"></div><div class="pe-track-content"></div></div></div><details class="pe-range-panel"><summary>Вырезать диапазон</summary><div class="pe-range">${button('mark-in',t.markIn)}<output id="pe-in">00:00.000</output>${button('mark-out',t.markOut)}<output id="pe-out">00:00.000</output>${button('cut',t.cut,'split')}<span>${t.selectionRange}</span></div></details></section>
   <footer class="pe-footer"><span role="status" class="pe-status">${t.ready}</span><span>${t.shortcuts}</span></footer>
   <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".json,application/json" hidden/>
   <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
   this.themeMotion=createThemeIconMotion(this.$('.pk-theme-icon'),opts.theme);this.cleanups.push(()=>this.themeMotion.dispose());
   this.engine=new PlaybackEngine(this.$('canvas'),opts.assets,(time,playing)=>this.updateCursor(time,playing),e=>this.fail(e));
   this.thumbnails=new TimelineThumbnails(this.$('.pe-track-content'),this.$('.pe-track-scroll'),opts.assets);
+  this.navigation=new TimelineNavigation(this.$('.pe-track-scroll'),this.$('.pe-track-labels'),()=>this.zoom,zoom=>{this.zoom=zoom;const slider=this.$<HTMLInputElement>('[data-ui="zoom"]');slider.value=String(zoom);slider.setAttribute('aria-valuetext',Math.round(zoom*100)+'%');this.renderTimeline();},()=>this.disposed||this.exporting||!!this.tour?.active);
   this.tools=new EditorTools({
     root:this.root,canvas:this.engine.canvas,assets:this.opts.assets,provider:this.opts.aiProvider,
     project:()=>this.project,selected:()=>this.selected,cursor:()=>this.cursor,
@@ -87,16 +89,16 @@ export class Editor {
   try{missing=await restoreProjectAssets(this.project,this.opts.assets,()=>!this.disposed&&storageScope()===this.account);if(!missing.length)this.status(t.ready);}
   catch(e){this.fail(e);}finally{this.loading=false;if(!this.disposed){this.render();await this.prepare();if(missing.length)this.status('Не удалось восстановить файлы: '+missing.join(', ')+'. Остальные исходники загружены. Добавьте недостающие файлы повторно.');}}
  }
- async importFiles(files:FileList|File[]|null,layer=0){if(!files?.length||this.exporting||this.importing||this.disposed)return;this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
+ async importFiles(files:FileList|File[]|null,layer=0,at=this.cursor){if(!files?.length||this.exporting||this.importing||this.disposed)return;this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
   for(const file of Array.from(files)){if(this.disposed)break;try{
    this.status(`${t.loading}: ${file.name}`);const a=await inspectFile(file);if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
    try{await persistAsset(a);}catch{storageFailed=true;}
    if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
    this.opts.assets.set(a.id,a);const next=clone(this.project);
-   const c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{if(layer>0){c.layer=layer;c.at=this.cursor;c.zoom=.4;c.x=25;c.y=20;}next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
+   const c=fromAsset(a);if(a.kind==='audio'){c.at=at;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{if(layer>0){c.layer=layer;c.at=at;c.zoom=.4;c.x=25;c.y=20;}next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
    this.history.commit(next);this.save(false);this.render();
   }catch(e){problems.push(file.name+': '+(e instanceof Error?e.message:String(e)));}}
-  this.loading=false;this.importing=false;if(added&&!this.disposed)await this.prepare();
+  this.loading=false;this.importing=false;if(added&&!this.disposed){await this.prepare();if(layer>0){this.showPanel('timeline');this.$('.pe-track-scroll').scrollTop=0;}}
   this.status(problems.length?problems.join('; '):storageFailed?t.storageError:`${t.files}: ${added} / ${t.ready}`);
  }
  private async prepare(){const rev=++this.prep;this.loading=true;
@@ -154,10 +156,11 @@ export class Editor {
  }
  private renderLibrary(){
   let html=button('import',t.import,'upload','primary pe-import')+`<p class="pe-note">${t.importHint}</p>`;
+  if(this.tab==='media')html=button('import',t.import,'upload','primary pe-import')+button('overlay-new','Добавить поверх','layers','pe-import pe-overlay-import')+`<p class="pe-note">${t.importHint}</p>`;
   if(this.tab==='text')html=button('add-text',t.addText,'plus','primary pe-import')+button('srt',t.srt,'upload','pe-import')+`<p class="pe-note">SRT / ${t.text}</p>`;
   if(this.tab!=='text'){
    const arr=[...this.opts.assets.values()].filter(a=>this.tab==='audio'?a.kind==='audio':a.kind!=='audio');
-   html+='<div class="pe-asset-grid">'+arr.map(a=>`<button type="button" class="pe-asset" data-asset="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}"><span>${a.thumbnail?`<img src="${a.thumbnail}" alt=""/>`:icon(a.kind==='audio'?'audio':'video',30)}<i>${clock(a.duration).slice(0,5)}</i></span><b>${escapeHtml(a.name)}</b><small>${a.kind==='audio'?'Аудио':a.kind==='image'?'Фото':'Видео'}</small></button>`).join('')+'</div>';
+   html+='<div class="pe-asset-grid">'+arr.map(a=>`<div class="pe-asset-card"><button type="button" class="pe-asset" draggable="true" data-asset="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}"><span>${a.thumbnail?`<img src="${a.thumbnail}" alt="" draggable="false"/>`:icon(a.kind==='audio'?'audio':'video',30)}<i>${clock(a.duration).slice(0,5)}</i></span><b>${escapeHtml(a.name)}</b><small>${a.kind==='audio'?'Аудио':a.kind==='image'?'Фото':'Видео'}</small></button>${a.kind!=='audio'?`<button type="button" class="pe-asset-overlay" data-overlay-asset="${escapeHtml(a.id)}" aria-label="${escapeHtml('Добавить '+a.name+' поверх видео')}">${icon('layers',12)}<span>Поверх видео</span></button>`:''}</div>`).join('')+'</div>';
    if(!arr.length)html+='<div class="pe-none"><h3>Пока нет файлов</h3><p>Добавьте материалы кнопкой выше.</p></div>';
   }else html+=this.project.texts.map(c=>`<button class="pe-caption-item" data-select="text:${c.id}">${icon('text')}<span>${escapeHtml(c.text||t.text)}</span></button>`).join('');
   html+=`<details class="pe-project-tools"><summary>Файл проекта</summary>${button('json-export',t.downloadProject)}${button('json-import',t.importProject)}<p class="pe-note">${t.backupHint}</p></details>`;
@@ -220,16 +223,26 @@ export class Editor {
    const label=kind==='image'?'Фото':track==='video'?'Видео':track==='audio'?'Аудио':'Текст';
    return `<button class="pe-clip ${track} ${kind==='image'?'image ':''}${this.selected?.id===id?'selected':''}" type="button" draggable="true" data-kind="${kind}" data-select="${track}:${id}" data-track="${track}" data-clip="${id}" style="left:${at*scale}px;width:${Math.max(3,d*scale)}px" title="${escapeHtml(label+': '+name)}"><i data-resize="start"></i>${strip}<span class="pe-clip-label">${icon(track==='audio'?'audio':track==='text'?'text':'video',12)}<b>${escapeHtml(name)}</b></span><small class="pe-clip-duration">${d.toFixed(1)} s</small><i data-resize="end"></i></button>`;
   };
-  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div>`+layers.map(layer=>`<div class="pe-time-row pe-video-row pe-overlay-row" data-drop="video" data-layer="${layer}">${positions(this.project).filter(c=>c.clip.layer===layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip),clip)).join('')}<button class="pe-layer-add" data-action="overlay-import-${layer}" title="Добавить фото или видео на слой ${layer}" aria-label="Добавить фото или видео на слой ${layer}">${icon('plus',14)}</button></div>`).join('')+`<div class="pe-time-row pe-video-row" data-drop="video" data-layer="0">${positions(this.project).filter(c=>!c.clip.layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip),clip)).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
+  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div>`+layers.map(layer=>{const clips=positions(this.project).filter(c=>c.clip.layer===layer);return `<div class="pe-time-row pe-video-row pe-overlay-row" data-drop="video" data-layer="${layer}">${clips.map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip),clip)).join('')}<button type="button" class="pe-layer-add ${clips.length?'':'pe-layer-empty'}" data-action="overlay-import-${layer}" title="Добавить фото или видео на слой ${layer}" aria-label="Добавить фото или видео на слой ${layer}">${icon('plus',14)}${clips.length?'':'<span>Фото или видео поверх</span>'}</button></div>`;}).join('')+`<div class="pe-time-row pe-video-row" data-drop="video" data-layer="0">${positions(this.project).filter(c=>!c.clip.layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip),clip)).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
    (this.project.audio.length?this.project.audio.map(c=>`<div class="pe-time-row pe-audio-row" data-drop="audio">${draw('audio',c.id,c.name,c.at,length(c))}</div>`).join(''):`<div class="pe-time-row pe-audio-row" data-drop="audio"><button class="pe-track-add" data-action="tab-audio">${t.audio}: ${t.import}</button></div>`)+
    (this.project.texts.length?this.project.texts.map(c=>`<div class="pe-time-row pe-text-row" data-drop="text">${draw('text',c.id,c.text,c.from,c.to-c.from)}</div>`).join(''):`<div class="pe-time-row pe-text-row" data-drop="text"><button class="pe-track-add" data-action="add-text">${t.addText}</button></div>`)+`<div class="pe-head" style="left:${this.cursor*scale}px;height:${(1+layers.length)*72+(audioRows+textRows)*58+25}px"><span></span></div>`;
   this.thumbnails.refresh();
+  this.$<HTMLButtonElement>('[data-action="add-layer"]').disabled=layers.length>=8;
   this.$('#pe-in').textContent=clock(this.markIn);this.$('#pe-out').textContent=clock(this.markOut);this.$<HTMLButtonElement>('[data-action="cut"]').disabled=Math.abs(this.markIn-this.markOut)<.04;
  }
  private async seek(time:number){if(this.loading||this.exporting)return;try{await this.engine.seek(clamp(time,0,totalLength(this.project)));}catch(e){this.fail(e);}}
  private select(track:string,id:string){if(!['video','audio','text'].includes(track))return;this.engine.pause();this.selected={track:track as Selection['track'],id};this.cursor=this.selectedAt();this.renderInspector();this.renderTimeline();void this.seek(this.cursor);}
+ private overlaySlot(){const layer=freeOverlayLayer(this.project.clips);if(layer===null)this.status('Все 8 слоёв заняты. Добавьте файл на одну из существующих дорожек.');return layer;}
+ private placeAsset(asset:Asset,layer=0,at=this.cursor){
+  if(this.exporting||this.loading||this.disposed||layer>0&&asset.kind==='audio')return;
+  const p=clone(this.project),c=fromAsset(asset);
+  if(asset.kind==='audio'){c.at=at;p.audio.push(c);}else{if(layer>0){c.layer=layer;c.at=at;c.zoom=.4;c.x=25;c.y=20;this.overlayRows=Math.max(this.overlayRows,layer);}p.clips.push(c);}
+  this.selected={track:asset.kind==='audio'?'audio':'video',id:c.id};this.commit(p);
+  if(layer>0){this.showPanel('timeline');this.$('.pe-track-scroll').scrollTop=0;}
+ }
  private click(e:Event){const target=e.target as Element;if(target===this.engine.canvas){this.selectPreview(e as MouseEvent);return;}if(target.matches('.pe-panel-shade')&&this.expanded){this.expand(this.expanded);return;}const sel=target.closest<HTMLElement>('[data-select]');if(sel&&!target.closest('[data-resize]')){const [track,id]=sel.dataset.select!.split(':');this.select(track,id);return;}
-  const asset=target.closest<HTMLElement>('[data-asset]');if(asset){const a=this.opts.assets.get(asset.dataset.asset!);if(!a)return;const p=clone(this.project),c=fromAsset(a);if(a.kind==='audio'){c.at=this.cursor;p.audio.push(c);}else p.clips.push(c);this.selected={track:a.kind==='audio'?'audio':'video',id:c.id};this.commit(p);return;}
+  const overlay=target.closest<HTMLElement>('[data-overlay-asset]');if(overlay){const a=this.opts.assets.get(overlay.dataset.overlayAsset!),layer=this.overlaySlot();if(a&&layer!==null)this.placeAsset(a,layer);return;}
+  const asset=target.closest<HTMLElement>('[data-asset]');if(asset){const a=this.opts.assets.get(asset.dataset.asset!);if(a)this.placeAsset(a);return;}
   const speed=target.closest<HTMLElement>('[data-speed]');if(speed){this.changeSelected({speed:Number(speed.dataset.speed)});return;}
   const action=target.closest<HTMLElement>('[data-action]')?.dataset.action;if(!action)return;
   this.runAction(action);
@@ -245,7 +258,8 @@ export class Editor {
   if(action.startsWith('tab-')){this.tab=action.slice(4) as typeof this.tab;this.showPanel('library');this.renderLibrary();for(const name of ['media','audio','text'])this.$(`[data-action="tab-${name}"]`).classList.toggle('active',this.tab===name);return;}
   if(action.startsWith('mobile-')){this.showPanel(action.slice(7));return;}
   if(action.startsWith('expand-')){this.expand(action.slice(7));return;}
-  if(action==='add-layer'){const max=Math.max(this.overlayRows,...this.project.clips.map(c=>c.layer));if(max>=8){this.status('Можно добавить до 8 слоёв поверх основного видео.');return;}this.overlayRows=max+1;this.showPanel('timeline');this.renderTimeline();return;}
+  if(action==='add-layer'){const max=Math.max(this.overlayRows,...this.project.clips.map(c=>c.layer));if(max>=8){this.status('Можно добавить до 8 слоёв поверх основного видео.');return;}this.overlayRows=max+1;this.showPanel('timeline');this.renderTimeline();this.$('.pe-track-scroll').scrollTop=0;return;}
+  if(action==='overlay-new'){const layer=this.overlaySlot();if(layer!==null)this.runAction('overlay-import-'+layer);return;}
   if(action.startsWith('overlay-import-')){this.importLayer=clamp(Number(action.slice(15)),1,8);const input=this.$<HTMLInputElement>('.pe-file-input');input.accept='video/*,image/*';input.click();return;}
   if(action==='import'){this.importLayer=0;const input=this.$<HTMLInputElement>('.pe-file-input');input.accept=this.tab==='audio'?'audio/*':'video/*,image/*,audio/*';input.click();return;}
   if(action==='srt'){this.$<HTMLInputElement>('.pe-srt-input').click();return;}
@@ -275,7 +289,7 @@ export class Editor {
   if(action==='fit-contain'||action==='fit-cover'){this.changeSelected({fit:action==='fit-cover'?'cover':'contain'});}
  }
  private input(e:Event){const target=e.target as HTMLInputElement;if(target.dataset.project==='name'&&!this.exporting){this.pendingName=target.value.slice(0,120);if(this.autosaveTimer)clearTimeout(this.autosaveTimer);this.autosaveTimer=setTimeout(()=>this.save(false),500);return;}if(target.type==='range'&&target.dataset.field){const out=this.root.querySelector(`[data-value="${target.dataset.field}"]`);if(out)out.textContent=target.value;}
-  if(target.dataset.ui==='zoom'){this.zoom=Number(target.value);this.renderTimeline();}
+  if(target.dataset.ui==='zoom')this.navigation.setZoom(Number(target.value));
  }
  private change(e:Event){if(this.exporting)return;const target=e.target as HTMLInputElement;
   if(target.matches('.pe-file-input')){const files=Array.from(target.files||[]);target.value='';const layer=this.importLayer;this.importLayer=0;void this.importFiles(files,layer);return;}
@@ -298,13 +312,15 @@ export class Editor {
   const cancel=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',cancel);this.renderTimeline();};
   document.addEventListener('pointermove',move);document.addEventListener('pointerup',end);document.addEventListener('pointercancel',cancel);this.cleanups.push(cancel);
  }
- private dragStart(e:DragEvent){const target=(e.target as Element).closest<HTMLElement>('[data-clip]');if(!target)return;e.dataTransfer?.setData('application/x-pokadrovo',target.dataset.select!);}
+ private dragStart(e:DragEvent){if(this.exporting||this.loading)return;const node=e.target as Element,asset=node.closest<HTMLElement>('[data-asset]');if(asset){e.dataTransfer?.setData('application/x-pokadrovo-asset',asset.dataset.asset!);return;}const target=node.closest<HTMLElement>('[data-clip]');if(target)e.dataTransfer?.setData('application/x-pokadrovo',target.dataset.select!);}
  private drop(e:DragEvent){e.preventDefault();if(this.exporting||this.loading)return;
   const row=(e.target as Element).closest<HTMLElement>('[data-drop]'),layer=Number(row?.dataset.layer||0);
-  if(e.dataTransfer?.files.length){void this.importFiles(Array.from(e.dataTransfer.files),layer);return;}
+  const rect=this.$('.pe-track-content').getBoundingClientRect(),at=Math.max(0,(e.clientX-rect.left)/this.pixels());
+  if(e.dataTransfer?.files.length){void this.importFiles(Array.from(e.dataTransfer.files),layer,at);return;}
+  const assetId=e.dataTransfer?.getData('application/x-pokadrovo-asset');if(assetId){const a=this.opts.assets.get(assetId);if(a&&row&&row.dataset.drop===(a.kind==='audio'?'audio':'video'))this.placeAsset(a,layer,at);return;}
   const raw=e.dataTransfer?.getData('application/x-pokadrovo');if(!raw)return;const [track,id]=raw.split(':');if(!['video','audio','text'].includes(track))return;
   if(row&&row.dataset.drop!==track)return;
-  const p=clone(this.project),rect=this.$('.pe-track-content').getBoundingClientRect(),at=Math.max(0,(e.clientX-rect.left)/this.pixels());
+  const p=clone(this.project);
   if(track==='video'){const index=p.clips.findIndex(c=>c.id===id);if(index<0)return;const c=p.clips[index];
    if(layer>0){c.layer=layer;c.at=at;}else{const target=positions(p).find(v=>!v.clip.layer&&at<v.end)?.clip.id;const dest=target?p.clips.findIndex(v=>v.id===target):p.clips.length;p.clips.splice(index,1);c.layer=0;p.clips.splice(Math.max(0,dest-(index<dest?1:0)),0,c);}
   }
@@ -339,5 +355,5 @@ export class Editor {
   }catch(e){this.$('.pe-export-message').textContent=e instanceof DOMException&&e.name==='AbortError'?t.cancel:t.error+': '+(e instanceof Error?e.message:String(e));}
   finally{this.exporting=false;cancel.hidden=true;modal.querySelectorAll<HTMLInputElement>('select,button').forEach(n=>n.disabled=false);}
  }
- dispose(){if(this.autosaveTimer)this.save(false);this.disposed=true;this.tour.dispose();this.tools.dispose();this.thumbnails.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
+ dispose(){if(this.autosaveTimer)this.save(false);this.disposed=true;this.tour.dispose();this.tools.dispose();this.navigation.dispose();this.thumbnails.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
 }
