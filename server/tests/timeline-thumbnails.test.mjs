@@ -50,3 +50,12 @@ test('leaving the editor aborts a pending decoder and removes listeners and queu
  const e=environment(true);e.manager.refresh();e.render();assert.equal(e.manager.busy,true);e.manager.dispose();await settle();
  assert.equal(e.manager.busy,false);assert.equal(e.manager.queue.size,0);assert.equal(e.manager.cache.size,0);assert.equal(e.draws.length,0);
 });
+test('rounded samples stay inside very short trimmed fragments',async()=>{
+ for(const [start,end] of [[1.04,1.08],[1.11,1.15],[1.94,1.98]]){
+  const e=environment();try{
+   e.strip.dataset.sourceStart=String(start);e.strip.dataset.sourceEnd=String(end);e.strip.width=20;
+   e.manager.refresh();e.render();await settle();
+   assert.equal(e.draws.length,1);assert.ok(e.draws[0]>=start&&e.draws[0]<end,`${e.draws[0]} outside ${start}..${end}`);
+  }finally{e.manager.dispose();}
+ }
+});

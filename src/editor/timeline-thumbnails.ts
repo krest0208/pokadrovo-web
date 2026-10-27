@@ -41,9 +41,10 @@ export class TimelineThumbnails {
         if(!img){img=document.createElement('img');img.alt='';img.draggable=false;img.dataset.frameIndex=String(index);img.style.left=index*TILE+'px';img.style.width=Math.min(TILE,box.width-index*TILE)+'px';if(asset.thumbnail)img.src=asset.thumbnail;node.append(img);}
         if(asset.kind==='image'){if(!img.src)img.src=asset.url;continue;}
         if(asset.kind!=='video')continue;
-        const raw=frameTime(Number(node.dataset.sourceStart),Number(node.dataset.sourceEnd),box.width,index);
-        const at=Math.max(0,Math.min(asset.duration-.04,Math.round(raw*10)/10));
-        const key=asset.id+':'+at.toFixed(1);img.dataset.frameKey=key;img.dataset.sourceAt=String(at);
+        const start=Number(node.dataset.sourceStart),end=Number(node.dataset.sourceEnd);
+        const raw=frameTime(start,end,box.width,index);
+        const at=Math.max(start,Math.min(end-.001,asset.duration-.04,Math.round(raw*10)/10));
+        const key=asset.id+':'+at.toFixed(3);img.dataset.frameKey=key;img.dataset.sourceAt=String(at);
         const cached=this.cache.get(key);
         if(cached){img.src=cached;this.cache.delete(key);this.cache.set(key,cached);continue;}
         if(this.failed.has(asset.url))continue;
