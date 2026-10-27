@@ -13,7 +13,9 @@ const examples=[
 ];
 const names:Record<string,string>={remove:'Удалить фрагмент',split:'Разделить клип',trim:'Обрезать клип',
  speed:'Изменить скорость',volume:'Настроить звук',transform:'Изменить изображение',caption:'Добавить текст',
- ratio:'Изменить формат',audioAt:'Переместить аудио',cutRange:'Вырезать диапазон'};
+ ratio:'Изменить формат',audioAt:'Переместить аудио',cutRange:'Вырезать диапазон',
+ reorder:'Переставить клипы',duplicate:'Дублировать клип',layer:'Разместить на слое',fades:'Настроить затухание звука',
+ captionStyle:'Оформить титры',captionStyled:'Добавить оформленные титры',captionEdit:'Изменить текст и время титров',master:'Настроить общий звук'};
 export class AiPanel {
   private node:HTMLElement;private input:HTMLTextAreaElement;private request:AiRequest|null=null;
   private plan:AiPlan|null=null;private abort:AbortController|null=null;private generation=0;
@@ -162,6 +164,7 @@ export class AiPanel {
     if(this.abort)return;
     if(!this.available){this.say('Сначала настройте подключение в админ-панели.',true);void this.checkConnection();return;}
     const gen=++this.generation;
+    this.plan=null;this.renderPlan();
     try{
       if(withMedia&&this.port.provider.service==='source-analysis'&&!this.input.value.trim())this.input.value='Разбери исходник: опиши сцены, предложи начало ролика, последовательность кадров и конкретные улучшения монтажа.';
       const request=await this.build();if(this.disposed||gen!==this.generation)return;

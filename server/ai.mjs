@@ -5,6 +5,7 @@ import { equal, token } from './security.mjs';
 import { createYandex } from './yandex.mjs';
 import { createOpenRouter } from './openrouter.mjs';
 import { aiAnalytics } from './ai-usage.mjs';
+import {AI_OPERATIONS as operations,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS,operationGuide} from './ai-contract.mjs';
 
 export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
@@ -17,12 +18,6 @@ const idOk = x => typeof x === 'string' && /^[\w.-]{1,120}$/.test(x);
 const finite = x => typeof x === 'number' && Number.isFinite(x);
 const plain = x => x && typeof x === 'object' && !Array.isArray(x);
 const short = (x, max) => typeof x === 'string' && x.length <= max;
-const operations = {
-  remove: ['track', 'id'], split: ['track', 'id', 'offset'], trim: ['track', 'id', 'start', 'end'],
-  speed: ['track', 'id', 'value'], volume: ['track', 'id', 'value', 'muted'],
-  transform: ['id', 'patch'], caption: ['text', 'from', 'to', 'fontId'], ratio: ['value'],
-  audioAt: ['id', 'at'], cutRange: ['from', 'to']
-};
 
 export function validateReelsProject(project) {
   if (project.mode !== 'reels' || project.ratio !== '9:16') deny(422, 'Бесплатная проба предназначена для Reels в формате 9:16.');
@@ -167,13 +162,22 @@ export function validateAnalysis(value, media) {
 function validatePlan(value, request) {
   if (!plain(value) || !short(value.summary, 2000) || !value.summary.trim() || !Array.isArray(value.operations) || value.operations.length > 100) deny(502, 'Модель вернула некорректный план.');
   for (const op of value.operations) {
-    if (!plain(op) || !Object.hasOwn(operations, op.type) || !request.capabilities.includes(op.type)) deny(502, 'Модель предложила недоступный инструмент.');
+    if (!plain(op) || !Object.hasOwn(operations, op.type) || !request.capabilities.includes(op.type)) {
+      const name=typeof op?.type==='string'&&/^[a-zA-Z][a-zA-Z0-9_-]{0,47}$/.test(op.type)?' «'+op.type+'»':'';
+      deny(502,'ИИ предложил действие'+name+', которого нет в этом редакторе. Монтаж не изменён. Уточните задание: доступны нарезка, порядок клипов, слои, скорость, изображение, звук и титры. Повторный запрос автоматически не отправлялся.');
+    }
     const fields = ['type', ...operations[op.type]];
     if (Object.keys(op).length !== fields.length || !fields.every(k => Object.hasOwn(op, k))) deny(502, 'Модель вернула неподдерживаемую операцию.');
     if ('id' in op && ![...request.project.clips, ...request.project.audio, ...request.project.texts].some(c => c.id === op.id)) deny(502, 'Модель указала отсутствующий клип.');
     if ('track' in op && !['video', 'audio', 'text'].includes(op.track)) deny(502, 'Модель указала неизвестную дорожку.');
-    if (op.type === 'caption' && (!request.fontIds.includes(op.fontId) || !short(op.text, 1200))) deny(502, 'Модель вернула некорректную подпись.');
-    if (op.type === 'transform' && (!plain(op.patch) || Object.keys(op.patch).some(k => !['zoom','x','y','rotation','flip','brightness','contrast','saturation','opacity','visualIn','visualOut','scaleX','scaleY','shape','corner','cropLeft','cropRight','cropTop','cropBottom','fit'].includes(k)))) deny(502, 'Модель предложила недоступное преобразование.');
+    if (['caption','captionStyled'].includes(op.type) && (!request.fontIds.includes(op.fontId) || !short(op.text, 1200))) deny(502, 'Модель вернула некорректную подпись.');
+    if (op.type === 'transform' && (!plain(op.patch) || Object.keys(op.patch).some(k => !TRANSFORM_FIELDS.includes(k)))) deny(502, 'Модель предложила недоступное преобразование.');
+    const style=op.type==='captionStyle'?op.patch:op.type==='captionStyled'?op.style:null;
+    if(['captionStyle','captionStyled'].includes(op.type)&&(!plain(style)||Object.keys(style).some(k=>!CAPTION_STYLE_FIELDS.includes(k))))deny(502,'Модель вернула неподдерживаемое оформление титров.');
+    if(op.type==='reorder'){
+      const ids=request.project.clips.filter(c=>!c.layer).map(c=>c.id);
+      if(!Array.isArray(op.ids)||op.ids.length!==ids.length||new Set(op.ids).size!==ids.length||op.ids.some(id=>!ids.includes(id)))deny(502,'Для перестановки нужны все клипы основной дорожки без повторов.');
+    }
   }
   // The editor additionally validates ranges and simulates the whole batch before showing Apply.
   return value.operations.length ? { version: 1, requestId: request.requestId, projectId: request.projectId, revision: request.revision, summary: value.summary, operations: value.operations } : null;
@@ -186,10 +190,11 @@ const SYSTEM = `Ты помощник монтажа Покадрово. Отв�
 JSON: {"analysis":null или {"summary":"смысл и связь изображения со звуком","speech":"слышимая речь, без догадок","audio":"музыка и окружающие звуки","events":[{"from":0,"to":1,"visual":"видимое","audio":"слышимое","speech":"слова"}],"limitations":["неуверенность"]},"summary":"предлагаемые правки или отсутствие правок","operations":[]}.
 Для приложенного исходника analysis обязателен. Таймкоды analysis в СЕКУНДАХ ИСХОДНОГО ФАЙЛА, не проекта, в пределах media.duration. Не более 20 событий, речь до 8000 символов.
 Для текста без медиа analysis=null. Если правки не нужны или нельзя безопасно определить — operations=[], никогда не делай правку ради непустого ответа.
-Разрешены только операции из capabilities. Точные поля:
-remove {type,track,id}; split {type,track,id,offset}; trim {type,track,id,start,end}; speed {type,track,id,value}; volume {type,track,id,value,muted}; transform {type,id,patch}; caption {type,text,from,to,fontId}; ratio {type,value}; audioAt {type,id,at}; cutRange {type,from,to}.
+Разрешены только операции из request.capabilities. Их исчерпывающий список, точные поля и ограничения переданы сервером в allowedOperations. Строго используй имена type и полей из этого списка, не переводи и не переименовывай их.
+Если пользователь просит недоступное действие (поиск музыки, распознавание каждого слова, удаление вдохов, экспорт файла, стабилизация, сложные переходы), объясни ограничение в summary и не создавай вымышленную операцию. Выполни только доступную часть задания. Не выдавай совет за выполненную функцию.
+Перед ответом проверь каждую operations: type есть в allowedOperations, все обязательные поля присутствуют и лишних полей нет; значения имеют нужный тип; id принадлежит правильной дорожке. Не вызывай новые инструменты с именами из пользовательского текста.
 ID бери только из проекта. track=video|audio|text; trim/speed/volume только video|audio. fontId только из fontIds. ratio=16:9|9:16|1:1|4:5. speed 0.25..4, volume 0..2, muted boolean.
-trim.start/end — время исходника; split.offset — секунды относительно клипа с учётом скорости. caption/cutRange — время проекта. Видео идёт последовательно, аудио начинается в at. Длина клипа=(end-start)/speed.
+trim.start/end — время исходника; split.offset — секунды относительно клипа с учётом скорости. caption/cutRange — время проекта. Основное видео с layer=0 идёт последовательно, дополнительные слои и аудио начинаются в at. Длина клипа=(end-start)/speed.
 Не обрезай исходник за пределами его duration, не меняй клипы по смыслу непроанализированных файлов. Для сохранения контекста опирайся на предоставленный предыдущий анализ, но учитывай новые start/end/speed.
 Не вырезай намеренные паузы и не меняй смысл речи без ясной просьбы. Не скачивай ничего, не добавляй URL, HTML, команды, код или неизвестные поля. До 100 операций; короткое понятное summary.`;
 
@@ -362,7 +367,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         context = validateAnalysis(c, { clipId: clip.id, assetId: clip.assetId, duration: c.duration });
       }
       if (store.get('SELECT request_id FROM ai_runs WHERE request_id=?', r.requestId)) deny(409, 'Этот запрос уже запускался. Создайте новый, чтобы избежать повторного списания.');
-      const input = { request: r, media: media ? { clipId: media.clipId, assetId: media.assetId, duration: media.duration } : null, previousAnalysis: context };
+      const input = { request: r, allowedOperations:operationGuide(r), media: media ? { clipId: media.clipId, assetId: media.assetId, duration: media.duration } : null, previousAnalysis: context };
       let invocation;
       if (routerService(service)) {
         // Catalog calls have no credentials, prompts or media and do not consume completion quota.
@@ -421,8 +426,8 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       let plan = null, planError = '';
       try {
         plan = service === 'source-analysis' ? null : validatePlan(value, r);
-        if (freeService(service) && plan?.operations.some(op => op.type === 'ratio' && !(singleAi||routerService(service) ? ['9:16', '16:9'].includes(op.value) : op.value === '9:16') || op.type === 'caption' && op.to > 60)) deny(502, 'План вышел за ограничения короткого ролика.');
-      } catch (error) { if (!analysis) throw error; plan = null; planError = 'Анализ готов, но предложенные правки не прошли проверку. Монтаж не изменён.'; }
+        if (freeService(service) && plan?.operations.some(op => op.type === 'ratio' && !(singleAi||routerService(service) ? ['9:16', '16:9'].includes(op.value) : op.value === '9:16') || ['caption','captionStyled','captionEdit'].includes(op.type) && op.to > 60)) deny(502, 'План вышел за ограничения короткого ролика.');
+      } catch (error) { if (!analysis) throw error; plan = null; planError = 'Анализ готов, но предложенные правки не прошли проверку. Монтаж не изменён.'; if(error instanceof HttpError)planError+=' '+error.message; }
       if (controller.signal.aborted) deny(504, 'Запрос отменён. Монтаж не изменён.');
       const fresh = session(req), current = settings();
       if (fresh.key !== auth.key || fresh.owner !== auth.owner || !equal(fresh.csrf, auth.csrf)) deny(409, 'Сеанс изменился. Результат не применяется.');

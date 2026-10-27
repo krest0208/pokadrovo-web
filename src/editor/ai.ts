@@ -1,11 +1,11 @@
 import {
   Project, Selection, Clip, Caption, Ratio, clone, normalizeProject, normalizeCaption,
-  splitClip, cutRange, uid, totalLength
+  splitClip, cutRange, uid, totalLength, length
 } from './model';
 import { editorFonts } from './fonts';
 
 export const AI_PROTOCOL_VERSION=1 as const;
-export const AI_CAPABILITIES=['remove','split','trim','speed','volume','transform','caption','ratio','audioAt','cutRange'] as const;
+export const AI_CAPABILITIES=['remove','split','trim','speed','volume','transform','caption','ratio','audioAt','cutRange','reorder','duplicate','layer','fades','captionStyle','captionStyled','captionEdit','master'] as const;
 type Track=Selection['track'];
 type Operation =
  | {type:'remove';track:Track;id:string}
@@ -17,7 +17,15 @@ type Operation =
  | {type:'caption';text:string;from:number;to:number;fontId:string}
  | {type:'ratio';value:Ratio}
  | {type:'audioAt';id:string;at:number}
- | {type:'cutRange';from:number;to:number};
+ | {type:'cutRange';from:number;to:number}
+ | {type:'reorder';ids:string[]}
+ | {type:'duplicate';track:Track;id:string}
+ | {type:'layer';id:string;layer:number;at:number}
+ | {type:'fades';track:'video'|'audio';id:string;fadeIn:number;fadeOut:number}
+ | {type:'captionStyle';id:string;patch:Partial<Caption>}
+ | {type:'captionStyled';text:string;from:number;to:number;fontId:string;style:Partial<Caption>}
+ | {type:'captionEdit';id:string;text:string;from:number;to:number}
+ | {type:'master';value:number};
 export interface AiRequest {
   version:1; requestId:string; projectId:string; revision:string; prompt:string;
   project:Project; cursor:number; selection:Selection|null;
@@ -77,7 +85,7 @@ const track=(v:unknown,audioVideo=false):Track=>{
 };
 const transformLimits:Record<string,[number,number]>={
   x:[-100,100],y:[-100,100],zoom:[.25,4],scaleX:[.05,8],scaleY:[.05,8],
-  rotation:[-180,180],opacity:[0,1],brightness:[0,2],contrast:[0,2],saturation:[0,2],
+  rotation:[-180,180],opacity:[0,1],brightness:[0,2],contrast:[0,2],saturation:[0,2],visualIn:[0,5],visualOut:[0,5],
   cropLeft:[0,.9],cropRight:[0,.9],cropTop:[0,.9],cropBottom:[0,.9],corner:[0,.5]
 };
 function transform(v:unknown):Partial<Clip>{
@@ -91,6 +99,19 @@ function transform(v:unknown):Partial<Clip>{
   }
   return {...r} as Partial<Clip>;
 }
+function captionStyle(v:unknown):Partial<Caption>{
+  const r=record(v);if(!Object.keys(r).length)throw Error('Пустое оформление титров.');
+  for(const [key,value] of Object.entries(r)){
+    if(key==='x'||key==='y')num(value,0,1);
+    else if(key==='size')num(value,.015,.2);
+    else if(key==='weight')num(value,100,900);
+    else if(key==='background'||key==='italic'){if(typeof value!=='boolean')throw Error('Ожидается boolean.');}
+    else if(key==='align'){if(!['left','center','right'].includes(String(value)))throw Error('Некорректное выравнивание.');}
+    else if(key==='color'){if(typeof value!=='string'||!/^#[a-fA-F0-9]{6}$/.test(value))throw Error('Некорректный цвет.');}
+    else throw Error('Недоступное свойство титров.');
+  }
+  return {...r} as Partial<Caption>;
+}
 export function validateAiPlan(input:unknown,request:AiRequest):AiPlan{
   const plan=record(input);keys(plan,['version','requestId','projectId','revision','summary','operations']);
   if(plan.version!==1||plan.requestId!==request.requestId||plan.projectId!==request.projectId||plan.revision!==request.revision)
@@ -100,6 +121,7 @@ export function validateAiPlan(input:unknown,request:AiRequest):AiPlan{
   const operations:Operation[]=plan.operations.map((input,index)=>{
     const o=record(input);
     try{
+      if(!request.capabilities.includes(o.type as typeof AI_CAPABILITIES[number]))throw Error('Инструмент отсутствует в запросе.');
       switch(o.type){
         case 'remove':keys(o,['type','track','id']);return {type:'remove',track:track(o.track),id:id(o.id)};
         case 'split':keys(o,['type','track','id','offset']);return {type:'split',track:track(o.track),id:id(o.id),offset:num(o.offset,.04,86400)};
@@ -111,6 +133,14 @@ export function validateAiPlan(input:unknown,request:AiRequest):AiPlan{
         case 'ratio':keys(o,['type','value']);if(!['16:9','9:16','1:1','4:5'].includes(String(o.value)))throw Error('Неизвестный формат.');return {type:'ratio',value:o.value as Ratio};
         case 'audioAt':keys(o,['type','id','at']);return {type:'audioAt',id:id(o.id),at:num(o.at,0,86400)};
         case 'cutRange':keys(o,['type','from','to']);return {type:'cutRange',from:num(o.from,0,86400),to:num(o.to,.04,86400)};
+        case 'reorder':keys(o,['type','ids']);if(!Array.isArray(o.ids)||!o.ids.length||o.ids.length>1000)throw Error('Нужен порядок клипов.');return {type:'reorder',ids:o.ids.map(id)};
+        case 'duplicate':keys(o,['type','track','id']);return {type:'duplicate',track:track(o.track),id:id(o.id)};
+        case 'layer':keys(o,['type','id','layer','at']);if(!Number.isInteger(o.layer))throw Error('Слой должен быть целым числом.');return {type:'layer',id:id(o.id),layer:num(o.layer,1,8),at:num(o.at,0,86400)};
+        case 'fades':keys(o,['type','track','id','fadeIn','fadeOut']);return {type:'fades',track:track(o.track,true) as 'video'|'audio',id:id(o.id),fadeIn:num(o.fadeIn,0,30),fadeOut:num(o.fadeOut,0,30)};
+        case 'captionStyle':keys(o,['type','id','patch']);return {type:'captionStyle',id:id(o.id),patch:captionStyle(o.patch)};
+        case 'captionStyled':keys(o,['type','text','from','to','fontId','style']);if(!request.fontIds.includes(String(o.fontId)))throw Error('Неизвестный шрифт.');return {type:'captionStyled',text:text(o.text,1200),from:num(o.from,0,86400),to:num(o.to,.04,86400),fontId:String(o.fontId),style:captionStyle(o.style)};
+        case 'captionEdit':keys(o,['type','id','text','from','to']);return {type:'captionEdit',id:id(o.id),text:text(o.text,1200),from:num(o.from,0,86400),to:num(o.to,.04,86400)};
+        case 'master':keys(o,['type','value']);return {type:'master',value:num(o.value,0,1)};
         default:throw Error('Инструмент не поддерживается.');
       }
     }catch(e){throw Error(`Действие ${index+1}: ${e instanceof Error?e.message:String(e)}`);}
@@ -127,18 +157,32 @@ export function simulateAiPlan(project:Project,plan:AiPlan):Project{
   plan.operations.forEach((o,i)=>{
     const newId=`ai-${plan.requestId.slice(0,24)}-${i}`;
     if(o.type==='ratio'){p.ratio=o.value;p.mode=o.value==='9:16'?'reels':'video';return;}
-    if(o.type==='cutRange'){if(o.to-o.from<.04||o.to>totalLength(p))throw Error('Диапазон вне проекта.');p=cutRange(p,o.from,o.to);return;}
-    if(o.type==='caption'){
-      if(o.to-o.from<.04)throw Error('Некорректное время текста.');
-      p.texts.push(normalizeCaption({id:newId,text:o.text,from:o.from,to:o.to,fontId:o.fontId}));return;
+    if(o.type==='master'){p.master=o.value;return;}
+    if(o.type==='reorder'){
+      const mains=p.clips.filter(c=>!c.layer),ids=mains.map(c=>c.id);
+      if(o.ids.length!==ids.length||new Set(o.ids).size!==ids.length||o.ids.some(id=>!ids.includes(id)))throw Error('Перестановка должна включать все основные клипы без повторов.');
+      const ordered=o.ids.map(id=>mains.find(c=>c.id===id)!);let i=0;p.clips=p.clips.map(c=>c.layer?c:ordered[i++]);return;
     }
-    const {item,index,list}=find(o.type==='transform'?'video':o.type==='audioAt'?'audio':o.track,o.id);
+    if(o.type==='cutRange'){if(o.to-o.from<.04||o.to>totalLength(p))throw Error('Диапазон вне проекта.');p=cutRange(p,o.from,o.to);return;}
+    if(o.type==='caption'||o.type==='captionStyled'){
+      if(o.to-o.from<.04)throw Error('Некорректное время текста.');
+      p.texts.push(normalizeCaption({id:newId,text:o.text,from:o.from,to:o.to,fontId:o.fontId,...(o.type==='captionStyled'?o.style:{})}));return;
+    }
+    const {item,index,list}=find(o.type==='transform'||o.type==='layer'?'video':o.type==='audioAt'?'audio':o.type==='captionStyle'||o.type==='captionEdit'?'text':o.track,o.id);
     if(o.type==='remove'){list.splice(index,1);return;}
+    if(o.type==='captionStyle'){Object.assign(item,o.patch);return;}
+    if(o.type==='captionEdit'){if(o.to-o.from<.04)throw Error('Некорректное время текста.');Object.assign(item,{text:o.text,from:o.from,to:o.to});return;}
+    if(o.type==='duplicate'){
+      if(o.track==='text'){const c=item as Caption;p.texts.push({...c,id:newId,from:c.to,to:c.to+(c.to-c.from)});}
+      else{const c=item as Clip,copy={...c,id:newId,at:c.at+length(c)};(o.track==='video'?p.clips:p.audio).splice(index+1,0,copy);}return;
+    }
     if(o.type==='split'){
       if(o.track==='text'){const c=item as Caption,at=c.from+o.offset;if(at>=c.to-.04)throw Error('Точка разделения вне текста.');p.texts.splice(index,1,{...c,to:at},{...c,id:newId,from:at});}
       else{const pair=splitClip(item as Clip,o.offset);if(!pair)throw Error('Точка разделения вне клипа.');pair[1].id=newId;(o.track==='video'?p.clips:p.audio).splice(index,1,...pair);}return;
     }
     const c=item as Clip;
+    if(o.type==='layer'){c.layer=o.layer;c.at=o.at;}
+    if(o.type==='fades'){if(c.kind==='image')throw Error('У фотографии нет звуковой дорожки.');if(Math.max(o.fadeIn,o.fadeOut)>length(c))throw Error('Затухание длиннее клипа.');c.fadeIn=o.fadeIn;c.fadeOut=o.fadeOut;}
     if(o.type==='trim'){if(o.end-o.start<.04||o.end>c.duration)throw Error('Обрезка вне исходного файла.');c.start=o.start;c.end=o.end;}
     if(o.type==='speed'){if(c.kind==='image')throw Error('Для фотографии меняйте длительность.');c.speed=o.value;}
     if(o.type==='volume'){if(c.kind==='image')throw Error('У изображения нет аудио.');c.volume=o.value;c.muted=o.muted;}

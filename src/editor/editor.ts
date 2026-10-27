@@ -8,6 +8,7 @@ import { brandSvg } from '../brand';
 import { EditorTools } from './tools';
 import { EditorTour } from './tour';
 import {hitsMedia} from './geometry';
+import {TimelineThumbnails} from './timeline-thumbnails';
 import type { AiProvider } from './ai';
 import {createThemeIconMotion,themeAction,themeIconMarkup} from '../motion/theme-icon';
 export const escapeHtml=(s:unknown)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -25,11 +26,11 @@ const button=(action:string,label:string,glyph='',cls='',extra='')=>`<button typ
 export interface EditorOptions { aiProvider?:AiProvider; project:Project; assets:Map<string,Asset>; theme:'light'|'dark'; onHome:(project:Project)=>void; onSave:(project:Project)=>void; onTheme:()=>void; }
 export class Editor {
  public history:History;public selected:Selection|null=null;public cursor=0;public tab:'media'|'audio'|'text'='media';
- private tools:EditorTools;private tour:EditorTour;
+ private tools:EditorTools;private tour:EditorTour;private thumbnails:TimelineThumbnails;
  private themeMotion:ReturnType<typeof createThemeIconMotion>;
  private inspectorGroups=new Map<string,boolean>();
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
- private overlayRows=1;private importLayer=0;
+ private overlayRows=0;private importLayer=0;
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
  private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;private pendingName:string|null=null;
@@ -50,6 +51,7 @@ export class Editor {
   <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
   this.themeMotion=createThemeIconMotion(this.$('.pk-theme-icon'),opts.theme);this.cleanups.push(()=>this.themeMotion.dispose());
   this.engine=new PlaybackEngine(this.$('canvas'),opts.assets,(time,playing)=>this.updateCursor(time,playing),e=>this.fail(e));
+  this.thumbnails=new TimelineThumbnails(this.$('.pe-track-content'),this.$('.pe-track-scroll'),opts.assets);
   this.tools=new EditorTools({
     root:this.root,canvas:this.engine.canvas,assets:this.opts.assets,provider:this.opts.aiProvider,
     project:()=>this.project,selected:()=>this.selected,cursor:()=>this.cursor,
@@ -208,14 +210,20 @@ export class Editor {
  private renderTimeline(){
   const scale=this.pixels(),duration=totalLength(this.project),width=Math.max(620,this.$('.pe-track-scroll').clientWidth-105,(duration+1)*scale);
   const layers=Array.from({length:Math.max(this.overlayRows,...this.project.clips.map(c=>c.layer))},(_,i)=>i+1).reverse();
-  const rowH=58;const audioRows=Math.max(1,this.project.audio.length),textRows=Math.max(1,this.project.texts.length);
+  const audioRows=Math.max(1,this.project.audio.length),textRows=Math.max(1,this.project.texts.length);
   const content=this.$('.pe-track-content');content.style.width=width+'px';
-  this.$('.pe-track-labels').innerHTML=`<span>${t.tracks}</span>${layers.map(layer=>`<div>${icon('layers',14)}Слой ${layer}</div>`).join('')}<div>${icon('video',14)}${t.videoTrack}</div>${Array.from({length:audioRows},(_,i)=>`<div>${icon('audio',14)}${t.audioTrack} ${i+1}</div>`).join('')}${Array.from({length:textRows},(_,i)=>`<div>${icon('text',14)}${t.text} ${i+1}</div>`).join('')}`;
+  this.$('.pe-track-labels').innerHTML=`<span>${t.tracks}</span>${layers.map(layer=>`<div class="pe-label-video">${icon('layers',14)}Слой ${layer}</div>`).join('')}<div class="pe-label-video">${icon('video',14)}${t.videoTrack}</div>${Array.from({length:audioRows},(_,i)=>`<div class="pe-label-audio">${icon('audio',14)}${t.audioTrack} ${i+1}</div>`).join('')}${Array.from({length:textRows},(_,i)=>`<div class="pe-label-text">${icon('text',14)}${t.text} ${i+1}</div>`).join('')}`;
   const tickStep=this.zoom>=1?1:2;const ticks=Array.from({length:Math.ceil(width/scale/tickStep)},(_,i)=>`<span style="left:${i*tickStep*scale}px">${clock(i*tickStep).slice(0,5)}</span>`).join('');
-  const draw=(track:'video'|'audio'|'text',id:string,name:string,at:number,d:number)=>`<button class="pe-clip ${track} ${this.selected?.id===id?'selected':''}" type="button" draggable="true" data-select="${track}:${id}" data-track="${track}" data-clip="${id}" style="left:${at*scale}px;width:${Math.max(3,d*scale)}px" title="${escapeHtml(name)}"><i data-resize="start"></i><span>${icon(track==='audio'?'audio':track==='text'?'text':'video',12)}<b>${escapeHtml(name)}</b></span><small>${d.toFixed(1)} s</small><i data-resize="end"></i></button>`;
-  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div>`+layers.map(layer=>`<div class="pe-time-row pe-overlay-row" data-drop="video" data-layer="${layer}">${positions(this.project).filter(c=>c.clip.layer===layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip))).join('')}<button class="pe-layer-add" data-action="overlay-import-${layer}" title="Добавить фото или видео на слой ${layer}" aria-label="Добавить фото или видео на слой ${layer}">${icon('plus',14)}</button></div>`).join('')+`<div class="pe-time-row" data-drop="video" data-layer="0">${positions(this.project).filter(c=>!c.clip.layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip))).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
-   (this.project.audio.length?this.project.audio.map(c=>`<div class="pe-time-row" data-drop="audio">${draw('audio',c.id,c.name,c.at,length(c))}</div>`).join(''):`<div class="pe-time-row" data-drop="audio"><button class="pe-track-add" data-action="tab-audio">${t.audio}: ${t.import}</button></div>`)+
-   (this.project.texts.length?this.project.texts.map(c=>`<div class="pe-time-row" data-drop="text">${draw('text',c.id,c.text,c.from,c.to-c.from)}</div>`).join(''):`<div class="pe-time-row" data-drop="text"><button class="pe-track-add" data-action="add-text">${t.addText}</button></div>`)+`<div class="pe-head" style="left:${this.cursor*scale}px;height:${(1+layers.length+audioRows+textRows)*rowH+25}px"><span></span></div>`;
+  const draw=(track:'video'|'audio'|'text',id:string,name:string,at:number,d:number,clip?:Clip)=>{
+   const kind=track==='video'&&clip?.kind==='image'?'image':track,asset=clip?this.opts.assets.get(clip.assetId):undefined;
+   const strip=track==='video'&&clip&&asset?`<span class="pe-filmstrip" aria-hidden="true" data-asset-id="${escapeHtml(asset.id)}" data-source-start="${clip.start}" data-source-end="${clip.end}"${asset.thumbnail?` style="background-image:url('${asset.thumbnail}')"`:''}></span>`:'';
+   const label=kind==='image'?'Фото':track==='video'?'Видео':track==='audio'?'Аудио':'Текст';
+   return `<button class="pe-clip ${track} ${kind==='image'?'image ':''}${this.selected?.id===id?'selected':''}" type="button" draggable="true" data-kind="${kind}" data-select="${track}:${id}" data-track="${track}" data-clip="${id}" style="left:${at*scale}px;width:${Math.max(3,d*scale)}px" title="${escapeHtml(label+': '+name)}"><i data-resize="start"></i>${strip}<span class="pe-clip-label">${icon(track==='audio'?'audio':track==='text'?'text':'video',12)}<b>${escapeHtml(name)}</b></span><small class="pe-clip-duration">${d.toFixed(1)} s</small><i data-resize="end"></i></button>`;
+  };
+  content.innerHTML=`<div class="pe-ruler" data-seek="true">${ticks}</div>`+layers.map(layer=>`<div class="pe-time-row pe-video-row pe-overlay-row" data-drop="video" data-layer="${layer}">${positions(this.project).filter(c=>c.clip.layer===layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip),clip)).join('')}<button class="pe-layer-add" data-action="overlay-import-${layer}" title="Добавить фото или видео на слой ${layer}" aria-label="Добавить фото или видео на слой ${layer}">${icon('plus',14)}</button></div>`).join('')+`<div class="pe-time-row pe-video-row" data-drop="video" data-layer="0">${positions(this.project).filter(c=>!c.clip.layer).map(({clip,at})=>draw('video',clip.id,clip.name,at,length(clip),clip)).join('')}${!this.project.clips.length?`<button class="pe-track-add" data-action="import">${icon('plus',15)} ${t.emptyHint}</button>`:''}</div>`+
+   (this.project.audio.length?this.project.audio.map(c=>`<div class="pe-time-row pe-audio-row" data-drop="audio">${draw('audio',c.id,c.name,c.at,length(c))}</div>`).join(''):`<div class="pe-time-row pe-audio-row" data-drop="audio"><button class="pe-track-add" data-action="tab-audio">${t.audio}: ${t.import}</button></div>`)+
+   (this.project.texts.length?this.project.texts.map(c=>`<div class="pe-time-row pe-text-row" data-drop="text">${draw('text',c.id,c.text,c.from,c.to-c.from)}</div>`).join(''):`<div class="pe-time-row pe-text-row" data-drop="text"><button class="pe-track-add" data-action="add-text">${t.addText}</button></div>`)+`<div class="pe-head" style="left:${this.cursor*scale}px;height:${(1+layers.length)*72+(audioRows+textRows)*58+25}px"><span></span></div>`;
+  this.thumbnails.refresh();
   this.$('#pe-in').textContent=clock(this.markIn);this.$('#pe-out').textContent=clock(this.markOut);this.$<HTMLButtonElement>('[data-action="cut"]').disabled=Math.abs(this.markIn-this.markOut)<.04;
  }
  private async seek(time:number){if(this.loading||this.exporting)return;try{await this.engine.seek(clamp(time,0,totalLength(this.project)));}catch(e){this.fail(e);}}
@@ -331,5 +339,5 @@ export class Editor {
   }catch(e){this.$('.pe-export-message').textContent=e instanceof DOMException&&e.name==='AbortError'?t.cancel:t.error+': '+(e instanceof Error?e.message:String(e));}
   finally{this.exporting=false;cancel.hidden=true;modal.querySelectorAll<HTMLInputElement>('select,button').forEach(n=>n.disabled=false);}
  }
- dispose(){if(this.autosaveTimer)this.save(false);this.disposed=true;this.tour.dispose();this.tools.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
+ dispose(){if(this.autosaveTimer)this.save(false);this.disposed=true;this.tour.dispose();this.tools.dispose();this.thumbnails.dispose();this.abort?.abort();this.engine.dispose();this.resize.disconnect();this.cleanups.forEach(fn=>fn());if(this.statusTimer)clearTimeout(this.statusTimer);if(this.exportUrl)URL.revokeObjectURL(this.exportUrl);this.root.innerHTML='';}
 }
