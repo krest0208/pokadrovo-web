@@ -1,15 +1,9 @@
 import {deny} from './http.mjs';
 import {AI_OPERATIONS,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS} from './ai-contract.mjs';
 
-const string={type:'string'},number={type:'number'};
-const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
-
-/** A shallow wire schema avoids provider-specific union/null schema restrictions.
- * Arguments are decoded below, then checked against the full editor whitelist. */
-export function editingResponseFormat(request,hasMedia){
- const analysis=object({summary:string,speech:string,audio:string,events:{type:'array',maxItems:12,items:object({from:number,to:number,visual:string,audio:string,speech:string})},limitations:{type:'array',maxItems:12,items:string}});
- return {type:'json_schema',json_schema:{name:'pokadrovo_edit',strict:true,schema:object({analysis,summary:string,operations:{type:'array',maxItems:request.capabilities.length?30:0,items:object({action:{type:'string',enum:request.capabilities.length?request.capabilities:['none']},parameters:{type:'string',description:'JSON object with the allowed operation arguments only, without type. Example: {"track":"video","id":"v1","value":1.5}'}})}})}};
-}
+/** The active Polza route rejects strict response schemas with HTTP 400.
+ * JSON mode constrains syntax; the server and editor enforce the operation contract. */
+export function editingResponseFormat(){return {type:'json_object'};}
 
 export const EDITING_WIRE_GUIDE='Формат передачи operations: каждый элемент строго {"action":"имя команды","parameters":"JSON-строка с её аргументами без поля type"}. Например {"action":"speed","parameters":"{\\"track\\":\\"video\\",\\"id\\":\\"v1\\",\\"value\\":1.5}"}. Используй настоящие ID проекта. Не заполняй лишние аргументы и не добавляй null. allowedOperations описывает аргументы ПОСЛЕ декодирования parameters. Не более 30 действий за этап. analysis всегда объект со всеми полями; если файл не передан, верни пустые строки, events:[] и limitations:[], не выдумывай анализ.';
 

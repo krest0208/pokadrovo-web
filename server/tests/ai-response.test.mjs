@@ -22,15 +22,8 @@ test('structured patch nulls omit only known properties and never hide unknown f
  const value=parseModelMessage(choice(JSON.stringify({...plan,operations:[{type:'transform',id:'v1',patch}]})),true);
  assert.deepEqual(value.operations[0].patch,{zoom:1.2,injected:null});
 });
-test('response schema follows client capabilities without union, null-only or deeply nested editor variants',()=>{
- const request={capabilities:['ratio','transform'],fontIds:['system']},format=editingResponseFormat(request,false);
- assert.equal(format.type,'json_schema');assert.equal(format.json_schema.strict,true);
- assert.equal(format.json_schema.schema.properties.analysis.type,'object');
- const wire=format.json_schema.schema.properties.operations.items;
- assert.deepEqual(wire.properties.action.enum,['ratio','transform']);
- assert.equal(wire.additionalProperties,false);assert.equal(wire.properties.parameters.type,'string');
- assert.ok(!JSON.stringify(format).includes('anyOf'));assert.ok(!JSON.stringify(format).includes('"null"'));
- assert.equal(editingResponseFormat(request,true).json_schema.schema.properties.analysis.type,'object');
+test('active provider uses compatible JSON mode without a rejected strict schema',()=>{
+ assert.deepEqual(editingResponseFormat(),{type:'json_object'});
 });
 test('wire arguments decode to the existing editor protocol and cannot inject or override a command',()=>{
  const response=ops=>choice(JSON.stringify({...plan,operations:ops}));
@@ -55,7 +48,7 @@ test('HTTP accepts formatted complete plans, rejects incomplete ones once, retai
   const a=await f.signup();const fifth=await a.send('/api/ai/edit-plan','POST',{request:job(),media:media(),mediaConsent:true});assert.equal(fifth.status,502,fifth.raw);
   assert.equal(calls.length,5);assert.equal(f.store.get('SELECT count(*) n FROM ai_trial_usage WHERE account_id=?',a.id).n,0);
   const run=f.store.get('SELECT result,coin_charge,input_tokens,output_tokens FROM ai_runs WHERE account_id=?',a.id);assert.equal(run.result,'failed');assert.equal(run.coin_charge,0);assert.equal(run.input_tokens,100);assert.equal(run.output_tokens,4096);
-  assert.equal(calls[0].response_format.type,'json_schema');assert.equal(calls[0].max_tokens,4096);assert.equal(calls[0].provider.allow_fallbacks,false);assert.equal(calls[0].reasoning.effort,'none');
-  assert.equal(calls[4].response_format.json_schema.schema.properties.analysis.type,'object');
+  assert.deepEqual(calls[0].response_format,{type:'json_object'});assert.equal(calls[0].max_tokens,4096);assert.equal(calls[0].provider.allow_fallbacks,false);assert.equal(calls[0].reasoning.effort,'none');
+  assert.deepEqual(calls[4].response_format,{type:'json_object'});
  },{aiFetch:async(_url,init)=>{calls.push(JSON.parse(init.body));return new Response(JSON.stringify({choices:[answers[calls.length-1]],usage:{prompt_tokens:100,completion_tokens:4096}}),{headers:{'Content-Type':'application/json'}});}});
 });
