@@ -110,17 +110,17 @@ test('isolated worker finishes every validation step and gives serial tests room
   const directory=temp(),calls=[],messages=[];mkdirSync(join(directory,'server/tests'),{recursive:true});
   try{
     runBuildSteps(directory,(command,args,options)=>{calls.push({command,args,options});return {status:0};},message=>messages.push(message));
-    assert.equal(calls.length,7);assert.equal(calls[1].options.timeout,600000);assert.equal(calls[0].options.timeout,240000);
+    assert.equal(calls.length,7);assert.equal(calls[1].options.timeout,780000);assert.equal(calls[0].options.timeout,240000);
     assert.ok(calls[1].args.includes('--test-concurrency=1'));assert.ok(calls[1].args.includes('tests/admin-navigation.test.mjs'));
     assert.ok(calls.at(-1).args.includes('tests/standalone.test.mjs'));
     for(const {options}of calls){assert.equal(options.cwd,directory);assert.equal(options.env.TMPDIR,join(directory,'.deploy-test-tmp'));assert.equal(options.env.NODE_OPTIONS,'--max-old-space-size=384');}
     assert.equal(lstatSync(join(directory,'.deploy-test-tmp')).mode&0o777,0o700);
-    assert.ok(messages.some(m=>m.includes('starting server and account tests (limit 600s)')));assert.ok(messages.at(-1).includes('completed standalone tests'));
+    assert.ok(messages.some(m=>m.includes('starting server and account tests (limit 780s)')));assert.ok(messages.at(-1).includes('completed standalone tests'));
   }finally{rmSync(directory,{recursive:true,force:true});}
 });
 test('isolated worker distinguishes timeouts, failed checks and spawn failures without running later steps',()=>{
   const cases=[
-    {step:2,result:{status:null,error:Object.assign(Error('timeout'),{code:'ETIMEDOUT'}),signal:'SIGTERM'},message:/timed out during server and account tests after 600s/},
+    {step:2,result:{status:null,error:Object.assign(Error('timeout'),{code:'ETIMEDOUT'}),signal:'SIGTERM'},message:/timed out during server and account tests after 780s/},
     {step:3,result:{status:2},message:/failed during TypeScript validation \(exit 2\)/},
     {step:1,result:{status:null,error:Object.assign(Error('missing'),{code:'ENOENT'})},message:/could not start dependency installation \(ENOENT\)/},
     {step:4,result:{status:null,signal:'SIGKILL'},message:/failed during Vite production build \(signal SIGKILL\)/}

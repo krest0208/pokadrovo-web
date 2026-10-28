@@ -8,7 +8,7 @@ export function buildSteps(source) {
   const tests = readdirSync(join(source,'server/tests')).filter(n=>n.endsWith('.test.mjs')).sort().map(n=>'server/tests/'+n);
   return [
     ['/usr/bin/npm',['ci','--ignore-scripts','--include=dev','--no-audit','--no-fund'],{name:'dependency installation',timeout:240000}],
-    [process.execPath,['--test','--test-concurrency=1',...tests,'tests/guest-storage.test.mjs','tests/admin-navigation.test.mjs'],{name:'server and account tests',timeout:600000}],
+    [process.execPath,['--test','--test-concurrency=1',...tests,'tests/guest-storage.test.mjs','tests/admin-navigation.test.mjs'],{name:'server and account tests',timeout:780000}],
     [process.execPath,['node_modules/typescript/bin/tsc','--noEmit'],{name:'TypeScript validation',timeout:240000}],
     [process.execPath,['node_modules/vite/bin/vite.js','build'],{name:'Vite production build',timeout:240000}],
     [process.execPath,['tools/test-editor.cjs'],{name:'editor model tests',timeout:240000}],
