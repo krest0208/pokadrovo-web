@@ -20,11 +20,12 @@ test('the new registration option preserves all previously accepted full-publica
 test('owner can open free registration without falsely asserting completed legal checks or enabling AI, mail, analytics or payments',()=>fixture(async f=>{
  assert.equal((await f.guest('/api/admin/legal','PUT',pendingRegistration)).status,401);
  assert.equal((await f.owner('/api/admin/legal','PUT',{...pendingRegistration,password:'wrong'})).status,403);
- const saved=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,password:f.password});assert.equal(saved.status,200,saved.raw);
+ const saved=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,documentsApproved:true,password:f.password});assert.equal(saved.status,200,saved.raw);
  assert.equal(saved.data.ready,false);assert.equal(saved.data.registrationReady,true);assert.equal(saved.data.salesReady,false);
  for(const key of ['published','identityConfirmed','hostingConfirmed','processingReviewed','crossBorderReviewed','documentsApproved'])assert.equal(saved.data.config[key],false,key);
  assert.equal(saved.data.config.rknNotice,pendingRegistration.rknNotice);
  const state=(await f.guest('/api/account/session')).data;assert.equal(state.legal.registrationReady,true);assert.equal(state.legal.ready,false);assert.equal(state.mail.enabled,false);
+ assert.equal(state.legal.version,saved.data.version);assert.equal(f.store.get('SELECT count(*) n FROM legal_revisions WHERE version=?',state.legal.version).n,1);
  const a=await f.register('pending@example.test',{legalVersion:saved.data.version});assert.equal(a.result.status,201,a.result.raw);assert.equal(a.result.data.user.role,'user');assert.ok(a.result.data.recoveryCode);
  assert.equal((await a.c('/api/account/session')).data.user.id,a.result.data.user.id);
  assert.equal((await a.c('/api/ai/edit-plan','POST',{})).status,503);assert.equal((await a.c('/api/admin/session')).status,401);

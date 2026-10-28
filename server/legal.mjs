@@ -44,6 +44,8 @@ export function createLegal({store,now,origin,session,sameOrigin}) {
     if(c.published&&['ip','company'].includes(c.operatorType)&&!/^\d{13}(\d{2})?$/.test(c.ogrn))deny(400,'Укажите ОГРН или ОГРНИП.');
     c.reviewedEdition=c.published?LEGAL_EDITION:'';
     c.registrationEdition=c.registrationOnly?LEGAL_EDITION:'';
+    // Match config() before hashing and archiving a registration-only decision.
+    if(c.reviewedEdition!==LEGAL_EDITION)c.documentsApproved=false;
     const version=legalVersion(c);
     store.db.exec('BEGIN IMMEDIATE');try{
       store.run("INSERT INTO meta(key,value) VALUES('legal_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(c));
