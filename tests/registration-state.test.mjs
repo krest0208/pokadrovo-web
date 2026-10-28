@@ -13,8 +13,7 @@ const submitAttributes=html=>html.match(/<button class="au-primary au-submit"([^
 test('opening only registration enables signup, links the exact accepted revision, and leaves all three user consents unchecked',()=>{
  const html=render({ready:false,registrationReady:true});
  assert.doesNotMatch(submitAttributes(html),/disabled/);
- assert.match(html,/Проверки условий обработки данных ещё не завершены/);
- assert.doesNotMatch(html,/Новая регистрация временно приостановлена/);
+ assert.doesNotMatch(html,/Регистрация временно закрыта/);
  assert.match(html,/href="\/legal\/terms\?version=test-version"/);
  assert.match(html,/href="\/legal\/consent\?version=test-version"/);
  for(const name of ['terms','privacy','adult']){
@@ -26,12 +25,12 @@ test('opening only registration enables signup, links the exact accepted revisio
 
 test('closed registration stays disabled, including an explicit closed state alongside an old ready field',()=>{
  for(const legal of [{ready:false,registrationReady:false},{ready:true,registrationReady:false}]){
-  const html=render(legal);assert.match(submitAttributes(html),/disabled/);assert.match(html,/Новая регистрация временно приостановлена/);
+  const html=render(legal);assert.match(submitAttributes(html),/disabled/);assert.match(html,/Регистрация временно закрыта/);
  }
 });
 
 test('full approved publication remains compatible with older session responses',()=>{
  for(const legal of [{ready:true},{ready:true,registrationReady:true}]){
-  const html=render(legal);assert.doesNotMatch(submitAttributes(html),/disabled/);assert.doesNotMatch(html,/Проверки условий обработки данных ещё не завершены|Новая регистрация временно приостановлена/);
+  const html=render(legal);assert.doesNotMatch(submitAttributes(html),/disabled/);assert.doesNotMatch(html,/Регистрация временно закрыта/);
  }
 });

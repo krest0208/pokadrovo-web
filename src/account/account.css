@@ -43,3 +43,27 @@
 .au-privacy-request .au-consent{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:10px;font-size:13px;line-height:1.65;font-weight:400}.au-privacy-request input[type=checkbox]{appearance:auto;flex:0 0 20px;width:20px;height:20px;padding:0;margin:2px 0}.au-privacy-request a{color:var(--au-blue);text-underline-offset:3px}
 
 .au-recovery-shade{z-index:500}.au-recovery-card{width:min(560px,100%);border:1px solid var(--au-line);border-radius:20px;background:var(--au-surface);color:var(--au-ink);padding:32px;display:grid;gap:16px;max-height:calc(100dvh - 32px);overflow:auto}.au-recovery-card h2{font-size:28px;line-height:1.2;margin:0}.au-recovery-card p{font-size:14px;line-height:1.65;color:var(--au-muted);margin:0}.au-recovery-card label{font-size:13px;display:grid;gap:8px}.au-recovery-card input{font-family:monospace!important;font-size:13px!important;letter-spacing:.5px}.au-recovery-link{display:block;margin:14px auto 0}.au-form-links button{min-height:36px}@media(max-width:600px){.au-recovery-card{padding:25px 20px}.au-recovery-card input{font-size:11px!important;letter-spacing:0}}
+
+.au-dialog.au-dialog-compact{display:block;width:min(440px,100%);max-height:calc(100dvh - 32px);border-radius:20px;box-shadow:0 20px 70px #07162d30;animation:au-compact-enter .22s cubic-bezier(.22,1,.36,1)}
+.au-dialog-compact .au-form-section{padding:32px}
+.au-dialog-compact .au-close{width:44px;height:44px;right:10px;top:10px;background:transparent}
+.au-dialog-compact .au-close:hover{background:var(--au-paper)}
+.au-dialog-compact .au-form-head{margin:0 0 22px;padding-right:36px}
+.au-dialog-compact .au-form-head h1{margin:0;font-size:26px;letter-spacing:-.7px;line-height:1.2}
+.au-dialog-compact form{gap:12px}
+.au-dialog-compact form>label{font-size:14px;font-weight:500;gap:6px}
+.au-dialog-compact input:not([type=checkbox]){height:46px;background:var(--au-surface);font-size:16px;scroll-margin-block:20px}
+.au-dialog-compact input::placeholder{font-size:14px}
+.au-dialog-compact .au-legal{display:grid;gap:4px;border:0;border-radius:0;padding:0;margin:4px 0 0}
+.au-dialog-compact .au-legal .au-consent{min-height:44px;align-items:center;margin:0;font-size:13px;line-height:1.5;color:var(--au-ink)}
+.au-dialog-compact .au-legal input[type=checkbox]{margin:0;flex:0 0 20px}
+.au-dialog-compact .au-submit{min-height:48px;justify-content:center;font-size:15px;font-weight:600;margin-top:4px;transition:background-color .16s ease,scale .15s ease-out,translate .18s cubic-bezier(.22,1,.36,1)}
+.au-dialog-compact .au-submit:not(:disabled):active{scale:.99;translate:0 0}
+.au-dialog-compact .au-form-links{flex-wrap:wrap;margin-top:10px;font-size:14px;gap:6px}
+.au-dialog-compact .au-form-links button{min-height:44px;font-weight:600}
+.au-dialog-compact .au-recovery-link{flex-basis:100%;margin:0}
+.au-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+@keyframes au-compact-enter{from{opacity:0;transform:translateY(6px) scale(.99)}to{opacity:1;transform:none}}
+@media(hover:hover) and (pointer:fine){.au-dialog-compact .au-submit:not(:disabled):hover{translate:0 -1px;box-shadow:0 3px 10px #245ce015}}
+@media(max-width:480px){.au-dialog.au-dialog-compact{max-height:calc(100dvh - 24px);border-radius:16px}.au-dialog-compact .au-form-section{padding:26px 22px 22px}.au-dialog-compact .au-form-head h1{font-size:24px}}
+@media(prefers-reduced-motion:reduce){.au-dialog.au-dialog-compact{animation:none}.au-dialog-compact :is(button,a):is(:hover,:active){translate:none!important;scale:none!important}}

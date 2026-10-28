@@ -1,7 +1,6 @@
 import * as React from 'react';
 import BrandMark from '../BrandMark';
 import ThemeToggle from '../motion/ThemeToggle';
-import { frames } from '../layered-assets';
 import { AccountError, Session, User, request, register, signIn, recoverAccount } from './api';
 import type { Project } from '../editor/model';
 import './account.css';
@@ -26,30 +25,26 @@ export function AuthDialog({session,theme,initialMode='register',error:initialEr
  }catch(e){if(e instanceof AccountError&&e.totpRequired)setNeedsCode(true);setError(e instanceof Error?e.message:'Нет связи с сервером.');}finally{setBusy(false);}}
  const registrationOpen=(session?.legal?.registrationReady??session?.legal?.ready)===true;
  const change=(next:typeof mode)=>{setMode(next);setError('');setNotice('');setNeedsCode(false);email.current?.focus();};
- return <div className="au-shade" data-theme={theme} onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)onClose();}}><div className="au-dialog" ref={modal} role="dialog" aria-modal="true" aria-labelledby="au-title">
-  <aside className="au-story"><div className="au-brand"><BrandMark size={34}/><span>покадрово<small>ВАША МОНТАЖНАЯ СТУДИЯ</small></span></div><div className="au-story-copy"><span className="au-kicker">ОДИН АККАУНТ. ВАШИ ИСТОРИИ.</span><h2>Первый кадр<br/>новой истории.</h2><p>Сохраните замысел, соберите материалы<br/>и вернитесь к монтажу в любой момент.</p></div><div className="au-film"><img src={frames.launch} alt=""/><div><span>POKADROVO / STUDIO</span><b>01 · ВАШ СЛЕДУЮЩИЙ ПРОЕКТ</b></div></div><div className="au-story-foot"><Glyph name="lock" size={15}/><span>Исходные видео остаются на устройстве</span></div></aside>
+ return <div className="au-shade" data-theme={theme} onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)onClose();}}><div className="au-dialog au-dialog-compact" ref={modal} role="dialog" aria-modal="true" aria-labelledby="au-title">
   <section className="au-form-section"><button className="au-close" onClick={onClose} disabled={busy} aria-label="Закрыть окно входа"><Glyph name="close"/></button>
-   <div className="au-form-head"><span className="au-kicker">ПОКАДРОВО ID</span><h1 id="au-title">{mode==='register'?'Создайте аккаунт':mode==='recover'||mode==='email'?'Восстановите доступ':'С возвращением'}</h1><p>{mode==='register'?'Сохраняйте проекты в аккаунте и возвращайтесь к ним в любой момент.':mode==='recover'?'Введите почту аккаунта и сохранённый резервный код.':mode==='email'?'Запросите ссылку на подтверждённую почту аккаунта.':'Войдите, чтобы продолжить свои проекты.'}</p></div>
+   <div className="au-form-head"><h1 id="au-title">{mode==='register'?'Регистрация':mode==='recover'||mode==='email'?'Восстановление':'Вход'}</h1></div>
    <form onSubmit={submit} key={mode}>
-    <label>{mode!=='login'?'Электронная почта':'Почта или логин'}<input ref={email} name="email" type={mode!=='login'?'email':'text'} autoComplete={mode!=='login'?'email':'username'} autoCapitalize="none" spellCheck={false} maxLength={254} required placeholder={mode!=='login'?'you@example.com':'Почта или логин администратора'} disabled={busy}/></label>
+    <label>{mode!=='login'?'Электронная почта':'Почта или логин'}<input ref={email} name="email" type={mode!=='login'?'email':'text'} autoComplete={mode!=='login'?'email':'username'} autoCapitalize="none" spellCheck={false} maxLength={254} required placeholder={mode!=='login'?'you@example.com':'Почта или логин'} disabled={busy}/></label>
     {mode==='recover'&&<label>Резервный код<input name="recoveryCode" type="password" autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={100} required disabled={busy} placeholder="Код, сохранённый при регистрации"/></label>}
     {mode!=='email'&&<label>{mode==='recover'?'Новый пароль':'Пароль'}<input name="password" type="password" autoComplete={mode!=='login'?'new-password':'current-password'} minLength={mode!=='login'?14:1} maxLength={512} required placeholder={mode!=='login'?'Не менее 14 символов':'Введите пароль'} disabled={busy}/></label>}
     {mode==='login'&&needsCode&&<label>Код из приложения-аутентификатора<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required autoFocus disabled={busy}/></label>}
     {mode!=='login'&&mode!=='email'&&<label>Повторите пароль<input name="confirmPassword" type="password" autoComplete="new-password" minLength={14} maxLength={512} required disabled={busy}/></label>}
-    {mode==='register'&&<fieldset className="au-legal"><legend>Условия регистрации</legend>
-     <p>Документы открываются в новой вкладке. Все отметки вы ставите самостоятельно.</p>
+    {mode==='register'&&<fieldset className="au-legal"><legend className="au-sr-only">Согласия</legend>
      <label className="au-consent"><input type="checkbox" name="terms" required disabled={busy}/><span>Принимаю <a href={'/legal/terms'+(registrationOpen?'?version='+encodeURIComponent(session!.legal!.version):'')} target="_blank" rel="noopener">пользовательское соглашение</a>.</span></label>
-     <label className="au-consent"><input type="checkbox" name="privacy" required disabled={busy}/><span>Даю отдельное <a href={'/legal/consent'+(registrationOpen?'?version='+encodeURIComponent(session!.legal!.version):'')} target="_blank" rel="noopener">согласие на обработку персональных данных</a>. <a href="/legal/privacy" target="_blank" rel="noopener">Политика обработки данных</a>.</span></label>
+     <label className="au-consent"><input type="checkbox" name="privacy" required disabled={busy}/><span>Даю <a href={'/legal/consent'+(registrationOpen?'?version='+encodeURIComponent(session!.legal!.version):'')} target="_blank" rel="noopener">согласие на обработку персональных данных</a>. <a href="/legal/privacy" target="_blank" rel="noopener" aria-label="Политика обработки персональных данных">Политика</a>.</span></label>
      <label className="au-consent"><input type="checkbox" name="adult" required disabled={busy}/><span>Мне исполнилось 18 лет.</span></label>
-     <p><a href="/legal/contacts" target="_blank" rel="noopener">Контакты и реквизиты</a> · <a href="/legal/payments" target="_blank" rel="noopener">Оплата и возврат</a>. Почта используется как логин. {session?.mail?.enabled?'Подтвердите почту по письму: повторную отправку можно запросить в профиле. Также сохраните резервный код.':'После регистрации сохраните резервный код для восстановления доступа. Отправка писем пока недоступна.'}</p>
-     {!registrationOpen&&<p className="au-legal-pending" role="status">Новая регистрация временно приостановлена: уточняются реквизиты и документы. Вы можете войти в существующий аккаунт или продолжить монтаж без регистрации.</p>}
-     {registrationOpen&&session?.legal?.ready!==true&&<p className="au-legal-pending" role="status">Проверки условий обработки данных ещё не завершены. Подробности указаны в документах сервиса.</p>}
+     {!registrationOpen&&<p className="au-legal-pending" role="status">Регистрация временно закрыта.</p>}
     </fieldset>}
     {notice&&<p className="au-field-note" role="status">{notice}</p>}
     {error&&<p className="au-error" role="alert">{error}</p>}
-    <button className="au-primary au-submit" disabled={busy||!session||mode==='register'&&!registrationOpen} type="submit">{busy?'Подождите…':mode==='register'?'Зарегистрироваться':mode==='recover'?'Обновить пароль':mode==='email'?'Отправить письмо':'Войти'}<Glyph name="arrow"/></button>
+    <button className="au-primary au-submit" disabled={busy||!session||mode==='register'&&!registrationOpen} type="submit">{busy?'Подождите…':mode==='register'?'Зарегистрироваться':mode==='recover'?'Обновить пароль':mode==='email'?'Отправить письмо':'Войти'}</button>
    </form>
-   <div className="au-form-links">{mode==='register'?<>Уже есть аккаунт? <button onClick={()=>change('login')}>Войти</button></>:mode==='recover'||mode==='email'?<><button onClick={()=>change('login')}>Вернуться ко входу</button>{mode==='email'?<button onClick={()=>change('recover')}>Использовать резервный код</button>:session?.mail?.enabled&&<button onClick={()=>change('email')}>Восстановить по почте</button>}</>:<>Впервые здесь? <button onClick={()=>change('register')}>Создать аккаунт</button><button className="au-recovery-link" onClick={()=>change(session?.mail?.enabled?'email':'recover')}>Забыли пароль?</button></>}</div>
+   <div className="au-form-links">{mode==='register'?<>Есть аккаунт? <button onClick={()=>change('login')}>Войти</button></>:mode==='recover'||mode==='email'?<><button onClick={()=>change('login')}>Вернуться ко входу</button>{mode==='email'?<button onClick={()=>change('recover')}>Использовать резервный код</button>:session?.mail?.enabled&&<button onClick={()=>change('email')}>Восстановить по почте</button>}</>:<>Нет аккаунта? <button onClick={()=>change('register')}>Создать аккаунт</button><button className="au-recovery-link" onClick={()=>change(session?.mail?.enabled?'email':'recover')}>Забыли пароль?</button></>}</div>
   </section>
  </div></div>;
 }
