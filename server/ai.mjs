@@ -6,7 +6,7 @@ import { createYandex } from './yandex.mjs';
 import { createOpenRouter } from './openrouter.mjs';
 import { aiAnalytics } from './ai-usage.mjs';
 import {AI_OPERATIONS as operations,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS,operationGuide} from './ai-contract.mjs';
-import {parseModelMessage} from './ai-response.mjs';
+import {parseModelMessage,modelDefaults} from './ai-response.mjs';
 import {providerFailure} from './ai-provider-error.mjs';
 
 export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12 });
@@ -148,10 +148,13 @@ function validatePreparedMedia(input,request){
 
 export function validateAnalysis(value, media) {
   if (!media) return null;
-  if (!plain(value) || !short(value.summary, 3000) || !value.summary.trim() || !short(value.speech, 8000) ||
-      !short(value.audio, 3000) || !Array.isArray(value.events) || value.events.length > 40 ||
-      !Array.isArray(value.limitations) || value.limitations.length > 12 || !value.limitations.every(v => short(v, 500)))
-    deny(502, 'Модель вернула неполный анализ. Монтаж не изменён.');
+  if(!plain(value))deny(502,'ИИ не вернул объект analysis для выбранного файла. Монтаж не изменён.');
+  const invalid=[];
+  if(!short(value.summary,3000)||!value.summary.trim())invalid.push('summary');
+  if(!short(value.speech,8000))invalid.push('speech');if(!short(value.audio,3000))invalid.push('audio');
+  if(!Array.isArray(value.events)||value.events.length>40)invalid.push('events');
+  if(!Array.isArray(value.limitations)||value.limitations.length>12||!value.limitations.every(v=>short(v,500)))invalid.push('limitations');
+  if(invalid.length)deny(502,'ИИ вернул неверные поля анализа: '+invalid.join(', ')+'. Монтаж не изменён.');
   const events = value.events.map(e => {
     if (!plain(e) || !finite(e.from) || !finite(e.to) || e.from < 0 || e.to <= e.from || e.to > media.duration + .25 ||
         !short(e.visual, 1000) || !short(e.audio, 1000) || !short(e.speech, 2000)) deny(502, 'Модель вернула некорректные таймкоды. Монтаж не изменён.');
@@ -170,9 +173,16 @@ function validatePlan(value, request) {
       deny(502,'ИИ предложил действие'+name+', которого нет в этом редакторе. Монтаж не изменён. Уточните задание: доступны нарезка, порядок клипов, слои, скорость, изображение, звук и титры. Повторный запрос автоматически не отправлялся.');
     }
     const fields = ['type', ...operations[op.type]];
-    if (Object.keys(op).length !== fields.length || !fields.every(k => Object.hasOwn(op, k))) deny(502, 'Модель вернула неподдерживаемую операцию.');
-    if ('id' in op && ![...request.project.clips, ...request.project.audio, ...request.project.texts].some(c => c.id === op.id)) deny(502, 'Модель указала отсутствующий клип.');
-    if ('track' in op && !['video', 'audio', 'text'].includes(op.track)) deny(502, 'Модель указала неизвестную дорожку.');
+    if (Object.keys(op).length !== fields.length || !fields.every(k => Object.hasOwn(op, k))){
+      const missing=fields.filter(k=>!Object.hasOwn(op,k)),extra=Object.keys(op).filter(k=>!fields.includes(k));
+      deny(502,'ИИ вернул неверные поля команды '+op.type+'.'+(missing.length?' Не хватает: '+missing.join(', ')+'.':'')+(extra.length?' Есть лишние поля.':'')+' Монтаж не изменён.');
+    }
+    if ('track' in op && !(['trim','speed','volume','fades'].includes(op.type)?['video','audio']:['video','audio','text']).includes(op.track)) deny(502, 'Модель указала неизвестную дорожку для команды '+op.type+'.');
+    if ('id' in op){
+      const track=['transform','layer'].includes(op.type)?'video':['captionStyle','captionEdit'].includes(op.type)?'text':op.type==='audioAt'?'audio':op.track;
+      const clips=track==='video'?request.project.clips:track==='audio'?request.project.audio:track==='text'?request.project.texts:[];
+      if(!clips.some(c=>c.id===op.id))deny(502,'Модель указала отсутствующий клип или неверную дорожку.');
+    }
     if (['caption','captionStyled'].includes(op.type) && (!request.fontIds.includes(op.fontId) || !short(op.text, 1200))) deny(502, 'Модель вернула некорректную подпись.');
     if (op.type === 'transform' && (!plain(op.patch) || Object.keys(op.patch).some(k => !TRANSFORM_FIELDS.includes(k)))) deny(502, 'Модель предложила недоступное преобразование.');
     const style=op.type==='captionStyle'?op.patch:op.type==='captionStyled'?op.style:null;
@@ -417,6 +427,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         // Even an unusable/truncated model answer may have consumed provider tokens.
         store.run('UPDATE ai_runs SET input_tokens=?,output_tokens=?,provider_cost_usd=? WHERE request_id=?', usage.inputTokens, usage.outputTokens, cost, requestId);
         value=parseModelMessage(result.choices?.[0],q.c.provider==='polza');
+        if(q.c.provider==='polza')value=modelDefaults(value,r);
       }
       const analysis = validateAnalysis(value.analysis, media);
       if(analysis&&media?.mime===PREPARED_MEDIA)analysis.limitations=['Изображение анализировалось по отдельным кадрам (до 12). Между выборками события могут быть пропущены. Таймкоды приблизительные.',...analysis.limitations].slice(0,12);

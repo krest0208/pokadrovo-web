@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseModelMessage,editingResponseFormat} from '../ai-response.mjs';
+import {parseModelMessage,editingResponseFormat,modelDefaults,editingOutputGuide} from '../ai-response.mjs';
 import {TRANSFORM_FIELDS} from '../ai-contract.mjs';
 import {POLZA_MODEL,POLZA_ENDPOINT,PREPARED_MEDIA} from '../polza.mjs';
 import {usingAccounts} from './account-fixture.mjs';
@@ -30,6 +30,25 @@ test('wire arguments decode to the existing editor protocol and cannot inject or
  assert.deepEqual(parseModelMessage(response([{action:'speed',parameters:JSON.stringify({track:'video',id:'v1',value:1.5})}]),true).operations,[{type:'speed',track:'video',id:'v1',value:1.5}]);
  for(const parameters of ['{','[]','null','{"type":"remove"}','{"__proto__":{}}','{"injected":null}'])assert.throws(()=>parseModelMessage(response([{action:'ratio',parameters}]),true));
  assert.throws(()=>parseModelMessage(response([{action:'shell',parameters:'{}'}]),true));
+});
+test('native instructions use real IDs and one editor protocol without nested argument strings',()=>{
+ const r=job(),guide=editingOutputGuide(r);assert.match(guide,/БЕЗ action, parameters/);assert.match(guide,/"id":"v1"/);assert.match(guide,/"visualIn":0.2/);
+ assert.ok(!guide.includes('example_clip_id'));assert.match(guide,/не задание/);
+});
+test('omitted flags preserve existing clip state; unknown fields and numeric edits are never invented',()=>{
+ const r=job();r.project.clips[0].muted=true;
+ const value=modelDefaults({analysis:null,summary:'Громкость',operations:[{type:'volume',id:'v1',value:.4},{type:'speed',id:'v1',value:1.25},{type:'trim',id:'absent',extra:1}]},r);
+ assert.deepEqual(value.operations[0],{type:'volume',id:'v1',track:'video',value:.4,muted:true});
+ assert.deepEqual(value.operations[1],{type:'speed',id:'v1',track:'video',value:1.25});
+ assert.deepEqual(value.operations[2],{type:'trim',id:'absent',extra:1});
+ const explicit=modelDefaults({operations:[{type:'volume',track:'video',id:'v1',value:.4,muted:false},{type:'speed',track:'wrong',id:'v1',value:1.25}]},r);assert.equal(explicit.operations[0].muted,false);assert.equal(explicit.operations[1].track,'wrong');
+ r.project.audio=[{id:'v1'}];assert.equal(modelDefaults({operations:[{type:'speed',id:'v1',value:1.25}]},r).operations[0].track,undefined);
+});
+test('omitted analysis details remain unknown and never become invented speech or timestamps',()=>{
+ const value=modelDefaults({analysis:{summary:'Надпись на синем фоне',events:[{from:0,to:1,visual:'Надпись'}]},operations:[{type:'caption',text:'Тест',from:0,to:1}]},job());
+ assert.deepEqual(value.analysis,{summary:'Надпись на синем фоне',speech:'',audio:'',events:[{from:0,to:1,visual:'Надпись',audio:'',speech:''}],limitations:[]});
+ assert.equal(value.operations[0].fontId,'system');
+ const invalid=modelDefaults({analysis:{speech:123,events:[{visual:'Кадр'}]},operations:[]},job());assert.equal(invalid.analysis.summary,undefined);assert.equal(invalid.analysis.speech,123);assert.equal(invalid.analysis.events[0].from,undefined);
 });
 
 const job=()=>({version:1,requestId:token(),projectId:'json-fixture',revision:'pk1-test',prompt:'Сохрани формат.',project:{id:'json-fixture',schema:4,mode:'video',ratio:'16:9',clips:[{id:'v1',assetId:'a1',kind:'video',name:'fixture.mp4',duration:2,start:0,end:2,speed:1}],audio:[],texts:[]},cursor:0,selection:null,capabilities:['ratio','transform'],fontIds:['system']});

@@ -1,5 +1,5 @@
 import {deny} from './http.mjs';
-import {editingResponseFormat,EDITING_WIRE_GUIDE} from './ai-response.mjs';
+import {editingResponseFormat,editingOutputGuide} from './ai-response.mjs';
 
 export const POLZA_ENDPOINT='https://polza.ai/api/v1';
 export const POLZA_MODEL='google/gemini-2.5-flash';
@@ -17,5 +17,5 @@ export function preparePolza(config,system,input,media,secret){
  }
  if(media?.audioPresent===false)content.push({type:'text',text:'В MP4 нет звуковой дорожки. Переданы только кадры. Не придумывай речь, музыку и звуки; укажи отсутствие звука в limitations.'});
  else if(media)content.push({type:'input_audio',input_audio:{data:media.data,format:'wav'}});
- return {url:POLZA_ENDPOINT+'/chat/completions',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json',Accept:'application/json'},payload:{model:POLZA_MODEL,messages:[{role:'system',content:system+'\nСохраняй формат проекта 9:16 или 16:9 и итоговую длительность не более 60 секунд.\n'+EDITING_WIRE_GUIDE},{role:'user',content}],response_format:editingResponseFormat(),reasoning:{effort:'none'},provider:{allow_fallbacks:false},stream:false,max_tokens:4096}};
+ return {url:POLZA_ENDPOINT+'/chat/completions',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json',Accept:'application/json'},payload:{model:POLZA_MODEL,messages:[{role:'system',content:system+'\nСохраняй формат проекта 9:16 или 16:9 и итоговую длительность не более 60 секунд.\n'+editingOutputGuide(input.request)},{role:'user',content}],response_format:editingResponseFormat(),reasoning:{effort:'none'},provider:{allow_fallbacks:false},stream:false,max_tokens:4096}};
 }

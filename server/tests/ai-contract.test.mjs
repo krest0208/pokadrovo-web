@@ -50,3 +50,14 @@ test('new commands reject malformed targets, ranges and style injection without 
   {type:'transform',id:'v1',patch:{visualIn:6}}];
  for(const op of invalid){assert.throws(()=>api.validateAiPlan({version:1,requestId:r.requestId,projectId:r.projectId,revision:r.revision,summary:'Test',operations:[{type:'master',value:.5},op]},r));assert.equal(JSON.stringify(p),before);}
 });
+test('conservative defaults produce a complete atomic editor plan without unmuting a clip',()=>usingAccounts(async f=>{
+ await configure(f);const original=project();original.clips[0].muted=true;
+ const r=await api.createAiRequest(original,'Уменьши громкость, добавь появление и заголовок.');
+ const response=await f.owner('/api/ai/edit-plan','POST',{request:r});assert.equal(response.status,200,response.raw);
+ const next=await api.applyAiPlan(original,r,api.validateAiPlan(response.data.plan,r));
+ assert.equal(next.clips[0].volume,.4);assert.equal(next.clips[0].muted,true);assert.equal(next.clips[0].visualIn,.2);assert.equal(next.texts.at(-1).fontId,'system');
+},{aiFetch:async()=>reply([{type:'volume',id:'v1',value:.4},{type:'transform',id:'v1',patch:{visualIn:.2}},{type:'caption',text:'Тест',from:0,to:1}])}));
+test('wrong explicit tracks and target collections fail on the server before an editor apply',()=>{
+ const invalid=[{type:'volume',track:'text',id:'title',value:.4,muted:false},{type:'speed',track:'audio',id:'v1',value:1.25},{type:'captionEdit',id:'v1',text:'Test',from:0,to:1}];let call=0;
+ return usingAccounts(async f=>{await configure(f);for(let i=0;i<invalid.length;i++){const r=await api.createAiRequest(project(),'Тест дорожки');const response=await f.owner('/api/ai/edit-plan','POST',{request:r});assert.equal(response.status,502,response.raw);assert.match(response.data.error,/дорожк/);}assert.equal(call,3);},{aiFetch:async()=>reply([invalid[call++]])});
+});

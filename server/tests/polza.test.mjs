@@ -50,3 +50,7 @@ test('silent MP4 samples send no fabricated audio and return a visual analysis',
 },{aiFetch:async(_url,init)=>{const payload=JSON.parse(init.body),parts=payload.messages[1].content;
  assert.equal(parts.some(part=>part.type==='input_audio'),false);assert.equal(parts.filter(part=>part.type==='image_url').length,2);assert.equal(JSON.parse(parts[0].text).media.audioPresent,false);return result();
 }}));
+test('an analysis may omit unknown details while retaining actual speech and timestamps',()=>usingAccounts(async f=>{
+ await configure(f);const response=await f.owner('/api/ai/edit-plan','POST',{request:job(),media:samples(),mediaConsent:true});
+ assert.equal(response.status,200,response.raw);assert.equal(response.data.plan,null);assert.equal(response.data.analysis.speech,'Train today.');assert.equal(response.data.analysis.audio,'');assert.equal(response.data.analysis.events[0].audio,'');
+},{aiFetch:async()=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({analysis:{summary:'Синяя карточка.',speech:'Train today.',events:[{from:0,to:5,visual:'Надпись.'}]},summary:'Без правок.',operations:[]})}}]}),{headers:{'Content-Type':'application/json'}})}));
