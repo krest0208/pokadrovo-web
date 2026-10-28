@@ -104,10 +104,11 @@ export class AiPanel {
     this.node.querySelector<HTMLSelectElement>('.pe-ai-mode')!.disabled=!!this.abort;
     this.node.querySelector<HTMLElement>('.pe-ai-media')!.hidden=!this.port.provider?.supportsMedia;
     this.node.querySelector('.pe-ai-media-title')!.textContent=visual?'Визуальный разбор и советы':'Разобрать видео и звук';
-    this.node.querySelector('.pe-ai-media-description')!.textContent=this.mediaTransport==='frames-audio'?'MP4 со звуком до 60 секунд и 7 МБ. Браузер подготовит до 12 кадров и звуковую дорожку. Между кадрами возможен пропуск коротких событий. Также подходит WAV.':visual?'MP4 до 60 секунд и 7 МБ. Модель анализирует изображение; речь и звуковая дорожка не распознаются.':'MP4 до 60 секунд и 7 МБ. После первого анализа доступен WAV. Анализируется весь выбранный файл.';
+    this.node.querySelector('.pe-ai-media-description')!.textContent=this.mediaTransport==='frames-audio'?'MP4 до 60 секунд и 7 МБ, со звуком или без. Браузер подготовит до 12 кадров и звук, если он есть. Между кадрами возможен пропуск коротких событий. Также подходит WAV.':visual?'MP4 до 60 секунд и 7 МБ. Модель анализирует изображение; речь и звуковая дорожка не распознаются.':'MP4 до 60 секунд и 7 МБ. После первого анализа доступен WAV. Анализируется весь выбранный файл.';
     this.node.querySelector('.pe-ai-consent-copy')!.textContent=this.mediaTransport==='frames-audio'?`Разрешаю передать кадры с таймкодами и звук выбранного файла через ${this.recipient||'сервис обработки'} для анализа с ИИ. Между выборками кадров изображение не анализируется.`:visual?'Разрешаю передать выбранный файл целиком через OpenRouter выбранной в настройках модели. Звук в этом режиме не анализируется.':'Разрешаю передать выбранный файл целиком, включая звук, сервису обработки для анализа с ИИ. Получатель указан ниже перед отправкой.';
     this.node.querySelector('[data-ai="analyze"]')!.textContent=visual?'Разобрать исходник и дать советы':'Смонтировать с ИИ';
-    this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'Смонтировать с ИИ';
+    this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'План по заданию';
+    this.node.setAttribute('aria-busy',String(!!this.abort));
     this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Используйте проект 9:16 или 16:9 длительностью до 60 секунд.'):'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Доступ закрыт.';
     (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!this.available||!!this.abort||this.port.busy()||!validReels||this.requiresMedia;
     const source=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;
@@ -154,7 +155,7 @@ export class AiPanel {
     const video=clip.kind==='video',mime=video?'video/mp4':'audio/wav';
     if(video?!(/\.mp4$/i.test(asset.name)||asset.blob.type==='video/mp4'):!(/\.wav$/i.test(asset.name)||['audio/wav','audio/x-wav','audio/wave'].includes(asset.blob.type)))throw Error('Для пробы используйте MP4-видео или WAV-аудио.');
     this.port.pause();
-    if(this.mediaTransport==='frames-audio')return prepareSamples(asset,clip,this.abort!.signal);
+    if(this.mediaTransport==='frames-audio')return prepareSamples(asset,clip,this.abort!.signal,message=>{if(!this.disposed&&this.abort)this.say(message);});
     const bytes=new Uint8Array(await asset.blob.arrayBuffer());let binary='';
     for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
     return {clipId:clip.id,assetId:clip.assetId,mime,data:btoa(binary)};
@@ -163,16 +164,18 @@ export class AiPanel {
     if(!this.port.provider){this.saveBrief();this.say('Монтаж с ИИ не подключён. Задание сохранено.',true);return;}
     if(this.abort)return;
     if(!this.available){this.say('Сначала настройте подключение в админ-панели.',true);void this.checkConnection();return;}
+    if(!withMedia&&this.requiresMedia){this.say('Для первого запроса выберите файл ниже и подтвердите его отправку.',true);return;}
     const gen=++this.generation;
+    const controller=new AbortController();this.abort=controller;
     this.plan=null;this.renderPlan();
     try{
       if(withMedia&&this.port.provider.service==='source-analysis'&&!this.input.value.trim())this.input.value='Разбери исходник: опиши сцены, предложи начало ролика, последовательность кадров и конкретные улучшения монтажа.';
       const request=await this.build();if(this.disposed||gen!==this.generation)return;
-      this.abort=new AbortController();this.refresh();this.say(withMedia?'Подготавливаем выбранный файл…':'Ожидаем план от сервиса…');
+      this.refresh();this.say(withMedia?'Подготавливаем выбранный файл…':'Ожидаем план от сервиса…');
       const media=withMedia?await this.prepareMedia():undefined;
-      if(this.disposed||gen!==this.generation||this.abort.signal.aborted)return;
+      if(this.disposed||gen!==this.generation||controller.signal.aborted)return;
       this.say(withMedia?(this.port.provider.service==='source-analysis'?'Анализируем изображение и готовим советы. Звук не распознаётся. До 90 секунд…':'ИИ анализирует изображение, речь и звуки. До 90 секунд…'):'Ожидаем план от сервиса…');
-      const raw=await this.port.provider.createPlan(request,this.abort.signal,media);
+      const raw=await this.port.provider.createPlan(request,controller.signal,media);
       if(this.disposed||gen!==this.generation)return;
       if(raw&&typeof raw==='object'&&'plan' in raw&&'analysis' in raw){
         const result=raw as OmniResult;

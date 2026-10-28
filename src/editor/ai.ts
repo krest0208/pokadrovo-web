@@ -43,7 +43,7 @@ export interface AiProvider {
   getStatus?(signal?:AbortSignal):Promise<AiStatus>;
   createPlan(request:AiRequest,signal:AbortSignal,media?:AiMedia):Promise<unknown>;
 }
-export interface AiMedia {clipId:string;assetId:string;mime:'video/mp4'|'audio/wav'|'application/x-pokadrovo-av';data:string;frames?:{at:number;data:string}[];}
+export interface AiMedia {clipId:string;assetId:string;mime:'video/mp4'|'audio/wav'|'application/x-pokadrovo-av';data:string;frames?:{at:number;data:string}[];audioPresent?:boolean;}
 const snapshot=(p:Project)=>JSON.stringify(normalizeProject(p));
 /** Change marker, not an authentication token. Apply also compares the complete snapshot. */
 export async function projectRevision(project:Project):Promise<string>{

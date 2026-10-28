@@ -22,14 +22,21 @@ test('structured patch nulls omit only known properties and never hide unknown f
  const value=parseModelMessage(choice(JSON.stringify({...plan,operations:[{type:'transform',id:'v1',patch}]})),true);
  assert.deepEqual(value.operations[0].patch,{zoom:1.2,injected:null});
 });
-test('response schema follows client capabilities and distinguishes media from text requests',()=>{
+test('response schema follows client capabilities without union, null-only or deeply nested editor variants',()=>{
  const request={capabilities:['ratio','transform'],fontIds:['system']},format=editingResponseFormat(request,false);
  assert.equal(format.type,'json_schema');assert.equal(format.json_schema.strict,true);
- assert.equal(format.json_schema.schema.properties.analysis.type,'null');
- const variants=format.json_schema.schema.properties.operations.items.anyOf;
- assert.deepEqual(variants.map(v=>v.properties.type.enum[0]),['ratio','transform']);
- assert.equal(variants[0].additionalProperties,false);assert.deepEqual(variants[1].properties.patch.properties.zoom.type,['number','null']);
+ assert.equal(format.json_schema.schema.properties.analysis.type,'object');
+ const wire=format.json_schema.schema.properties.operations.items;
+ assert.deepEqual(wire.properties.action.enum,['ratio','transform']);
+ assert.equal(wire.additionalProperties,false);assert.equal(wire.properties.parameters.type,'string');
+ assert.ok(!JSON.stringify(format).includes('anyOf'));assert.ok(!JSON.stringify(format).includes('"null"'));
  assert.equal(editingResponseFormat(request,true).json_schema.schema.properties.analysis.type,'object');
+});
+test('wire arguments decode to the existing editor protocol and cannot inject or override a command',()=>{
+ const response=ops=>choice(JSON.stringify({...plan,operations:ops}));
+ assert.deepEqual(parseModelMessage(response([{action:'speed',parameters:JSON.stringify({track:'video',id:'v1',value:1.5})}]),true).operations,[{type:'speed',track:'video',id:'v1',value:1.5}]);
+ for(const parameters of ['{','[]','null','{"type":"remove"}','{"__proto__":{}}','{"injected":null}'])assert.throws(()=>parseModelMessage(response([{action:'ratio',parameters}]),true));
+ assert.throws(()=>parseModelMessage(response([{action:'shell',parameters:'{}'}]),true));
 });
 
 const job=()=>({version:1,requestId:token(),projectId:'json-fixture',revision:'pk1-test',prompt:'Сохрани формат.',project:{id:'json-fixture',schema:4,mode:'video',ratio:'16:9',clips:[{id:'v1',assetId:'a1',kind:'video',name:'fixture.mp4',duration:2,start:0,end:2,speed:1}],audio:[],texts:[]},cursor:0,selection:null,capabilities:['ratio','transform'],fontIds:['system']});
@@ -37,7 +44,8 @@ const media=()=>{const bytes=Buffer.alloc(44+16000*2*2);bytes.write('RIFF');byte
 test('HTTP accepts formatted complete plans, rejects incomplete ones once, retains usage and refunds failed trial requests',()=>{
  const calls=[];
  const transform={...plan,operations:[{type:'transform',id:'v1',patch:{...Object.fromEntries(TRANSFORM_FIELDS.map(k=>[k,null])),zoom:1.2}}]};
- const answers=[choice('```json\n'+JSON.stringify(plan)+'\n```'),choice(JSON.stringify(transform)),choice(JSON.stringify(plan),'length'),choice('{"analysis":null'),choice('{"analysis":')];
+ const wirePlan={...plan,analysis:{summary:'',speech:'',audio:'',events:[],limitations:[]},operations:[{action:'ratio',parameters:'{"value":"16:9"}'}]};
+ const answers=[choice('```json\n'+JSON.stringify(wirePlan)+'\n```'),choice(JSON.stringify(transform)),choice(JSON.stringify(plan),'length'),choice('{"analysis":null'),choice('{"analysis":')];
  return usingAccounts(async f=>{
   await f.owner('/api/admin/settings','PUT',{provider:'polza',model:POLZA_MODEL,endpoint:POLZA_ENDPOINT,apiKey:'synthetic-format-fixture-key',aiEnabled:true,trialEnabled:true,analyticsEnabled:false,password:f.password});
   const first=await f.owner('/api/ai/edit-plan','POST',{request:job()});assert.equal(first.status,200,first.raw);assert.equal(first.data.plan.operations[0].value,'16:9');

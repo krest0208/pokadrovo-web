@@ -15,6 +15,9 @@ const result=await build({absWorkingDir:root,entryPoints:['src/preview/main.tsx'
       return {contents,loader:'dataurl'};
     });
     b.onResolve({filter:/\?raw$/},args=>({path:resolve(args.resolveDir,args.path.slice(0,-4)),namespace:'preview-raw'}));
+    // The offline preview has no real provider. Keep live codec capture out of its 1 MB artifact.
+    b.onResolve({filter:/^\.\/media-samples$/},args=>args.importer.endsWith('/src/editor/ai-panel.ts')?{path:'ai-media-disabled',namespace:'preview-ai-media'}:undefined);
+    b.onLoad({filter:/.*/,namespace:'preview-ai-media'},()=>({contents:'export async function prepareSamples(){throw Error("Анализ медиа доступен на сайте после входа.");}',loader:'js'}));
     b.onLoad({filter:/.*/,namespace:'preview-raw'},async args=>{
       let contents=await readFile(args.path,'utf8');
       if(args.path.endsWith('/server/public/admin.html')){

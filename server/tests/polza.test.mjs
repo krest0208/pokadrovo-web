@@ -44,3 +44,9 @@ test('old credentials are retained but cannot make calls in production, and swit
 test('empty upstream balance is not retried, and held user trial requests are released',()=>{
  let calls=0;return usingAccounts(async f=>{await configure(f);const a=await f.signup();const response=await a.send('/api/ai/edit-plan','POST',{request:job(),media:samples(),mediaConsent:true});assert.equal(response.status,503);assert.match(response.data.error,/балансе/i);assert.equal(calls,1);assert.equal(f.store.get('SELECT count(*) n FROM ai_trial_usage').n,0);},{aiFetch:async()=>{calls++;return new Response('{}',{status:402});}});
 });
+test('silent MP4 samples send no fabricated audio and return a visual analysis',()=>usingAccounts(async f=>{
+ await configure(f);const response=await f.owner('/api/ai/edit-plan','POST',{request:job(),media:{...samples(),audioPresent:false},mediaConsent:true});
+ assert.equal(response.status,200,response.raw);assert.equal(response.data.analysis.scope,'visual');assert.equal(response.data.analysis.speech,'');assert.equal(response.data.analysis.events[0].audio,'');assert.match(response.data.analysis.limitations[0],/нет звуковой/);
+},{aiFetch:async(_url,init)=>{const payload=JSON.parse(init.body),parts=payload.messages[1].content;
+ assert.equal(parts.some(part=>part.type==='input_audio'),false);assert.equal(parts.filter(part=>part.type==='image_url').length,2);assert.equal(JSON.parse(parts[0].text).media.audioPresent,false);return result();
+}}));

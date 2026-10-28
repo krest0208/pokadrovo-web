@@ -1,29 +1,17 @@
 import {deny} from './http.mjs';
 import {AI_OPERATIONS,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS} from './ai-contract.mjs';
 
-const string={type:'string'},boolean={type:'boolean'},number={type:'number'};
-const enumeration=values=>({type:'string',enum:values});
+const string={type:'string'},number={type:'number'};
 const object=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
-const nullable=schema=>({...schema,type:[schema.type,'null'],...(schema.enum?{enum:[...schema.enum,null]}:{})});
-const transformPatch=object(Object.fromEntries(TRANSFORM_FIELDS.map(key=>[key,nullable(key==='flip'?boolean:key==='shape'?enumeration(['rect','round','ellipse']):key==='fit'?enumeration(['contain','cover']):number)])));
-const captionPatch=object(Object.fromEntries(CAPTION_STYLE_FIELDS.map(key=>[key,nullable(['background','italic'].includes(key)?boolean:key==='align'?enumeration(['left','center','right']):key==='color'?string:number)])));
 
-/** Strict response shape is built from the same operation whitelist as the server. */
+/** A shallow wire schema avoids provider-specific union/null schema restrictions.
+ * Arguments are decoded below, then checked against the full editor whitelist. */
 export function editingResponseFormat(request,hasMedia){
- const operations=request.capabilities.map(type=>{
-  const properties={type:enumeration([type])};
-  for(const field of AI_OPERATIONS[type]){
-   properties[field]=field==='track'?enumeration(['trim','speed','volume','fades'].includes(type)?['video','audio']:['video','audio','text']):
-    field==='id'||field==='text'?string:field==='fontId'?enumeration(request.fontIds):
-    field==='ids'?{type:'array',items:string}:field==='muted'?boolean:
-    field==='patch'?(type==='transform'?transformPatch:captionPatch):field==='style'?captionPatch:
-    field==='value'&&type==='ratio'?enumeration(['16:9','9:16']):field==='layer'?{type:'integer'}:number;
-  }
-  return object(properties);
- });
  const analysis=object({summary:string,speech:string,audio:string,events:{type:'array',maxItems:12,items:object({from:number,to:number,visual:string,audio:string,speech:string})},limitations:{type:'array',maxItems:12,items:string}});
- return {type:'json_schema',json_schema:{name:'pokadrovo_edit',strict:true,schema:object({analysis:hasMedia?analysis:{type:'null'},summary:string,operations:{type:'array',maxItems:100,items:operations.length?{anyOf:operations}:object({type:enumeration(['none'])}),...(operations.length?{}:{maxItems:0})}})}};
+ return {type:'json_schema',json_schema:{name:'pokadrovo_edit',strict:true,schema:object({analysis,summary:string,operations:{type:'array',maxItems:request.capabilities.length?30:0,items:object({action:{type:'string',enum:request.capabilities.length?request.capabilities:['none']},parameters:{type:'string',description:'JSON object with the allowed operation arguments only, without type. Example: {"track":"video","id":"v1","value":1.5}'}})}})}};
 }
+
+export const EDITING_WIRE_GUIDE='Формат передачи operations: каждый элемент строго {"action":"имя команды","parameters":"JSON-строка с её аргументами без поля type"}. Например {"action":"speed","parameters":"{\\"track\\":\\"video\\",\\"id\\":\\"v1\\",\\"value\\":1.5}"}. Используй настоящие ID проекта. Не заполняй лишние аргументы и не добавляй null. allowedOperations описывает аргументы ПОСЛЕ декодирования parameters. Не более 30 действий за этап. analysis всегда объект со всеми полями; если файл не передан, верни пустые строки, events:[] и limitations:[], не выдумывай анализ.';
 
 /** Accept an intact JSON document or one whole Markdown fence; never complete broken edits. */
 export function parseModelMessage(choice,structured=false){
@@ -39,5 +27,12 @@ export function parseModelMessage(choice,structured=false){
   const fields=op.type==='transform'?TRANSFORM_FIELDS:CAPTION_STYLE_FIELDS;
   if(key&&op[key]&&typeof op[key]==='object'&&!Array.isArray(op[key]))for(const field of fields)if(op[key][field]===null)delete op[key][field];
  }
+ if(structured&&Array.isArray(value.operations))value.operations=value.operations.map(op=>{
+  if(!op||typeof op!=='object'||!Object.hasOwn(op,'action'))return op; // Older in-flight responses still use the editor shape.
+  if(Object.keys(op).some(k=>!['action','parameters'].includes(k))||!Object.hasOwn(AI_OPERATIONS,op.action)||typeof op.parameters!=='string'||op.parameters.length>16000)deny(502,'ИИ вернул неверные аргументы команды. Монтаж не изменён.');
+  let args;try{args=JSON.parse(op.parameters);}catch{deny(502,'ИИ вернул повреждённые аргументы команды. Монтаж не изменён.');}
+  if(!args||typeof args!=='object'||Array.isArray(args)||Object.keys(args).some(k=>!AI_OPERATIONS[op.action].includes(k)))deny(502,'ИИ вернул недоступные аргументы команды. Монтаж не изменён.');
+  return {type:op.action,...args};
+ });
  return value;
 }

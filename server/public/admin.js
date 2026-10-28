@@ -28,7 +28,8 @@
     document.querySelector('[data-view="oauth"]').hidden = data.socialLoginEnabled !== true;
     document.querySelector('[data-view="billing"]').hidden = data.singleAi === true;
     for(const id of ['openrouter-form','yandex-form'])$(id).closest('article').hidden=data.singleAi===true;
-    $('ai-capacity').closest('article').hidden=data.singleAi===true;
+    $('ai-capacity-section').hidden=data.singleAi===true;
+    if(data.singleAi)text($('ai-description'),'Подключение монтажа через Polza.ai и фактическая история запросов, включая причины ошибок.');
     text($('owner-name'), data.login); $('login-form').reset(); armIdle();
     await switchView('overview');
   }
@@ -238,7 +239,7 @@ const accountCards = data.users ? [['Зарегистрировано за пе�
     $('ai-days').replaceChildren(...data.series.map(d=>row([d.day,d.attempts,d.succeeded,d.failed,d.users])));
     $('ai-capacity').replaceChildren(...data.capacity.map(c=>row([c.label,c.requests,c.totalRequests,c.fitsSiteLimit?'Хватает без запаса на ошибки':'Превышен',c.fitsProviderFreeLimit?'Хватает без запаса на ошибки':'Превышен'])));
     $('ai-usage-notes').replaceChildren(...(owner.singleAi?['Один активный сервис монтажа с ИИ через Polza.ai. История прежних запросов сохраняется в статистике.','Показан фактический расход токенов, если его вернул провайдер. Неизвестная стоимость не считается нулевой.','Автоматические запросы ИИ-идей отключены; технические проверки сайта продолжаются.']:data.notes).map(note=>element('p','',note)));
-    $('ai-usage').replaceChildren(...(usage.items.length?usage.items.map(r=>element('p','field-note',`${new Date(r.at).toLocaleString('ru-RU')} · ${r.model} · ${r.task==='analysis'?'Разбор':r.task==='ideas'?'Идеи агента':'План'} · ${r.access_kind==='free_trial'?'Проба':'Администратор'} · ${r.result==='ok'?'Готово':r.result==='started'?'Выполняется':'Не завершён'}${r.upstream_status===null?'':' · HTTP '+r.upstream_status}${r.duration_ms===null?'':' · '+(r.duration_ms/1000).toFixed(1)+' сек.'}${r.input_tokens===null?'':' · токены '+r.input_tokens+' / '+r.output_tokens}`)):[element('p','field-note','Запросов ещё нет.')]));
+    $('ai-usage').replaceChildren(...(usage.items.length?usage.items.map(r=>element('p','field-note',`${new Date(r.at).toLocaleString('ru-RU')} · ${r.model} · ${r.task==='analysis'?'Разбор':r.task==='ideas'?'Идеи агента':'План'} · ${r.access_kind==='free_trial'?'Проба':'Администратор'} · ${r.result==='ok'?'Готово':r.result==='started'?'Выполняется':'Не завершён'}${r.upstream_status===null?'':' · HTTP '+r.upstream_status}${r.provider_error_code?' · причина: '+({schema:'формат плана',media:'медиафайл',balance:'баланс провайдера',access:'доступ к модели',rate_limit:'лимит запросов',model:'модель недоступна',unavailable:'сбой провайдера',request:'запрос'}[r.provider_error_code]||'ошибка провайдера'):''}${r.duration_ms===null?'':' · '+(r.duration_ms/1000).toFixed(1)+' сек.'}${r.input_tokens===null?'':' · токены '+r.input_tokens+' / '+r.output_tokens}`)):[element('p','field-note','Запросов ещё нет.')]));
   }
   $('ai-refresh').addEventListener('click',()=>loadAiUsage().catch(e=>notify(e.message)));
   $('ai-period').addEventListener('change',()=>loadAiUsage().catch(e=>notify(e.message)));

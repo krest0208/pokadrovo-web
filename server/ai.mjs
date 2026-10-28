@@ -7,6 +7,7 @@ import { createOpenRouter } from './openrouter.mjs';
 import { aiAnalytics } from './ai-usage.mjs';
 import {AI_OPERATIONS as operations,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS,operationGuide} from './ai-contract.mjs';
 import {parseModelMessage} from './ai-response.mjs';
+import {providerFailure} from './ai-provider-error.mjs';
 
 export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
@@ -131,6 +132,7 @@ export function validateAiMedia(input, request, prepared = false) {
 }
 
 function validatePreparedMedia(input,request){
+  if(input.audioPresent!==undefined&&typeof input.audioPresent!=='boolean')deny(400,'Некорректный признак звуковой дорожки.');
   const clip=request.project.clips.find(c=>c.id===input.clipId&&c.assetId===input.assetId&&c.kind==='video');
   if(!clip||!finite(clip.duration)||clip.duration<=0||clip.duration>60.1||!Array.isArray(input.frames)||!input.frames.length||input.frames.length>12)deny(400,'Некорректные кадры исходника.');
   const audio=validateAiMedia({...input,mime:'audio/wav'}, {...request,project:{...request.project,audio:[{...clip,kind:'audio'}],clips:[]}});
@@ -141,7 +143,7 @@ function validatePreparedMedia(input,request){
     if(bytes.toString('base64')!==frame.data||bytes.length<4||bytes[0]!==255||bytes[1]!==216||bytes.at(-2)!==255||bytes.at(-1)!==217||size>1024*1024)deny(400,'Некорректное изображение кадра.');
     return {at:frame.at,data:frame.data};
   });
-  return {...audio,mime:PREPARED_MEDIA,frames};
+  return {...audio,mime:PREPARED_MEDIA,frames,audioPresent:input.audioPresent!==false};
 }
 
 export function validateAnalysis(value, media) {
@@ -219,7 +221,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
   for (const [name, declaration] of Object.entries({ account_id: "TEXT NOT NULL DEFAULT 'owner'", mode: "TEXT NOT NULL DEFAULT 'reels-trial'", access_kind: "TEXT NOT NULL DEFAULT 'owner_test'", customer_charge_minor: 'INTEGER NOT NULL DEFAULT 0', coin_charge: 'INTEGER NOT NULL DEFAULT 0', project_id: 'TEXT' })) {
     if (!columns.has(name)) store.db.exec(`ALTER TABLE ai_runs ADD COLUMN ${name} ${declaration}`);
   }
-  for (const [name, declaration] of Object.entries({ provider: "TEXT NOT NULL DEFAULT ''", task: "TEXT NOT NULL DEFAULT 'edit'", duration_ms: 'INTEGER', upstream_status: 'INTEGER', provider_cost_usd: 'REAL' })) {
+  for (const [name, declaration] of Object.entries({ provider: "TEXT NOT NULL DEFAULT ''", task: "TEXT NOT NULL DEFAULT 'edit'", duration_ms: 'INTEGER', upstream_status: 'INTEGER', provider_cost_usd: 'REAL', provider_error_code:'TEXT' })) {
     if (!columns.has(name)) store.db.exec(`ALTER TABLE ai_runs ADD COLUMN ${name} ${declaration}`);
   }
   store.db.exec("UPDATE ai_runs SET provider=CASE WHEN model LIKE 'yandex%' THEN 'yandex' WHEN model LIKE 'qwen%' THEN 'alibaba' ELSE 'legacy' END WHERE provider=''");
@@ -368,7 +370,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
         context = validateAnalysis(c, { clipId: clip.id, assetId: clip.assetId, duration: c.duration });
       }
       if (store.get('SELECT request_id FROM ai_runs WHERE request_id=?', r.requestId)) deny(409, 'Этот запрос уже запускался. Создайте новый, чтобы избежать повторного списания.');
-      const input = { request: r, allowedOperations:operationGuide(r), media: media ? { clipId: media.clipId, assetId: media.assetId, duration: media.duration } : null, previousAnalysis: context };
+      const input = { request: r, allowedOperations:operationGuide(r), media: media ? { clipId: media.clipId, assetId: media.assetId, duration: media.duration, ...(media.audioPresent!==undefined?{audioPresent:media.audioPresent}:{}) } : null, previousAnalysis: context };
       let invocation;
       if (routerService(service)) {
         // Catalog calls have no credentials, prompts or media and do not consume completion quota.
@@ -399,8 +401,9 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       catch { deny(controller.signal.aborted ? 504 : 502, controller.signal.aborted ? 'Запрос отменён или превысил 90 секунд. Автоматического повтора не будет.' : 'Нет связи с провайдером ИИ. Повторите позже.'); }
       store.run('UPDATE ai_runs SET upstream_status=? WHERE request_id=?', response.status, requestId);
       if (!response.ok) {
-        await response.body?.cancel().catch(() => {});
-        deny(response.status === 402?503:response.status === 429 ? 429 : 502, response.status===402?'На балансе сервиса обработки недостаточно средств. Обратитесь к администратору.':[401,403].includes(response.status) ? 'Провайдер отклонил ключ или доступ к модели. Обратитесь в поддержку сайта.' : response.status === 429 ? 'Лимит провайдера исчерпан. Повторите позже.' : response.status === 404 ? 'Бесплатная модель сейчас недоступна. Платная замена не запускается.' : 'Провайдер отклонил запрос. Монтаж не изменён.');
+        const failure=await providerFailure(response);
+        store.run('UPDATE ai_runs SET provider_error_code=? WHERE request_id=?',failure.code,requestId);
+        deny(failure.status,failure.message);
       }
       const result = await readProviderJson(response);
       let value, usage;
@@ -417,6 +420,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       }
       const analysis = validateAnalysis(value.analysis, media);
       if(analysis&&media?.mime===PREPARED_MEDIA)analysis.limitations=['Изображение анализировалось по отдельным кадрам (до 12). Между выборками события могут быть пропущены. Таймкоды приблизительные.',...analysis.limitations].slice(0,12);
+      if(analysis&&media?.audioPresent===false){analysis.scope='visual';analysis.speech='';analysis.audio='';analysis.events=analysis.events.map(event=>({...event,speech:'',audio:''}));analysis.limitations=['В исходном MP4 нет звуковой дорожки. Проанализировано только изображение.',...analysis.limitations].slice(0,12);}
       if (analysis && service === 'source-analysis') {
         analysis.scope = 'visual'; analysis.speech = ''; analysis.audio = '';
         analysis.events = analysis.events.map(e => ({ ...e, audio: '', speech: '' }));
@@ -499,5 +503,5 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
   }
   return { route, adminState, saveConfig, yandex, openrouter, suggestSiteIdeas, stop: () => { closing = true; },
     analytics: days => aiAnalytics(store, now, openrouter, days),
-    usage: () => store.all('SELECT at,result,provider,model,task,duration_ms,upstream_status,provider_cost_usd,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor,coin_charge FROM ai_runs ORDER BY at DESC LIMIT 20') };
+    usage: () => store.all('SELECT at,result,provider,model,task,duration_ms,upstream_status,provider_error_code,provider_cost_usd,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor,coin_charge FROM ai_runs ORDER BY at DESC LIMIT 20') };
 }

@@ -1,6 +1,7 @@
 import type {Asset,Clip} from './model';
 import type {AiMedia} from './ai';
 import {mediaReady} from './assets';
+import {readAudioSamples} from './audio-samples';
 
 export const PREPARED_MEDIA='application/x-pokadrovo-av' as const;
 const check=(signal:AbortSignal)=>{if(signal.aborted)throw new DOMException('Запрос отменён','AbortError');};
@@ -12,12 +13,8 @@ export function wavSamples(channel:Float32Array,rate=16000){
  for(let i=0;i<channel.length;i++){const n=Math.max(-1,Math.min(1,channel[i]));v.setInt16(44+i*2,Math.round(n*(n<0?32768:32767)),true);}return bytes;
 }
 export function sampleTimes(duration:number){const count=Math.max(1,Math.min(12,Math.ceil(duration/5)));return Array.from({length:count},(_,i)=>Math.max(0,Math.min(duration-.01,i*duration/count)));}
-export async function prepareSamples(asset:Asset,clip:Clip,signal:AbortSignal):Promise<AiMedia>{
- check(signal);const context=new OfflineAudioContext(1,Math.ceil(asset.duration*16000),16000);
- let audio:AudioBuffer;try{audio=await context.decodeAudioData(await asset.blob.arrayBuffer());}catch{throw Error('Браузер не смог прочитать звуковую дорожку. Используйте MP4 со звуком AAC или отдельный WAV.');}
- check(signal);if(audio.duration>60.1||Math.abs(audio.duration-asset.duration)>1)throw Error('Длительность звуковой дорожки отличается от видео. Подготовьте отдельный MP4 до 60 секунд.');
- const source=context.createBufferSource();source.buffer=audio;source.connect(context.destination);source.start();
- const output=await context.startRendering();check(signal);const data=base64(wavSamples(output.getChannelData(0)));
+export async function prepareSamples(asset:Asset,clip:Clip,signal:AbortSignal,progress:(text:string)=>void=()=>{}):Promise<AiMedia>{
+ check(signal);const {samples,audioPresent}=await readAudioSamples(asset,signal,progress);const data=base64(wavSamples(samples));
  if(clip.kind==='audio')return {clipId:clip.id,assetId:clip.assetId,mime:'audio/wav',data};
  const video=document.createElement('video');video.muted=true;video.playsInline=true;
  const canvas=document.createElement('canvas'),frames:{at:number;data:string}[]=[];
@@ -32,5 +29,5 @@ export async function prepareSamples(asset:Asset,clip:Clip,signal:AbortSignal):P
    check(signal);ctx.drawImage(video,0,0,canvas.width,canvas.height);const frame=canvas.toDataURL('image/jpeg',.65).split(',')[1];if(!frame||frame.length>131072)throw Error('Подготовленный кадр слишком большой.');frames.push({at,data:frame});
   }
  }finally{video.pause();video.removeAttribute('src');video.load();}
- return {clipId:clip.id,assetId:clip.assetId,mime:PREPARED_MEDIA,data,frames};
+ return {clipId:clip.id,assetId:clip.assetId,mime:PREPARED_MEDIA,data,frames,audioPresent};
 }
