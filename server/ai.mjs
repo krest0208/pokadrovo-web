@@ -9,7 +9,7 @@ import {AI_OPERATIONS as operations,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS,operat
 import {parseModelMessage,modelDefaults} from './ai-response.mjs';
 import {providerFailure} from './ai-provider-error.mjs';
 
-export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12 });
+export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12, ownerDailyRequests:60 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
 export const TRIAL_RULES = Object.freeze({ projects: 1, requests: coinPricing.trialCoins / coinPricing.reelsRequestCoins, days: 7 });
 const SERVICES = ['source-analysis', 'deepseek-edit', 'reels-trial', 'yandex-edit'];
@@ -235,11 +235,19 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     if (!columns.has(name)) store.db.exec(`ALTER TABLE ai_runs ADD COLUMN ${name} ${declaration}`);
   }
   store.db.exec("UPDATE ai_runs SET provider=CASE WHEN model LIKE 'yandex%' THEN 'yandex' WHEN model LIKE 'qwen%' THEN 'alibaba' ELSE 'legacy' END WHERE provider=''");
+  store.db.exec('CREATE INDEX IF NOT EXISTS ai_runs_daily_scope ON ai_runs(at,provider,account_id)');
   const openrouter = createOpenRouter({ store, now, request });
   const meta = key => store.get('SELECT value FROM meta WHERE key=?', key)?.value || '';
   const put = (key, value) => store.run('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', key, String(value));
   const trialEnabled = () => meta('ai_trial_enabled') === '1';
   const trialRow = auth => !auth || auth.owner ? null : store.get('SELECT * FROM ai_trial_usage WHERE account_id=?', auth.key);
+  function dailyQuota(auth){
+    const from=Math.floor(now()/86400000)*86400000,resetsAt=from+86400000,owner=auth?.owner===true,limit=owner?AI_LIMITS.ownerDailyRequests:AI_LIMITS.dailyRequests;
+    // Count durable attempts, including failures. Old shared rate rows never erase usage.
+    const used=Number(store.get(`SELECT count(*) n FROM ai_runs WHERE at>=? AND at<? AND provider='polza' AND mode='reels-trial' AND task IN ('edit','analysis') AND account_id${owner?'=':'!='}'owner'`,from,resetsAt).n);
+    return {scope:owner?'owner':'users',used,limit,remaining:Math.max(0,limit-used),resetsAt};
+  }
+  const quotaMessage=quota=>(quota.scope==='owner'?'Дневной лимит администратора: ':'Общий дневной лимит пользователей: ')+quota.limit+' запросов. Лимит обновляется в 03:00 по Москве.';
   function trialState(auth) {
     const row = trialRow(auth), expired = !!row && row.expires <= now();
     return { rules: TRIAL_RULES, projectId: row?.project_id || null, remaining: auth?.owner ? null : expired ? 0 : Math.max(0, TRIAL_RULES.requests - (row?.used || 0)),
@@ -283,8 +291,8 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     }
     if (service === 'yandex-edit') return { available: owner && y.configured && y.enabled,
       reason: !owner ? 'Этот режим пока не входит в доступные тарифы.' : !y.configured ? 'Добавьте отдельный API-ключ и Folder ID Яндекса в админ-панели.' : !y.enabled ? 'Включите подключение Яндекса.' : `${yandex.adminState().modelName}: план по заданию и предыдущему разбору. Без списаний монет; расходы API несёт сайт.`, requiresMedia: false };
-    if(singleAi)return {available:q.configured&&q.enabled&&(owner||paid||trialEnabled()&&trial.remaining>0),requiresMedia:!owner&&!paid&&trial.requiresMedia,
-      reason:!q.configured||!q.enabled?'Монтаж с ИИ не подключён. Настройки доступны администратору.':owner?'Смонтировать с ИИ: видео, речь и звук. Исходник до 60 секунд и 7 МБ, проект 9:16 или 16:9.':!paid&&!trialEnabled()?'Доступ к ИИ пока не открыт.':!paid&&trial.expired?'Пробный доступ закончился.':!paid&&!trial.remaining?'Пробные запросы использованы.':`Смонтировать с ИИ: один проект до 60 секунд. ${paid?'Доступные запросы учитываются сервером.':'Осталось пробных запросов: '+trial.remaining+'.'}`};
+    if(singleAi){const quota=dailyQuota(auth);return {available:q.configured&&q.enabled&&quota.remaining>0&&(owner||paid||trialEnabled()&&trial.remaining>0),requiresMedia:!owner&&!paid&&trial.requiresMedia,dailyQuota:quota,
+      reason:!q.configured||!q.enabled?'Монтаж с ИИ не подключён. Настройки доступны администратору.':!quota.remaining?quotaMessage(quota):owner?`Смонтировать с ИИ: видео, речь и звук. Исходник до 60 секунд и 7 МБ, проект 9:16 или 16:9. Сегодня доступно ${quota.remaining} из ${quota.limit} запросов администратора.`:!paid&&!trialEnabled()?'Доступ к ИИ пока не открыт.':!paid&&trial.expired?'Пробный доступ закончился.':!paid&&!trial.remaining?'Пробные запросы использованы.':`Смонтировать с ИИ: один проект до 60 секунд. ${paid?'Доступные запросы учитываются сервером.':'Осталось пробных запросов: '+trial.remaining+'.'}`};}
     return { available: q.configured && q.enabled && (owner || paid || trialEnabled() && trial.remaining > 0), requiresMedia: !paid && trial.requiresMedia,
       reason: owner ? !q.configured ? 'Добавьте ключ и Base URL Qwen в админ-панели.' : !q.enabled ? 'Включите Qwen в админ-панели.' : 'Reels без расходования пользовательской пробы. Только 9:16 и до 60 секунд.'
         : !q.configured || !q.enabled || !paid && !trialEnabled() ? 'Бесплатная проба Reels недоступна.' : !paid && trial.expired ? 'Срок бесплатной пробы закончился.' : !paid && !trial.remaining ? 'Подарочные монеты использованы. Проверьте доступность пакетов в балансе.' : paid ? `Баланс: ${coinState(auth,service).remainingCoins} монет. Стоимость успешного запроса: ${coinPricing.reelsRequestCoins} монета. Ограничения длины и квоты провайдера сохраняются.` : `Подарочный баланс: ${trial.remaining * coinPricing.reelsRequestCoins} монет. Стоимость успешного запроса: ${coinPricing.reelsRequestCoins} монета. Один Reels до 60 секунд, 7 дней с первого запуска.` };
@@ -399,6 +407,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       try {
         if (freeService(service)) reservation = reserveTrial({ ...auth, req }, r, media, service);
         if (routerService(service)) openrouter.reserve();
+        else if(singleAi){const quota=dailyQuota(auth);if(!quota.remaining)deny(429,quotaMessage(quota));}
         else if (!store.consume('ai-pilot:' + new Date(now()).toISOString().slice(0, 10), AI_LIMITS.dailyRequests, 86400000, now())) deny(429, 'Общий пробный лимит: 12 запросов в сутки. Лимит обновляется в 03:00 по Москве.');
         requestId = r.requestId;
         store.run('INSERT INTO ai_runs(request_id,at,result,model,media_seconds,account_id,mode,access_kind,customer_charge_minor,coin_charge,project_id) VALUES(?,?,?,?,?,?,?,?,0,?,?)', requestId, now(), 'started', service === 'yandex-edit' ? y.c.model : q.c.model, media?.duration ?? null, auth.key, service, auth.owner ? 'owner_test' : reservation?.kind==='paid'?'paid_coins':'free_trial', auth.owner ? 0 : coinPricing.reelsRequestCoins, r.projectId);
@@ -513,6 +522,6 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
     } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort); active = false; }
   }
   return { route, adminState, saveConfig, yandex, openrouter, suggestSiteIdeas, stop: () => { closing = true; },
-    analytics: days => aiAnalytics(store, now, openrouter, days),
+    analytics: days => ({...aiAnalytics(store, now, openrouter, days),...(singleAi?{dailyQuota:{owner:dailyQuota({owner:true}),users:dailyQuota({owner:false})}}:{})}),
     usage: () => store.all('SELECT at,result,provider,model,task,duration_ms,upstream_status,provider_error_code,provider_cost_usd,media_seconds,input_tokens,output_tokens,account_id,mode,access_kind,customer_charge_minor,coin_charge FROM ai_runs ORDER BY at DESC LIMIT 20') };
 }
