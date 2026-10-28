@@ -3,12 +3,13 @@ import { body, deny, json } from './http.mjs';
 import { token } from './security.mjs';
 
 export const LEGAL_EDITION = '2026-10-26.1';
-export const legalDefaults = { reviewedEdition:'', published:false, operatorType:'individual', operatorName:'', inn:'', ogrn:'', address:'', email:'', phone:'', hosting:'', processors:'', rknNotice:'', identityConfirmed:false, hostingConfirmed:false, processingReviewed:false, crossBorderReviewed:false, documentsApproved:false };
+export const legalDefaults = { registrationOnly:false, registrationEdition:'', reviewedEdition:'', published:false, operatorType:'individual', operatorName:'', inn:'', ogrn:'', address:'', email:'', phone:'', hosting:'', processors:'', rknNotice:'', identityConfirmed:false, hostingConfirmed:false, processingReviewed:false, crossBorderReviewed:false, documentsApproved:false };
 const fields = ['operatorName','inn','ogrn','address','email','phone','hosting','processors','rknNotice'];
 const checks = ['identityConfirmed','hostingConfirmed','processingReviewed','crossBorderReviewed','documentsApproved'];
 const titles = { terms:'Пользовательское соглашение', privacy:'Политика обработки персональных данных', consent:'Согласие на обработку персональных данных', payments:'Условия оплаты и возврата', cookies:'Cookie и статистика', content:'Правила использования материалов', contacts:'Контакты и реквизиты' };
 const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export const legalVersion = c => LEGAL_EDITION + '.' + createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.keys(legalDefaults).sort().map(k=>[k,c[k]??legalDefaults[k]])))).digest('hex').slice(0,16);
+// Keep previously accepted full-publication versions stable when the new option is off.
+export const legalVersion = c => LEGAL_EDITION + '.' + createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.keys(legalDefaults).filter(k=>c.registrationOnly===true||!['registrationOnly','registrationEdition'].includes(k)).sort().map(k=>[k,c[k]??legalDefaults[k]])))).digest('hex').slice(0,16);
 export function legalMissing(c) {
   const missing = fields.filter(k=>!['inn','ogrn'].includes(k)&&!c[k]);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) missing.push('validEmail');
@@ -16,6 +17,9 @@ export function legalMissing(c) {
   for (const k of checks) if (!c[k]) missing.push(k);
   return [...new Set(missing)];
 }
+const registrationMissing = c => legalMissing(c).filter(k=>!checks.includes(k));
+const fullyReviewed = c => c.published&&c.reviewedEdition===LEGAL_EDITION&&legalMissing(c).length===0;
+const registrationAllowed = c => fullyReviewed(c)||(c.registrationOnly===true&&c.registrationEdition===LEGAL_EDITION&&registrationMissing(c).length===0);
 
 export function createLegal({store,now,origin,session,sameOrigin}) {
   store.db.exec(`CREATE TABLE IF NOT EXISTS legal_revisions(version TEXT PRIMARY KEY,payload TEXT NOT NULL,created INTEGER NOT NULL,documents TEXT);
@@ -23,28 +27,33 @@ export function createLegal({store,now,origin,session,sameOrigin}) {
     CREATE TABLE IF NOT EXISTS privacy_requests(id TEXT PRIMARY KEY,account_id TEXT NOT NULL,kind TEXT NOT NULL,created INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'received');`);
   if(!store.all('PRAGMA table_info(legal_revisions)').some(c=>c.name==='documents'))store.db.exec('ALTER TABLE legal_revisions ADD COLUMN documents TEXT');
   const config = () => {const c={...legalDefaults,...JSON.parse(store.get("SELECT value FROM meta WHERE key='legal_config'")?.value||'{}')};if(c.reviewedEdition!==LEGAL_EDITION)c.documentsApproved=false;return c;};
-  const ready = () => {const c=config();return c.published&&c.reviewedEdition===LEGAL_EDITION&&legalMissing(c).length===0;};
+  const ready = () => fullyReviewed(config());
+  const registrationReady = () => registrationAllowed(config());
   const salesReady = () => {const c=config();return ready()&&['npd','ip','company'].includes(c.operatorType)&&/^\d{10}(\d{2})?$/.test(c.inn)&&(c.operatorType==='npd'||/^\d{13}(\d{2})?$/.test(c.ogrn));};
-  function state(){const c=config();return {requiresReview:c.published&&c.reviewedEdition!==LEGAL_EDITION,ready:ready(),salesReady:salesReady(),version:legalVersion(c),edition:LEGAL_EDITION,links:Object.fromEntries(Object.keys(titles).map(k=>[k,'/legal/'+k]))};}
+  function state(){const c=config();return {requiresReview:c.published&&c.reviewedEdition!==LEGAL_EDITION||c.registrationOnly&&c.registrationEdition!==LEGAL_EDITION,ready:ready(),registrationReady:registrationReady(),salesReady:salesReady(),version:legalVersion(c),edition:LEGAL_EDITION,links:Object.fromEntries(Object.keys(titles).map(k=>[k,'/legal/'+k]))};}
   function save(data){
     const c={...legalDefaults};
     if(!['individual','npd','ip','company'].includes(data.operatorType))deny(400,'Выберите фактический статус оператора.');c.operatorType=data.operatorType;
     for(const k of fields){if(typeof data[k]!=='string'||data[k].length>(['hosting','processors','rknNotice'].includes(k)?3000:500)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(data[k]))deny(400,'Проверьте поле: '+k);c[k]=data[k].replace(/[\r\n\t]+/g,' ').trim();}
     for(const k of ['published',...checks]){if(typeof data[k]!=='boolean')deny(400,'Проверьте подтверждения.');c[k]=data[k];}
+    if(data.registrationOnly!==undefined&&typeof data.registrationOnly!=='boolean')deny(400,'Проверьте настройку бесплатной регистрации.');
+    c.registrationOnly=data.registrationOnly===true;
+    if(c.registrationOnly&&registrationMissing(c).length)deny(400,'Для регистрации заполните контакты оператора и фактические сведения об обработке. Проверки не отмечайте выполненными, если они не завершены.');
     if(c.published&&legalMissing(c).length)deny(400,'Для публикации нужны настоящие контакты, сведения об обработке и все подтверждения.');
     if(c.published&&c.operatorType!=='individual'&&!/^\d{10}(\d{2})?$/.test(c.inn))deny(400,'Укажите настоящий ИНН.');
     if(c.published&&['ip','company'].includes(c.operatorType)&&!/^\d{13}(\d{2})?$/.test(c.ogrn))deny(400,'Укажите ОГРН или ОГРНИП.');
     c.reviewedEdition=c.published?LEGAL_EDITION:'';
+    c.registrationEdition=c.registrationOnly?LEGAL_EDITION:'';
     const version=legalVersion(c);
     store.db.exec('BEGIN IMMEDIATE');try{
       store.run("INSERT INTO meta(key,value) VALUES('legal_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",JSON.stringify(c));
-      if(c.published)store.run('INSERT OR IGNORE INTO legal_revisions(version,payload,created,documents) VALUES(?,?,?,?)',version,JSON.stringify(c),now(),JSON.stringify(Object.fromEntries(['',...Object.keys(titles)].map(key=>[key,render(key,c,version,true)]))));
+      if(registrationAllowed(c))store.run('INSERT OR IGNORE INTO legal_revisions(version,payload,created,documents) VALUES(?,?,?,?)',version,JSON.stringify(c),now(),JSON.stringify(Object.fromEntries(['',...Object.keys(titles)].map(key=>[key,render(key,c,version,true)]))));
       store.audit('legal_documents_updated','ok',now());store.db.exec('COMMIT');
     }catch(e){store.db.exec('ROLLBACK');throw e;}
     return {config:c,...state()};
   }
   function validateRegistration(data){
-    if(!ready())deny(503,'Регистрация временно приостановлена: уточняются реквизиты и документы сервиса. Вход и монтаж без регистрации доступны.');
+    if(!registrationReady())deny(503,'Регистрация временно приостановлена: уточняются реквизиты и документы сервиса. Вход и монтаж без регистрации доступны.');
     if(data.acceptTerms!==true||data.acceptPrivacy!==true||data.adultConfirmed!==true)deny(400,'Отдельно подтвердите соглашение, согласие на обработку данных и совершеннолетие.');
     if(data.legalVersion!==state().version)deny(409,'Документы обновились. Обновите страницу, прочитайте их и подтвердите новую редакцию.');
     return state().version;
@@ -104,11 +113,11 @@ export function createLegal({store,now,origin,session,sameOrigin}) {
     return texts[key]||[];
   }
   function render(key,c,version,archived=false){
-    const published=c.published&&c.reviewedEdition===LEGAL_EDITION&&legalMissing(c).length===0;
+    const published=fullyReviewed(c),registrationPublished=registrationAllowed(c);
     const title=titles[key]||'Документы «Покадрово»';
     const links=Object.entries(titles).map(([slug,name])=>`<a href="/legal/${slug}${archived?'?version='+encodeURIComponent(version):''}"${slug===key?' aria-current="page"':''}>${name}</a>`).join('');
     const content=key?sections(key,c).map(([heading,text])=>`<section><h2>${esc(heading)}</h2><div>${text}</div></section>`).join(''):`<p>Условия работы студии, обработки данных и оплаты. Каждый документ можно открыть отдельно и сохранить через печать браузера.</p><div class="legal-cards">${links}</div>`;
-    return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="${published&&!archived?'index,follow':'noindex,follow'}"><title>${esc(title)} | Покадрово</title><link rel="stylesheet" href="/legal-assets/legal.css"></head><body><a class="skip" href="#document">К документу</a><header><a class="brand" href="/"><img src="/favicon.svg" alt="" width="32" height="32"> покадрово</a><a href="/">Вернуться в студию</a></header><main><nav aria-label="Юридические документы">${links}</nav><article id="document"><p class="eyebrow">ПОКАДРОВО / ДОКУМЕНТЫ</p><h1>${esc(title)}</h1><p class="edition">Редакция ${esc(version)}${archived?' · архивная редакция':''}</p>${!published?'<aside role="status" class="draft"><strong>Проект документов</strong><p>Реквизиты и сведения об обработке ещё не утверждены. Этот текст не является предложением платных услуг. Новая регистрация и покупки временно недоступны; вход в существующий аккаунт и монтаж без регистрации сохраняются.</p></aside>':''}${content}${key&&key!=='contacts'?`<section><h2>Реквизиты оператора</h2>${operatorBlock(c)}</section>`:''}<footer><a href="/legal">Все документы</a><a href="/ai">Монтаж с ИИ</a><a href="/">Главная</a></footer></article></main></body></html>`;
+    return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="${published&&!archived?'index,follow':'noindex,follow'}"><title>${esc(title)} | Покадрово</title><link rel="stylesheet" href="/legal-assets/legal.css"></head><body><a class="skip" href="#document">К документу</a><header><a class="brand" href="/"><img src="/favicon.svg" alt="" width="32" height="32"> покадрово</a><a href="/">Вернуться в студию</a></header><main><nav aria-label="Юридические документы">${links}</nav><article id="document"><p class="eyebrow">ПОКАДРОВО / ДОКУМЕНТЫ</p><h1>${esc(title)}</h1><p class="edition">Редакция ${esc(version)}${archived?' · архивная редакция':''}</p>${!published&&registrationPublished?'<aside role="status" class="draft"><strong>Проверки обработки данных не завершены</strong><p>Бесплатная регистрация открыта по решению оператора. Проверки хранения, правовых оснований, уведомлений и трансграничной передачи не подтверждены. Открытие аккаунтов не подтверждает соблюдение требований закона. Платные услуги, пользовательские ИИ-запросы и сторонняя аналитика не включаются этим решением.</p></aside>':!published?'<aside role="status" class="draft"><strong>Проект документов</strong><p>Реквизиты и сведения об обработке ещё не утверждены. Этот текст не является предложением платных услуг. Новая регистрация и покупки временно недоступны; вход в существующий аккаунт и монтаж без регистрации сохраняются.</p></aside>':''}${content}${key&&key!=='contacts'?`<section><h2>Реквизиты оператора</h2>${operatorBlock(c)}</section>`:''}<footer><a href="/legal">Все документы</a><a href="/ai">Монтаж с ИИ</a><a href="/">Главная</a></footer></article></main></body></html>`;
   }
   async function route(req,res,url){
     const path=url.pathname;
@@ -132,5 +141,5 @@ export function createLegal({store,now,origin,session,sameOrigin}) {
     return false;
   }
   const requests=()=>store.all('SELECT r.id,r.account_id,r.kind,r.created,r.status,u.email FROM privacy_requests r LEFT JOIN users u ON u.id=r.account_id ORDER BY r.created DESC LIMIT 100');
-  return {state,ready,salesReady,config,save,validateRegistration,recordAcceptance,route,requests};
+  return {state,ready,registrationReady,salesReady,config,save,validateRegistration,recordAcceptance,route,requests};
 }

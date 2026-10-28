@@ -220,7 +220,7 @@ async function readProviderJson(response) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { deny(502, 'Провайдер вернул повреждённый JSON.'); }
 }
 
-export function createAi({ store, now, settings, session, sameOrigin, rateKey, billing, request = globalThis.fetch, singleAi = true }) {
+export function createAi({ store, now, settings, session, sameOrigin, rateKey, billing, request = globalThis.fetch, singleAi = true, userProcessingReady = () => true }) {
   const activeServices = singleAi ? ['reels-trial'] : SERVICES;
   let active = false, closing = false;
   const yandex = createYandex({ store, now });
@@ -279,6 +279,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
   function modeStatus(auth, service) {
     const owner = !!auth?.owner, q = state(), y = yandex.state(), o = openrouter.state(), trial = trialState(auth), paid=!!auth&&!owner&&(billing?.balance(auth.key)||0)>=coinPricing.reelsRequestCoins;
     if (!auth) return { available: false, reason: 'Войдите в аккаунт, чтобы попробовать монтаж.', requiresMedia: true };
+    if (!owner && !userProcessingReady()) return { available: false, reason: 'ИИ для пользователей временно недоступен: уточняются условия обработки данных.', requiresMedia: trial.requiresMedia };
     if (routerService(service)) {
       const visual = service === 'source-analysis', remaining = openrouter.quota().remaining;
       return { available: o.configured && o.enabled && remaining > 0 && (owner || paid || o.trialEnabled && trial.remaining > 0),

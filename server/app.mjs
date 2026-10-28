@@ -114,7 +114,7 @@ let accounts;
   }
   const databaseCare=createDatabaseCare({store,now,autoStart:options.backupsAutoStart??(secure&&accountsEnabled)});
   const billing = createBilling({store,now,origin:origin.origin,session:accounts.session,sameOrigin,legal,purchasesEnabled:!singleAi});
-  const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch, singleAi });
+  const ai = createAi({ store, now, billing, settings, session: accounts.session, sameOrigin, rateKey: accounts.rateKey, request: options.aiFetch, singleAi, userProcessingReady:()=>legal.ready() });
   const siteAgent = createSiteAgent({ store, now, origin: origin.origin, session: accounts.session, sameOrigin,
     request: options.siteAgentFetch, autoStart: options.siteAgentAutoStart !== false, suggestIdeas: ai.suggestSiteIdeas,
     facts: () => ({ aiConfigured: !singleAi && ai.openrouter.state().configured && ai.openrouter.state().enabled, quota: ai.openrouter.quota(),
@@ -182,7 +182,7 @@ let accounts;
         if (!store.consume('site-agent-manual', 2, 60000, now())) deny(429, 'Повторите ручную проверку через минуту.');
         void siteAgent.run(true).catch(() => {}); return json(res, 202, { ok: true, ...siteAgent.status() });
       }
-      if(req.method==='GET'&&path==='/api/admin/database')return json(res,200,{...databaseCare.inspect(),registration:{accountsEnabled,guestEditingEnabled,legalReady:legal.ready(),missing:legalMissing(legal.config())}});
+      if(req.method==='GET'&&path==='/api/admin/database')return json(res,200,{...databaseCare.inspect(),registration:{accountsEnabled,guestEditingEnabled,legalReady:legal.ready(),registrationReady:legal.registrationReady(),missing:legalMissing(legal.config())}});
       if(req.method==='POST'&&path==='/api/admin/database/backup'){const data=await body(req,4096);await reauth(req,data);if(!store.consume('backup-manual',3,3600000,now()))deny(429,'Копия уже запрошена. Повторите позднее.');return json(res,200,await databaseCare.snapshot());}
       if (req.method === 'GET' && path === '/api/admin/legal') return json(res,200,{config:legal.config(),...legal.state(),requests:legal.requests()});
       if (req.method === 'PUT' && path === '/api/admin/legal') {const data=await body(req,65536);await reauth(req,data);return json(res,200,legal.save(data));}

@@ -7,8 +7,57 @@ import {once} from 'node:events';
 import {request as http} from 'node:http';
 import {createApp} from '../app.mjs';
 import {token,provisionOwner} from '../security.mjs';
-import {legalDefaults} from '../legal.mjs';
+import {legalDefaults,legalVersion,LEGAL_EDITION} from '../legal.mjs';
 import {prepareLegal,legalTestConfig,legalAcceptance} from './legal-fixture.mjs';
+
+const pendingRegistration = {...legalTestConfig,published:false,reviewedEdition:'',registrationOnly:true,rknNotice:'Уведомление не подано. Проверка трансграничной передачи не завершена.',identityConfirmed:false,hostingConfirmed:false,processingReviewed:false,crossBorderReviewed:false,documentsApproved:false};
+
+test('the new registration option preserves all previously accepted full-publication version hashes',()=>{
+ assert.equal(legalVersion(legalTestConfig),'2026-10-26.1.6c322e9f66cb4a1b');
+ assert.equal(legalVersion({...legalTestConfig,registrationOnly:false,registrationEdition:''}),legalVersion(legalTestConfig));
+});
+
+test('owner can open free registration without falsely asserting completed legal checks or enabling AI, mail, analytics or payments',()=>fixture(async f=>{
+ assert.equal((await f.guest('/api/admin/legal','PUT',pendingRegistration)).status,401);
+ assert.equal((await f.owner('/api/admin/legal','PUT',{...pendingRegistration,password:'wrong'})).status,403);
+ const saved=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,password:f.password});assert.equal(saved.status,200,saved.raw);
+ assert.equal(saved.data.ready,false);assert.equal(saved.data.registrationReady,true);assert.equal(saved.data.salesReady,false);
+ for(const key of ['published','identityConfirmed','hostingConfirmed','processingReviewed','crossBorderReviewed','documentsApproved'])assert.equal(saved.data.config[key],false,key);
+ assert.equal(saved.data.config.rknNotice,pendingRegistration.rknNotice);
+ const state=(await f.guest('/api/account/session')).data;assert.equal(state.legal.registrationReady,true);assert.equal(state.legal.ready,false);assert.equal(state.mail.enabled,false);
+ const a=await f.register('pending@example.test',{legalVersion:saved.data.version});assert.equal(a.result.status,201,a.result.raw);assert.equal(a.result.data.user.role,'user');assert.ok(a.result.data.recoveryCode);
+ assert.equal((await a.c('/api/account/session')).data.user.id,a.result.data.user.id);
+ assert.equal((await a.c('/api/ai/edit-plan','POST',{})).status,503);assert.equal((await a.c('/api/admin/session')).status,401);
+ const ai=(await a.c('/api/ai/status')).data;assert.equal(ai.available,false);assert.match(ai.reason,/уточняются условия обработки данных/);
+ assert.equal((await f.guest('/api/health')).data.analyticsEnabled,false);assert.equal((await a.c('/api/billing/catalog')).data.available,false);
+ const db=(await f.owner('/api/admin/database')).data;assert.equal(db.registration.registrationReady,true);assert.equal(db.registration.legalReady,false);
+ assert.ok(db.registration.missing.includes('processingReviewed'));assert.ok(db.registration.missing.includes('crossBorderReviewed'));
+ const consent=f.store.get('SELECT * FROM account_legal_acceptances WHERE account_id=?',a.result.data.user.id);assert.equal(consent.version,saved.data.version);assert.equal(consent.terms,1);assert.equal(consent.consent,1);assert.equal(consent.adult,1);
+ for(const slug of ['terms','privacy','consent','contacts']){const doc=await f.guest('/legal/'+slug+'?version='+saved.data.version);assert.equal(doc.status,200);assert.match(doc.raw,/Проверки обработки данных не завершены/);assert.doesNotMatch(doc.raw,/Новая регистрация и покупки временно недоступны/);}
+ for(const patch of [{acceptTerms:false},{acceptPrivacy:false},{adultConfirmed:false},{legalVersion:'stale'}])assert.ok([400,409].includes((await f.register('no-consent@example.test',{legalVersion:saved.data.version,...patch})).result.status));
+}));
+
+test('free-registration publication still needs complete actual contact fields and cannot silently turn into full legal approval',()=>fixture(async f=>{
+ for(const patch of [{operatorName:''},{address:''},{email:'bad'},{phone:'x'},{hosting:''},{processors:''},{rknNotice:''},{registrationOnly:'true'},{published:true}]){
+  const saved=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,...patch,password:f.password});assert.equal(saved.status,400,JSON.stringify(patch));
+ }
+ assert.equal((await f.guest('/api/legal')).data.registrationReady,false);assert.equal(f.store.get('SELECT count(*) n FROM legal_revisions').n,0);
+}));
+
+test('pending-check documents remain revision-bound, can be closed, and require a fresh decision after template changes',()=>fixture(async f=>{
+ const first=(await f.owner('/api/admin/legal','PUT',{...pendingRegistration,password:f.password})).data;
+ const a=await f.register('pending@example.test',{legalVersion:first.version});assert.equal(a.result.status,201);
+ const next=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,operatorName:'Новый тестовый оператор',password:f.password});assert.equal(next.status,200);assert.notEqual(next.data.version,first.version);
+ assert.equal((await f.register('stale@example.test',{legalVersion:first.version})).result.status,409);
+ const archived=await f.guest('/legal/contacts?version='+first.version);assert.match(archived.raw,/Тестовый оператор/);assert.doesNotMatch(archived.raw,/Новый тестовый оператор/);
+ f.store.run("UPDATE meta SET value=? WHERE key='legal_config'",JSON.stringify({...next.data.config,registrationEdition:'old-edition'}));
+ const stale=(await f.guest('/api/legal')).data;assert.equal(stale.requiresReview,true);assert.equal(stale.registrationReady,false);assert.equal((await f.register('old-edition@example.test',{legalVersion:stale.version})).result.status,503);
+ const reopened=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,password:f.password});assert.equal(reopened.data.config.registrationEdition,LEGAL_EDITION);assert.equal(reopened.data.registrationReady,true);
+ const closed=await f.owner('/api/admin/legal','PUT',{...pendingRegistration,registrationOnly:false,password:f.password});assert.equal(closed.data.registrationReady,false);
+ assert.equal((await f.register('closed@example.test',{legalVersion:closed.data.version})).result.status,503);
+ await a.c('/api/account/logout','POST');await a.c('/api/account/session');const login=await a.c('/api/account/login','POST',{email:'pending@example.test',password:a.password});assert.equal(login.status,200,login.raw);
+ assert.equal((await f.guest('/legal/consent?version='+first.version)).status,200);
+}));
 
 async function fixture(fn){
  const dir=mkdtempSync(join(tmpdir(),'pk-legal-'));mkdirSync(join(dir,'dist'));writeFileSync(join(dir,'dist/index.html'),'<!doctype html><title>Test</title>');
