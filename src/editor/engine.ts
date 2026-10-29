@@ -122,6 +122,20 @@ export const exportFormats=()=>typeof MediaRecorder==='undefined'?[]:[
  {label:'MP4',mime:'video/mp4;codecs=avc1.424028,mp4a.40.2',ext:'mp4'},
  {label:'MP4',mime:'video/mp4',ext:'mp4'}
 ].filter(f=>MediaRecorder.isTypeSupported(f.mime)).filter((f,i,a)=>a.findIndex(v=>v.ext===f.ext)===i);
+/** Let the capture track receive the painted frame before recording starts.
+ * Otherwise some browsers timestamp their first video sample after the audio
+ * has already started, shifting the whole video track when muxed. */
+function capturePaint(signal:AbortSignal):Promise<void>{
+ if(signal.aborted)return Promise.reject(new DOMException('Cancelled','AbortError'));
+ if(document.hidden)return Promise.reject(new Error('Export paused: keep this tab visible'));
+ return new Promise((resolve,reject)=>{
+  let frame=0;
+  const finish=(error?:Error)=>{clearTimeout(timer);cancelAnimationFrame(frame);signal.removeEventListener('abort',abort);error?reject(error):resolve();};
+  const abort=()=>finish(new DOMException('Cancelled','AbortError'));
+  const timer=setTimeout(()=>finish(new Error('Export paused: keep this tab visible')),5000);
+  signal.addEventListener('abort',abort,{once:true});frame=requestAnimationFrame(()=>finish());
+ });
+}
 export async function exportProject(p:Project,assets:Map<string,Asset>,format:{mime:string;ext:string},quality:number,onProgress:(v:number)=>void,signal:AbortSignal):Promise<Blob>{
  if(!totalLength(p))throw new Error('Project is empty');
  const canvas=document.createElement('canvas');[canvas.width,canvas.height]=dimensions(p.ratio,quality);
@@ -130,13 +144,18 @@ export async function exportProject(p:Project,assets:Map<string,Asset>,format:{m
   let failure:unknown;engine=new PlaybackEngine(canvas,assets,(time)=>onProgress(time/totalLength(p)),e=>{failure=e;});
   const dest=await engine.audio(false);await engine.prepare(p);if(signal.aborted)throw new DOMException('Cancelled','AbortError');
   const video=canvas.captureStream(30);stream=new MediaStream([...video.getVideoTracks(),...dest.stream.getAudioTracks()]);
+  const videoTrack=video.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+  const capture=()=>{engine!.draw();videoTrack.requestFrame?.();};
+  // Prime the canvas capture pipeline while no audio is being recorded. Keep
+  // the first project frame on the track instead of losing the opening frames.
+  capture();await capturePaint(signal);capture();await capturePaint(signal);
   recorder=new MediaRecorder(stream,{mimeType:format.mime,videoBitsPerSecond:quality>=1080?10000000:6000000,audioBitsPerSecond:192000});
   const parts:BlobPart[]=[];recorder.ondataavailable=e=>{if(e.data.size)parts.push(e.data);};
   const complete=new Promise<Blob>((ok,no)=>{recorder!.onstop=()=>ok(new Blob(parts,{type:format.mime.split(';')[0]}));recorder!.onerror=e=>{failure=e;no(new Error('Encoder failed'));};});
   // Attach a rejection handler immediately, even if the recording loop is still running.
-  void complete.catch(()=>{});recorder.start(200);await engine.play();
+  void complete.catch(()=>{});recorder.start(200);capture();await engine.play();
   while(engine.playing){if(signal.aborted)throw new DOMException('Cancelled','AbortError');if(document.hidden)throw new Error('Export paused: keep this tab visible');if(failure)throw failure;await new Promise(r=>setTimeout(r,40));}
   if(failure)throw failure;if(signal.aborted)throw new DOMException('Cancelled','AbortError');
-  recorder.stop();const result=await complete;if(result.size<128)throw new Error('Empty encoded file');onProgress(1);return result;
+  capture();await capturePaint(signal);recorder.stop();const result=await complete;if(result.size<128)throw new Error('Empty encoded file');onProgress(1);return result;
  }finally{if(recorder&&recorder.state!=='inactive')recorder.stop();engine?.dispose();stream?.getTracks().forEach(t=>t.stop());}
 }

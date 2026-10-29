@@ -29,6 +29,9 @@ const result=await build({absWorkingDir:root,entryPoints:['src/preview/main.tsx'
         if(!body)throw Error('Admin template has no body.');
         contents=body[1].replace(/<!-- MAIL START -->[\s\S]*?<!-- MAIL END -->/g,'').replace(/<button data-view="mail">[\s\S]*?<\/button>/g,'').replace(/<!-- DATABASE START -->[\s\S]*?<!-- DATABASE END -->/g,'').replace(/<button data-view="database">[\s\S]*?<\/button>/g,'').replace(/<!-- LEGAL START -->[\s\S]*?<!-- LEGAL END -->/g,'').replace(/<button data-view="legal">[\s\S]*?<\/button>/g,'').replace(/<!-- BILLING START -->[\s\S]*?<!-- BILLING END -->/g,'').replace(/<button data-view="billing">[\s\S]*?<\/button>/g,'').replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi,'');
         if(/<(?:link|iframe|script)\b/i.test(contents))throw Error('Unexpected resource loader in admin preview.');
+        // Source indentation is not UI content. Leave room for editor fixes
+        // without dropping features from the size-limited demonstration.
+        contents=contents.replace(/^[ \t]+(?=<)/gm,'');
       }
       return {contents,loader:'text'};
     });

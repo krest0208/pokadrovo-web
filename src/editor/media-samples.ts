@@ -12,7 +12,12 @@ export function wavSamples(channel:Float32Array,rate=16000){
  text(0,'RIFF');v.setUint32(4,bytes.length-8,true);text(8,'WAVE');text(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);text(36,'data');v.setUint32(40,channel.length*2,true);
  for(let i=0;i<channel.length;i++){const n=Math.max(-1,Math.min(1,channel[i]));v.setInt16(44+i*2,Math.round(n*(n<0?32768:32767)),true);}return bytes;
 }
-export function sampleTimes(duration:number){const count=Math.max(1,Math.min(12,Math.ceil(duration/5)));return Array.from({length:count},(_,i)=>Math.max(0,Math.min(duration-.01,i*duration/count)));}
+export function sampleTimes(duration:number){
+ if(!Number.isFinite(duration)||duration<.04||duration>60.1)throw Error('Для анализа нужен исходник от 0.04 до 60 секунд.');
+ // Include the ending: a final offer/title must not disappear from the evidence.
+ const count=Math.max(2,Math.min(12,Math.ceil(duration/5)+1)),end=duration-.01;
+ return Array.from({length:count},(_,i)=>i*end/(count-1));
+}
 export async function prepareSamples(asset:Asset,clip:Clip,signal:AbortSignal,progress:(text:string)=>void=()=>{}):Promise<AiMedia>{
  check(signal);const {samples,audioPresent}=await readAudioSamples(asset,signal,progress);const data=base64(wavSamples(samples));
  if(clip.kind==='audio')return {clipId:clip.id,assetId:clip.assetId,mime:'audio/wav',data};

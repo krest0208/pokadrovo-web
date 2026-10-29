@@ -42,7 +42,9 @@ test('account storage retains overlay layer, time and transforms without leaking
 test('media preparation creates PCM mono WAV and at most 12 time-ordered samples',()=>{
  const wav=m.wavSamples(new Float32Array([-1,0,1])),v=new DataView(wav.buffer);
  assert.equal(v.getUint32(24,true),16000);assert.equal(v.getInt16(44,true),-32768);assert.equal(v.getInt16(48,true),32767);
- const times=m.sampleTimes(60);assert.equal(times.length,12);assert.equal(times[0],0);assert.equal(times.at(-1),55);
+ const times=m.sampleTimes(60);assert.equal(times.length,12);assert.equal(times[0],0);assert.equal(times.at(-1),59.99);
+ for(const duration of [.04,.1,1,5,12,30,60]){const samples=m.sampleTimes(duration);assert.ok(samples.length>=2&&samples.length<=12);assert.equal(samples[0],0);assert.ok(Math.abs(samples.at(-1)-(duration-.01))<1e-8);assert.ok(samples.every((at,i)=>at>=0&&at<duration&&(!i||at>samples[i-1])));}
+ for(const duration of [0,.01,NaN,Infinity,61])assert.throws(()=>m.sampleTimes(duration));
 });
 
 test('preview hit testing selects the actual image footprint, rotation and masks rather than the whole canvas',()=>{
