@@ -7,11 +7,11 @@ import {usingAccounts} from './account-fixture.mjs';
 
 const root=fileURLToPath(new URL('../..',import.meta.url));
 const bundle=await build({absWorkingDir:root,stdin:{contents:`export * from './src/editor/assets';export * from './src/editor/project-backup';export * from './src/account/api';export {newProject,fromAsset,normalizeProject,History} from './src/editor/model';`,resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'browser'});
-function browser({records=new Map(),values=new Map(),storageBlocked=false,fetch=async()=>{throw Error('Unexpected request');}}={}){
+function browser({records=new Map(),values=new Map(),storageBlocked=false,failPut=()=>false,fetch=async()=>{throw Error('Unexpected request');}}={}){
  const timers=new Map(),events=[],window=new EventTarget();let timerId=0;
  for(const name of ['pokadrovo:project-storage','pokadrovo:sync-status','pokadrovo:project-fork'])window.addEventListener(name,e=>events.push({name,...e.detail}));
  const indexedDB={open(){const request={};queueMicrotask(()=>{request.result={close(){},transaction(defaultStore){const tx={objectStore(store=defaultStore){return {
-  put(value,key){queueMicrotask(()=>{records.set(store+':'+key,structuredClone(value));tx.oncomplete?.();});},
+  put(value,key){queueMicrotask(()=>{if(failPut(store,key)){tx.error=Error('QuotaExceededError');tx.onabort?.();return;}records.set(store+':'+key,structuredClone(value));tx.oncomplete?.();});},
   get(key){const r={};queueMicrotask(()=>{r.result=records.get(store+':'+key);r.onsuccess?.();});return r;},
   getAll(){const r={};queueMicrotask(()=>{r.result=[...records].filter(([key])=>key.startsWith(store+':')).map(([,v])=>v);r.onsuccess?.();});return r;}
  };}};return tx;}};request.onsuccess();});return request;}};
@@ -90,6 +90,14 @@ test('queued saves cannot cross an account switch and unsent recovery never read
  const sent=[],b=browser({fetch:async(_url,o)=>{sent.push(o.headers['X-PK-Account']);return new Response(JSON.stringify({revision:'a'.repeat(64)}));}});b.api.acceptSession(account());b.api.saveProject(b.api.newProject());b.api.acceptSession(account('second-user'));await b.api.flushProjectSaves();assert.equal(sent.length,0);
  b.api.retryProjectSaves();await b.api.flushProjectSaves();assert.equal(sent.length,0);
  b.api.acceptSession(account());b.api.retryProjectSaves();await b.api.flushProjectSaves();assert.deepEqual(sent,['user-one']);
+});
+
+test('a conflict with full local stores keeps the original durable draft until its separate copy is durable',async()=>{
+ const a=browser();a.api.acceptSession(account());const p=a.api.newProject();p.name='Local work';a.api.saveProject(p);await a.api.flushLocalProjects();await a.api.flushProjectSaves();
+ const b=browser({records:a.records,values:a.values,storageBlocked:true,failPut:(store,key)=>store==='projects'&&key!=='user-one:'+p.id});b.api.acceptSession(account());
+ b.api.reconcileProjectSaves(await b.api.hydrateProjects(),[{...p,name:'Remote work'}],{[p.id]:'a'.repeat(64)});await b.api.flushLocalProjects();
+ assert.equal(b.records.get('projects:user-one:'+p.id).project.name,'Local work');
+ assert.ok(b.api.loadProjects().some(v=>v.id!==p.id&&v.name==='Local work (копия)'));
 });
 
 test('pre-debounce drafts are queued durably, duplicate saves are coalesced, and a stale GET cannot undo an acknowledged revision',async()=>{

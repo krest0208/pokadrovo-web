@@ -1,4 +1,4 @@
-import { storageScope, syncProject,stageProject } from '../account/api';
+import { storageScope, syncProject,stageProject,completeProjectConflict } from '../account/api';
 import { Asset, Project, STORAGE_KEY, normalizeProject, uid } from './model';
 export async function openDb():Promise<IDBDatabase>{if(typeof indexedDB==='undefined')throw Error('Хранилище браузера недоступно.');return new Promise((ok,no)=>{
  let ended=false;const timer=setTimeout(()=>{ended=true;no(Error('Хранилище занято. Закройте другие вкладки Покадрово и повторите сохранение.'));},5000);
@@ -57,10 +57,14 @@ if(typeof window!=='undefined')window.addEventListener?.('pokadrovo:project-conf
  const projects=loadProjects(),latest=projects.find(p=>p.id===detail.local.id)||normalizeProject(detail.local);
  const copy=normalizeProject({...latest,id:uid(),name:latest.name+' (копия)',modified:Math.max(Date.now(),latest.modified+1)});
  const remote=detail.remote?normalizeProject(detail.remote):null;
- try{replaceProjectCache([...projects.filter(p=>p.id!==latest.id),...(remote?[remote]:[])]);}catch{}
- if(remote)saveProject(remote,false,false);
  saveProject(copy);
  window.dispatchEvent(new CustomEvent('pokadrovo:project-fork',{detail:{account:detail.account,oldId:latest.id,project:copy,remote}}));
+ // Never replace the last durable local draft until its separate copy has actually been written.
+ void flushLocalProjects().then(()=>{if(storageScope()!==detail.account||localSavePending(copy.id))return;
+  if(remote)saveProject(remote,false,false);
+  completeProjectConflict(detail.account,latest.id,detail.revision??null);
+  window.dispatchEvent(new CustomEvent('pokadrovo:project-library-updated',{detail:{account:detail.account}}));
+ });
 });
 export function importOwnerLegacy():Project[]{if(scope()!=='owner')throw Error('Перенос старой локальной библиотеки доступен только администратору.');const old=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');if(!Array.isArray(old))throw Error('Некорректная библиотека.');const found=new Map(loadProjects().map(p=>[p.id,p]));for(const raw of old){const p=normalizeProject(raw);if(!found.has(p.id))found.set(p.id,p);}const merged=[...found.values()];replaceProjectCache(merged);merged.forEach(syncProject);return merged;}
 export function saveProject(p:Project,sync=true,dirty=true){const account=scope(),snapshot=normalizeProject(p),arr=loadProjects(),projects=[snapshot,...arr.filter(a=>a.id!==p.id)];let synchronous=false;

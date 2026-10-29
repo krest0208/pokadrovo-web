@@ -32,6 +32,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
   try{this.setState({theme:localStorage.getItem('pokadrovo-theme-v2')==='dark'?'dark':'light'});}catch{}
   window.addEventListener('pokadrovo:session-expired',this.expired);window.addEventListener('focus',this.recheck);window.addEventListener('popstate',this.onPop);window.addEventListener('pokadrovo:sync-status',this.syncStatus);
   window.addEventListener('pokadrovo:project-fork',this.projectForked);
+  window.addEventListener('pokadrovo:project-library-updated',this.projectLibraryChanged);
   const q=new URLSearchParams(location.search),auth=q.get('auth');
   if(q.has('signedIn')){try{const raw=sessionStorage.getItem('pokadrovo.auth.intent');if(raw)this.intent=JSON.parse(raw);}catch{} }
   if(location.pathname==='/studio')this.intent={kind:'resume'};
@@ -59,8 +60,9 @@ export default class Studio extends React.Component<Record<string,never>,State>{
   }else if(this.state.screen!=='editor'&&this.editor){this.editor.dispose();this.editor=null;this.revision++;}
   this.editor?.setTheme(this.state.theme);
  }
- componentWillUnmount(){this.disposed=true;this.revision++;this.editor?.dispose();this.assets.forEach(a=>URL.revokeObjectURL(a.url));this.assets.clear();window.removeEventListener('pokadrovo:session-expired',this.expired);window.removeEventListener('focus',this.recheck);window.removeEventListener('popstate',this.onPop);window.removeEventListener('pokadrovo:sync-status',this.syncStatus);window.removeEventListener('pokadrovo:project-fork',this.projectForked);}
- private projectForked=(e:Event)=>{const d=(e as CustomEvent).detail;if(d.account!==accountKey(this.state.session))return;this.setState(s=>({projects:loadProjects(),project:s.project?.id===d.oldId?d.project:s.project,error:'Проект изменён в другом месте. Ваши правки сохранены отдельной копией.'}));};
+ componentWillUnmount(){this.disposed=true;this.revision++;this.editor?.dispose();this.assets.forEach(a=>URL.revokeObjectURL(a.url));this.assets.clear();window.removeEventListener('pokadrovo:session-expired',this.expired);window.removeEventListener('focus',this.recheck);window.removeEventListener('popstate',this.onPop);window.removeEventListener('pokadrovo:sync-status',this.syncStatus);window.removeEventListener('pokadrovo:project-fork',this.projectForked);window.removeEventListener('pokadrovo:project-library-updated',this.projectLibraryChanged);}
+ private projectForked=(e:Event)=>{const d=(e as CustomEvent).detail;if(d.account!==accountKey(this.state.session))return;this.setState(s=>({projects:loadProjects(),project:s.project?.id===d.oldId?d.project:s.project,error:'Проект изменён в другом месте. Ваши правки открыты отдельной копией.'}));};
+ private projectLibraryChanged=(e:Event)=>{if((e as CustomEvent).detail.account===accountKey(this.state.session))this.setState({projects:loadProjects()});};
  private async adopt(session:Session){
   if(this.disposed)return;
   const changed=accountKey(session)!==accountKey(this.state.session);

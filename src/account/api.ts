@@ -64,9 +64,9 @@ async function drainSaves(){
   }catch(error){
    if(storageScope()!==item.account)return;
    if(error instanceof AccountError&&error.status===409&&Object.hasOwn(error.data,'revision')){
-    const local=pending.get(key)?.project||item.project;blocked.add(key);pending.delete(key);markPending(item.account,item.project.id,true);
+    const local=pending.get(key)?.project||item.project;blocked.add(key);pending.delete(key);rememberRevision(item.account,item.project.id,null);
     window.dispatchEvent(new CustomEvent('pokadrovo:project-conflict',{detail:{account:item.account,local,remote:error.data.project,revision:error.data.revision}}));
-    syncStatus(item.account,item.project.id,'conflict','Есть другая версия проекта. Ваши изменения сохранены отдельной копией.');
+    syncStatus(item.account,item.project.id,'conflict','Есть другая версия проекта. Ваши изменения открыты отдельной копией.');
    }else{
     const rejected=error instanceof AccountError&&[400,401,403,409].includes(error.status);
     syncStatus(item.account,item.project.id,rejected?'error':'offline',rejected?'Монтаж сохранён на устройстве. Сервер не принял синхронизацию: '+error.message:'Монтаж сохранён на устройстве. Синхронизация повторится после восстановления связи.');
@@ -88,10 +88,11 @@ export function reconcileProjectSaves(local:unknown[],remote:unknown[],remoteRev
  }
  for(const p of local as Document[]){const key=projectKey(account,p.id),r=indexed.get(p.id);if(!r)revisions.set(key,null);if(!blocked.has(key)&&(!r||unsent.has(p.id)||p.modified>r.modified)){
    // A pending document changed elsewhere must be copied rather than overwrite the remote version.
-   if(r&&unsent.has(p.id)&&baselines.get(p.id)!==remoteRevisions[p.id]&&JSON.stringify(normalizeProject(r))!==JSON.stringify(normalizeProject(p))){blocked.add(key);markPending(account,p.id,true);pending.delete(key);window.dispatchEvent(new CustomEvent('pokadrovo:project-conflict',{detail:{account,local:p,remote:r,revision:remoteRevisions[p.id]}}));}
+   if(r&&unsent.has(p.id)&&baselines.get(p.id)!==remoteRevisions[p.id]&&JSON.stringify(normalizeProject(r))!==JSON.stringify(normalizeProject(p))){blocked.add(key);rememberRevision(account,p.id,null);pending.delete(key);window.dispatchEvent(new CustomEvent('pokadrovo:project-conflict',{detail:{account,local:p,remote:r,revision:remoteRevisions[p.id]}}));}
    else syncProject(p);
   }}
 }
 export function retryProjectSaves(){if(retryTimer){clearTimeout(retryTimer);retryTimer=undefined;}enqueueSaves();}
+export function completeProjectConflict(account:string,id:string,revision:string|null){if(storageScope()!==account)return;const key=projectKey(account,id);blocked.delete(key);pending.delete(key);markPending(account,id,true);rememberRevision(account,id,revision);}
 if(typeof window!=='undefined')window.addEventListener?.('online',retryProjectSaves);
 export const flushProjectSaves=()=>saves;
