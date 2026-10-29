@@ -20,7 +20,7 @@ export class AiPanel {
   private node:HTMLElement;private input:HTMLTextAreaElement;private request:AiRequest|null=null;
   private plan:AiPlan|null=null;private abort:AbortController|null=null;private generation=0;
   private projectId:string;private previous:HTMLElement|null=null;private disposed=false;
-  private available:boolean;private statusGeneration=0;private connectionAbort=new AbortController();private requiresMedia=false;
+  private available:boolean;private unavailableReason='Монтаж с ИИ пока недоступен.';private statusGeneration=0;private connectionAbort=new AbortController();private requiresMedia=false;
   private mediaClipId='';private analysis:MediaAnalysis|null=null;
   constructor(private port:ToolPort){
     this.available=!!port.provider&&!port.provider.getStatus;
@@ -69,9 +69,10 @@ export class AiPanel {
     try{const status=await provider.getStatus(this.connectionAbort.signal);if(this.disposed||generation!==this.statusGeneration)return;
      this.available=status.available;this.mediaTransport=status.mediaTransport||'file';this.recipient=status.recipient||'';this.requiresMedia=!!status.requiresMedia;let reason=status.reason;
      if(provider.service!=='yandex-edit'&&!status.owner&&status.trial?.projectId&&status.trial.projectId!==this.projectId){this.available=false;reason='Бесплатная проба уже начата в другом проекте. Продолжите монтаж в нём.';}
+     this.unavailableReason=reason;
      this.node.querySelector('.pe-ai-connection span')!.textContent=reason;
      this.node.querySelector('.pe-ai-billing-note')!.textContent=status.owner?'Расход API учитывается на балансе сервиса обработки. Автоматического повторения запросов нет.':`Доступность запроса проверяется сервером. ${status.trial?.remaining!==undefined?'Осталось пробных запросов: '+status.trial.remaining+'.':''}`;
-    }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.node.querySelector('.pe-ai-connection span')!.textContent=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';}}
+    }catch(error){if(!this.disposed&&generation===this.statusGeneration){this.available=false;this.unavailableReason=error instanceof Error?error.message:'Нет связи с сервисом ИИ.';this.node.querySelector('.pe-ai-connection span')!.textContent=this.unavailableReason;}}
     finally{if(!this.disposed&&generation===this.statusGeneration)this.refresh();}
   }
   private serviceChange=()=>{
@@ -109,7 +110,7 @@ export class AiPanel {
     this.node.querySelector('[data-ai="analyze"]')!.textContent=visual?'Разобрать исходник и дать советы':'Смонтировать с ИИ';
     this.node.querySelector('[data-ai="request"]')!.textContent=visual?'Для разбора выберите файл ниже':'План по заданию';
     this.node.setAttribute('aria-busy',String(!!this.abort));
-    this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для первого запроса пробы используйте анализ MP4-видео со звуком.':'Используйте проект 9:16 или 16:9 длительностью до 60 секунд.'):'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Доступ закрыт.';
+    this.node.querySelector('.pe-ai-mode-note')!.textContent=router?(!validReels?'Проба: готовый ролик до 60 секунд, формат 9:16 или 16:9.':visual?'Разбор не изменяет проект. После него выберите режим плана для подготовки правок.':'Модель плана получает задание, структуру проекта и предыдущий анализ. Распознавание речи и автоматические субтитры здесь не подключены.'):reels?(validReels?'Для понимания содержания выберите исходник и подтвердите анализ ниже. Кнопка «План по заданию» работает без повторной отправки файла.':'Используйте проект 9:16 или 16:9 длительностью до 60 секунд.'):service==='yandex-edit'?'Яндекс получает задание, структуру проекта и предыдущий анализ, без исходного видео. Доступ закрыт.':!this.port.provider?'Для монтажа с ИИ войдите в аккаунт. Задание можно сохранить в проекте.':'План учитывает задание и структуру проекта.';
     (this.node.querySelector('[data-ai="request"]') as HTMLButtonElement).disabled=!this.port.provider||!this.available||!!this.abort||this.port.busy()||!validReels||this.requiresMedia;
     const source=this.node.querySelector<HTMLSelectElement>('.pe-ai-media-source')!;
     const clips=[...p.clips,...p.audio].filter(c=>(visual?c.kind==='video':c.kind!=='image')&&this.port.assets.has(c.assetId));
@@ -152,7 +153,9 @@ export class AiPanel {
     const p=this.port.project(),clip=[...p.clips,...p.audio].find(c=>c.id===this.mediaClipId),asset=clip&&this.port.assets.get(clip.assetId);
     if(!clip||!asset)throw Error('Выберите исходник из проекта.');
     if(asset.duration>60||asset.blob.size>7*1024*1024)throw Error('Для первой пробы нужен отдельный исходник до 60 секунд и 7 МБ. Обрезка на таймлайне не уменьшает отправляемый исходник.');
-    const video=clip.kind==='video',mime=video?'video/mp4':'audio/wav';
+    // An audio clip can reference an MP4 after “Отделить звук”. The local
+    // frames/audio transport extracts WAV from that source without uploading MP4.
+    const video=this.mediaTransport==='frames-audio'?asset.kind==='video':clip.kind==='video',mime=video?'video/mp4':'audio/wav';
     if(video?!(/\.mp4$/i.test(asset.name)||asset.blob.type==='video/mp4'):!(/\.wav$/i.test(asset.name)||['audio/wav','audio/x-wav','audio/wave'].includes(asset.blob.type)))throw Error('Для пробы используйте MP4-видео или WAV-аудио.');
     this.port.pause();
     if(this.mediaTransport==='frames-audio')return prepareSamples(asset,clip,this.abort!.signal,message=>{if(!this.disposed&&this.abort)this.say(message);});
@@ -163,7 +166,7 @@ export class AiPanel {
   private async send(withMedia=false){
     if(!this.port.provider){this.saveBrief();this.say('Монтаж с ИИ не подключён. Задание сохранено.',true);return;}
     if(this.abort)return;
-    if(!this.available){this.say('Сначала настройте подключение в админ-панели.',true);void this.checkConnection();return;}
+    if(!this.available){this.say(this.unavailableReason,true);void this.checkConnection();return;}
     if(!withMedia&&this.requiresMedia){this.say('Для первого запроса выберите файл ниже и подтвердите его отправку.',true);return;}
     const gen=++this.generation;
     const controller=new AbortController();this.abort=controller;

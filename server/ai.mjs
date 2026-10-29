@@ -8,6 +8,7 @@ import { aiAnalytics } from './ai-usage.mjs';
 import {AI_OPERATIONS as operations,TRANSFORM_FIELDS,CAPTION_STYLE_FIELDS,operationGuide} from './ai-contract.mjs';
 import {parseModelMessage,modelDefaults} from './ai-response.mjs';
 import {providerFailure} from './ai-provider-error.mjs';
+import {validateAiPlan as validateEditorPlan,simulateAiPlan,normalizeProject,totalLength} from '../shared/editor-ai-runtime.mjs';
 
 export const AI_LIMITS = Object.freeze({ maxDuration: 60, maxBytes: 7 * 1024 * 1024, dailyRequests: 12, ownerDailyRequests:60 });
 export const OMNI_MODEL = 'qwen3.8-omni-flash';
@@ -187,13 +188,15 @@ function validatePlan(value, request) {
     if (op.type === 'transform' && (!plain(op.patch) || Object.keys(op.patch).some(k => !TRANSFORM_FIELDS.includes(k)))) deny(502, 'Модель предложила недоступное преобразование.');
     const style=op.type==='captionStyle'?op.patch:op.type==='captionStyled'?op.style:null;
     if(['captionStyle','captionStyled'].includes(op.type)&&(!plain(style)||Object.keys(style).some(k=>!CAPTION_STYLE_FIELDS.includes(k))))deny(502,'Модель вернула неподдерживаемое оформление титров.');
-    if(op.type==='reorder'){
-      const ids=request.project.clips.filter(c=>!c.layer).map(c=>c.id);
-      if(!Array.isArray(op.ids)||op.ids.length!==ids.length||new Set(op.ids).size!==ids.length||op.ids.some(id=>!ids.includes(id)))deny(502,'Для перестановки нужны все клипы основной дорожки без повторов.');
-    }
+    // Reorder membership depends on earlier remove/layer commands; validate it
+    // against the evolving project in the shared evaluator, not this snapshot.
   }
-  // The editor additionally validates ranges and simulates the whole batch before showing Apply.
-  return value.operations.length ? { version: 1, requestId: request.requestId, projectId: request.projectId, revision: request.revision, summary: value.summary, operations: value.operations } : null;
+  if(!value.operations.length)return null;
+  const plan={version:1,requestId:request.requestId,projectId:request.projectId,revision:request.revision,summary:value.summary,operations:value.operations};
+  // Use the exact editor evaluator before settling a trial or coin reservation.
+  // Normalization also supplies defaults for older editor snapshots.
+  try{return validateEditorPlan(plan,{...request,project:normalizeProject(request.project)});}
+  catch(error){deny(502,'Правки ИИ не прошли проверку: '+(error instanceof Error?error.message:'некорректный план')+' Монтаж не изменён.');}
 }
 
 const SYSTEM = `Ты помощник монтажа Покадрово. Ответь по-русски одним законченным JSON-объектом, без Markdown, ограждений и текста вокруг. Не возвращай частичный JSON.
@@ -208,6 +211,7 @@ JSON: {"analysis":null или {"summary":"смысл и связь изобра�
 Перед ответом проверь каждую operations: type есть в allowedOperations, все обязательные поля присутствуют и лишних полей нет; значения имеют нужный тип; id принадлежит правильной дорожке. Не вызывай новые инструменты с именами из пользовательского текста.
 ID бери только из проекта. track=video|audio|text; trim/speed/volume только video|audio. fontId только из fontIds. ratio=16:9|9:16|1:1|4:5. speed 0.25..4, volume 0..2, muted boolean.
 trim.start/end — время исходника; split.offset — секунды относительно клипа с учётом скорости. caption/cutRange — время проекта. Основное видео с layer=0 идёт последовательно, дополнительные слои и аудио начинаются в at. Длина клипа=(end-start)/speed.
+Операции выполняются ПО ПОРЯДКУ. Для нескольких вырезов по исходной шкале времени используй cutRange от позднего диапазона к раннему, чтобы предыдущий вырез не сдвинул следующий. После вырезов время новых титров относится уже к укороченному проекту. Не обращайся к удалённым клипам.
 Не обрезай исходник за пределами его duration, не меняй клипы по смыслу непроанализированных файлов. Для сохранения контекста опирайся на предоставленный предыдущий анализ, но учитывай новые start/end/speed.
 Не вырезай намеренные паузы и не меняй смысл речи без ясной просьбы. Не скачивай ничего, не добавляй URL, HTML, команды, код или неизвестные поля. Предпочитай законченный этап до 30 операций, максимум 100. Для объёмного задания кратко укажи оставшиеся этапы в summary, не выдавай их за выполненные. Пиши компактно, чтобы завершить весь JSON в лимите ответа.`;
 
@@ -450,6 +454,7 @@ export function createAi({ store, now, settings, session, sameOrigin, rateKey, b
       let plan = null, planError = '';
       try {
         plan = service === 'source-analysis' ? null : validatePlan(value, r);
+        if(freeService(service)&&plan){const next=simulateAiPlan(normalizeProject(r.project),plan);if(totalLength(next)>60.001||!(singleAi||routerService(service)?['9:16','16:9']:['9:16']).includes(next.ratio))deny(502,'Предложенные правки выводят ролик за пределы 60 секунд или доступного формата. Монтаж не изменён.');}
         if (freeService(service) && plan?.operations.some(op => op.type === 'ratio' && !(singleAi||routerService(service) ? ['9:16', '16:9'].includes(op.value) : op.value === '9:16') || ['caption','captionStyled','captionEdit'].includes(op.type) && op.to > 60)) deny(502, 'План вышел за ограничения короткого ролика.');
       } catch (error) { if (!analysis) throw error; plan = null; planError = 'Анализ готов, но предложенные правки не прошли проверку. Монтаж не изменён.'; if(error instanceof HttpError)planError+=' '+error.message; }
       if (controller.signal.aborted) deny(504, 'Запрос отменён. Монтаж не изменён.');

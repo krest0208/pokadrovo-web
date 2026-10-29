@@ -35,7 +35,7 @@ function runtime(options={}){
   createBuffer(_channels,length,rate){return {duration:length/rate,copyToChannel(){}};}
   close(){state.closed++;return Promise.resolve();}
  }
- const module={exports:{}};vm.runInNewContext(bundle.outputFiles[0].text,{module,exports:module.exports,crypto,console,DOMException,AbortController,setTimeout,clearTimeout,queueMicrotask,window:{AudioContext:Audio},document:{createElement:()=>new Media()},OfflineAudioContext:Offline});
+ const module={exports:{}};vm.runInNewContext(bundle.outputFiles[0].text,{module,exports:module.exports,crypto,console,DOMException,AbortController,btoa,setTimeout,clearTimeout,queueMicrotask,window:{AudioContext:Audio},document:{createElement:()=>new Media()},OfflineAudioContext:Offline});
  return {...module.exports,state};
 }
 function box(type,...parts){const payload=Buffer.concat(parts),out=Buffer.alloc(payload.length+8);out.writeUInt32BE(out.length);out.write(type,4);payload.copy(out,8);return out;}
@@ -58,6 +58,11 @@ test('normal decode stays fast; decoder failure uses local playback, reports pro
 test('cancelling local playback rejects before any provider call and cleans up',async()=>{
  const controller=new AbortController(),m=runtime({decodeError:true,hang:true,onPlay:()=>controller.abort()});
  await assert.rejects(m.readAudioSamples(asset(),controller.signal),e=>e.name==='AbortError');assert.equal(m.state.closed,1);assert.ok(m.state.removed>0);
+});
+test('an audio clip detached from MP4 is locally normalized into WAV instead of being rejected by its filename',async()=>{
+ const m=runtime(),p=Object.create(m.AiPanel.prototype),source={...asset(),name:'fixture.mp4'},clip={id:'audio-clip',assetId:'video-source',kind:'audio'};
+ Object.assign(p,{mediaClipId:clip.id,mediaTransport:'frames-audio',abort:new AbortController(),node:{querySelector:()=>({checked:true})},port:{project:()=>({clips:[],audio:[clip]}),assets:new Map([[clip.assetId,source]]),pause(){}}});
+ const media=await p.prepareMedia();assert.equal(media.mime,'audio/wav');assert.equal(media.clipId,clip.id);assert.equal(media.assetId,clip.assetId);assert.equal(Buffer.from(media.data,'base64').toString('ascii',0,4),'RIFF');assert.equal(media.frames,undefined);
 });
 function panel(overrides={}){
  const {AiPanel}=runtime(),messages=[];let calls=0;
