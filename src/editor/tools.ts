@@ -26,7 +26,7 @@ export class EditorTools {
     port.root.addEventListener('contextmenu',this.context);port.root.addEventListener('click',this.click);
     port.root.addEventListener('change',this.change);port.root.addEventListener('keydown',this.key);
   }
-  beforeAction(action:string){if(['save','home','json-export','export'].includes(action))this.ai.saveBrief();if(action==='export')this.ai.close();}
+  beforeAction(action:string){if(['save','home','json-export','backup-export','export'].includes(action))this.ai.saveBrief();if(action==='export')this.ai.close();}
   sync(){this.transforms.sync();this.ai.refresh();}
   private item():Clip|Caption|undefined{
     const s=this.port.selected(),p=this.port.project();return !s?undefined:(s.track==='video'?p.clips:s.track==='audio'?p.audio:p.texts).find(c=>c.id===s.id);
