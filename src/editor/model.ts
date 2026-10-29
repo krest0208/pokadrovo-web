@@ -15,7 +15,7 @@ export interface Clip {
 export interface Caption { id:string; text:string; from:number; to:number; x:number; y:number; size:number; color:string; background:boolean; fontId:string; weight:number; italic:boolean; align:'left'|'center'|'right'; }
 export interface Project {
   id:string; schema:4; name:string; mode:Mode; ratio:Ratio; clips:Clip[]; audio:Clip[]; texts:Caption[];
-  title:string; brief:string; created:number; modified:number; master:number;
+  title:string; brief:string; created:number; modified:number; master:number;sources:{id:string;name:string;kind:Kind;size:number}[];
 }
 export interface Asset { id:string; name:string; kind:Kind; blob:Blob; url:string; duration:number; width:number; height:number; thumbnail:string; }
 export interface Selection { track:'video'|'audio'|'text'; id:string; }
@@ -28,7 +28,7 @@ const string=(v:unknown,d='')=>typeof v==='string'?v.slice(0,10000):d;
 const safeId=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_.-]{1,120}$/.test(v)?v:'';
 export const clone=<T>(v:T):T=>JSON.parse(JSON.stringify(v));
 export function newProject(mode:Mode='video',brief=''):Project {
- return {id:uid(),schema:4,name:mode==='reels'?'Reels / Shorts':'New project',mode,ratio:mode==='reels'?'9:16':'16:9',clips:[],audio:[],texts:[],title:'',brief,created:Date.now(),modified:Date.now(),master:1};
+ return {id:uid(),schema:4,name:mode==='reels'?'Reels / Shorts':'New project',mode,ratio:mode==='reels'?'9:16':'16:9',clips:[],audio:[],texts:[],title:'',brief,created:Date.now(),modified:Date.now(),master:1,sources:[]};
 }
 export function normalizeClip(value:unknown):Clip {
  const c=object(value), duration=number(c.duration,5,.04,86400), start=number(c.start,0,0,duration-.04);
@@ -53,10 +53,13 @@ export function normalizeProject(value:unknown):Project {
  const list=(v:unknown)=>Array.isArray(v)?v.slice(0,1000):[];
  const clips=list(p.clips).map(normalizeClip).filter(c=>c.kind!=='audio'&&c.assetId);
  const audio=list(p.audio).map(normalizeClip).filter(c=>c.assetId);
+ const sources=new Map<string,Project['sources'][number]>();
+ for(const raw of (Array.isArray(p.sources)?p.sources.slice(0,2000):[])){const s=object(raw),id=safeId(s.id);if(id)sources.set(id,{id,name:string(s.name,'Media'),kind:s.kind==='image'?'image':s.kind==='audio'?'audio':'video',size:number(s.size,0,0,2*1024**3)});}
+ for(const c of [...clips,...audio])if(!sources.has(c.assetId))sources.set(c.assetId,{id:c.assetId,name:c.name,kind:c.kind,size:0});
  let texts=list(p.texts).map(normalizeCaption);
  if(!('texts' in p)&&string(p.title)) texts=[normalizeCaption({text:p.title,from:0,to:Math.max(5,clips.reduce((n,c)=>n+length(c),0))})];
  return {...fresh,id:safeId(p.id)||fresh.id,name:string(p.name,fresh.name),ratio:['16:9','9:16','1:1','4:5'].includes(String(p.ratio))?p.ratio as Ratio:fresh.ratio,
- clips,audio,texts,created:number(p.created,Date.now(),0,1e15),modified:number(p.modified,Date.now(),0,1e15),master:number(p.master,1,0,1)};
+ clips,audio,texts,sources:[...sources.values()],created:number(p.created,Date.now(),0,1e15),modified:number(p.modified,Date.now(),0,1e15),master:number(p.master,1,0,1)};
 }
 export const length=(c:Clip)=>Math.max(.01,(c.end-c.start)/c.speed);
 export const videoLength=(p:Project)=>p.clips.filter(c=>!c.layer).reduce((n,c)=>n+length(c),0);
@@ -110,7 +113,7 @@ export function parseSrt(input:string):Caption[] {
 export class History {
  private past:Project[]=[];private future:Project[]=[];
  constructor(public value:Project){}
- commit(next:Project){this.past.push(clone(this.value));if(this.past.length>60)this.past.shift();this.future=[];this.value=normalizeProject({...next,modified:Date.now()});}
+ commit(next:Project){this.past.push(clone(this.value));if(this.past.length>60)this.past.shift();this.future=[];this.value=normalizeProject({...next,modified:Math.max(Date.now(),this.value.modified+1)});}
  undo(){const p=this.past.pop();if(p){this.future.push(clone(this.value));this.value=p;}return this.value;}
  redo(){const p=this.future.pop();if(p){this.past.push(clone(this.value));this.value=p;}return this.value;}
  get canUndo(){return this.past.length>0;}get canRedo(){return this.future.length>0;}

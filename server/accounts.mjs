@@ -90,6 +90,7 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
   function publishSession(res,prepared){appendCookie(res,sessionName,prepared.sid,7*86400,secure);return prepared.data;}
   function startSession(res,user){return publishSession(res,prepareSession(user));}
   function listProjects(auth) { return store.all('SELECT payload FROM account_projects WHERE account_id=? ORDER BY modified DESC LIMIT 200', auth.key).map(r => JSON.parse(r.payload)); }
+  const projectRevision=payload=>createHash('sha256').update(payload).digest('hex');
   // Only document metadata is stored: never a Blob, object URL, credential or executable HTML.
   function projectDocument(p) {
     if (!p || typeof p !== 'object' || !projectIdOk(p.id)) deny(400, 'Некорректный проект.');
@@ -97,7 +98,8 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
     const clipKeys = 'id assetId name kind duration start end speed volume muted fadeIn fadeOut at fit zoom x y rotation flip brightness contrast saturation opacity visualIn visualOut layer scaleX scaleY shape corner cropLeft cropRight cropTop cropBottom'.split(' ');
     const textKeys = 'id text from to x y size color background fontId weight italic align'.split(' ');
     function pick(o, keys) { if (!o || typeof o !== 'object') deny(400, 'Некорректный элемент.'); const r = {}; for (const k of keys) { const v = o[k]; if (typeof v === 'string' && v.length <= 10000 || typeof v === 'number' && Number.isFinite(v) || typeof v === 'boolean') r[k] = v; } return r; }
-    return { ...pick(p, ['id','name','schema','mode','ratio','title','brief','created','modified','master']), clips: p.clips.map(c => pick(c, clipKeys)), audio: p.audio.map(c => pick(c, clipKeys)), texts: p.texts.map(c => pick(c, textKeys)) };
+    if(p.sources!==undefined&&(!Array.isArray(p.sources)||p.sources.length>2000))deny(400,'Слишком много исходников.');
+    return { ...pick(p, ['id','name','schema','mode','ratio','title','brief','created','modified','master']), clips: p.clips.map(c => pick(c, clipKeys)), audio: p.audio.map(c => pick(c, clipKeys)), texts: p.texts.map(c => pick(c, textKeys)),...(p.sources?{sources:p.sources.map(s=>pick(s,['id','name','kind','size']))}:{}) };
   }
 
   async function route(req, res, url) {
@@ -220,13 +222,17 @@ export function createAccounts({ legal, mail, store, now, origin, secure, sameOr
       let recoveryCode;store.db.exec('BEGIN IMMEDIATE');try{store.run('UPDATE users SET password=? WHERE id=?', hash, a.key);store.run('DELETE FROM user_sessions WHERE user_id=?', a.key);recoveryCode=recovery.issue(a.key);store.db.exec('COMMIT');}catch(e){store.db.exec('ROLLBACK');throw e;}
       appendCookie(res, sessionName, '', 0, secure); json(res, 200, { ok: true, reauthenticate: true, recoveryCode }); return true;
     }
-    if (req.method === 'GET' && path === '/api/account/projects') { json(res, 200, { projects: listProjects(a), mediaLocalOnly: true }); return true; }
+    if (req.method === 'GET' && path === '/api/account/projects') { const rows=store.all('SELECT id,payload FROM account_projects WHERE account_id=? ORDER BY modified DESC LIMIT 200',a.key);json(res, 200, { projects: rows.map(r=>JSON.parse(r.payload)), revisions:Object.fromEntries(rows.map(r=>[r.id,projectRevision(r.payload)])), mediaLocalOnly: true }); return true; }
     if (req.method === 'PUT' && path === '/api/account/projects') {
       limit(req, 'save-project', 120, 60000); const data = await body(req, 1048576), p = projectDocument(data.project);
+      const existing=store.get('SELECT payload FROM account_projects WHERE account_id=? AND id=?',a.key,p.id),payload=JSON.stringify(p),revision=existing?projectRevision(existing.payload):null;
+      if(Object.hasOwn(data,'baseRevision')&&data.baseRevision!==null&&!(typeof data.baseRevision==='string'&&/^[a-f0-9]{64}$/.test(data.baseRevision)))deny(400,'Некорректная версия проекта.');
+      if(existing&&payload===existing.payload){json(res,200,{ok:true,id:p.id,revision});return true;}
+      if(existing&&(!Object.hasOwn(data,'baseRevision')||data.baseRevision!==revision)||!existing&&data.baseRevision){json(res,409,{error:'Проект изменён в другой вкладке или на другом устройстве.',project:existing?JSON.parse(existing.payload):null,revision});return true;}
       const count = store.get('SELECT count(*) n FROM account_projects WHERE account_id=?', a.key).n;
       if (count >= 200 && !store.get('SELECT id FROM account_projects WHERE account_id=? AND id=?', a.key, p.id)) deny(409, 'Достигнут лимит: 200 проектов.');
       store.run('INSERT INTO account_projects(account_id,id,payload,modified) VALUES(?,?,?,?) ON CONFLICT(account_id,id) DO UPDATE SET payload=excluded.payload,modified=excluded.modified', a.key, p.id, JSON.stringify(p), now());
-      json(res, 200, { ok: true, id: p.id }); return true;
+      json(res, 200, { ok: true, id: p.id,revision:projectRevision(payload) }); return true;
     }
     if (req.method === 'DELETE' && path.startsWith('/api/account/projects/')) {
       const id = path.slice('/api/account/projects/'.length); if (!projectIdOk(id)) deny(400, 'Некорректный идентификатор.');

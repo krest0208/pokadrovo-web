@@ -8,9 +8,9 @@ import SiteMotion from './motion/SiteMotion';
 import type { Editor } from './editor/editor';
 import { OmniAiProvider } from './editor/omni';
 import { Asset, Mode, Project, Ratio, newProject, normalizeProject } from './editor/model';
-import { loadProjects, saveProject, replaceProjectCache, importOwnerLegacy } from './editor/assets';
+import { loadProjects, saveProject, replaceProjectCache, importOwnerLegacy,hydrateProjects } from './editor/assets';
 import { AuthDialog, ProfileView } from './account/AccountViews';
-import { Session, User, getSession, logout, request, acceptSession, currentUser, flushProjectSaves } from './account/api';
+import { Session, User, getSession, logout, request, acceptSession, currentUser, flushProjectSaves,reconcileProjectSaves,retryProjectSaves } from './account/api';
 import { t } from './editor/copy';
 import './editor/editor.css';
 import './editor/tools.css';
@@ -31,6 +31,7 @@ export default class Studio extends React.Component<Record<string,never>,State>{
   this.disposed=false;
   try{this.setState({theme:localStorage.getItem('pokadrovo-theme-v2')==='dark'?'dark':'light'});}catch{}
   window.addEventListener('pokadrovo:session-expired',this.expired);window.addEventListener('focus',this.recheck);window.addEventListener('popstate',this.onPop);window.addEventListener('pokadrovo:sync-status',this.syncStatus);
+  window.addEventListener('pokadrovo:project-fork',this.projectForked);
   const q=new URLSearchParams(location.search),auth=q.get('auth');
   if(q.has('signedIn')){try{const raw=sessionStorage.getItem('pokadrovo.auth.intent');if(raw)this.intent=JSON.parse(raw);}catch{} }
   if(location.pathname==='/studio')this.intent={kind:'resume'};
@@ -58,19 +59,20 @@ export default class Studio extends React.Component<Record<string,never>,State>{
   }else if(this.state.screen!=='editor'&&this.editor){this.editor.dispose();this.editor=null;this.revision++;}
   this.editor?.setTheme(this.state.theme);
  }
- componentWillUnmount(){this.disposed=true;this.revision++;this.editor?.dispose();this.assets.forEach(a=>URL.revokeObjectURL(a.url));this.assets.clear();window.removeEventListener('pokadrovo:session-expired',this.expired);window.removeEventListener('focus',this.recheck);window.removeEventListener('popstate',this.onPop);window.removeEventListener('pokadrovo:sync-status',this.syncStatus);}
+ componentWillUnmount(){this.disposed=true;this.revision++;this.editor?.dispose();this.assets.forEach(a=>URL.revokeObjectURL(a.url));this.assets.clear();window.removeEventListener('pokadrovo:session-expired',this.expired);window.removeEventListener('focus',this.recheck);window.removeEventListener('popstate',this.onPop);window.removeEventListener('pokadrovo:sync-status',this.syncStatus);window.removeEventListener('pokadrovo:project-fork',this.projectForked);}
+ private projectForked=(e:Event)=>{const d=(e as CustomEvent).detail;if(d.account!==accountKey(this.state.session))return;this.setState(s=>({projects:loadProjects(),project:s.project?.id===d.oldId?d.project:s.project,error:'Проект изменён в другом месте. Ваши правки сохранены отдельной копией.'}));};
  private async adopt(session:Session){
   if(this.disposed)return;
   const changed=accountKey(session)!==accountKey(this.state.session);
   if(changed){this.revision++;this.editor?.dispose();this.editor=null;this.assets.forEach(a=>URL.revokeObjectURL(a.url));this.assets.clear();}
   let projects:Project[]=[];
-  if(canEdit(session)){try{projects=loadProjects();if(session.user){const r=await request<{projects:unknown[]}>('/projects');if(currentUser()?.id!==session.user.id)return;const map=new Map(projects.map(p=>[p.id,p]));for(const raw of r.projects){const p=normalizeProject(raw),old=map.get(p.id);if(!old||old.modified<p.modified)map.set(p.id,p);}projects=[...map.values()].sort((a,b)=>b.modified-a.modified);replaceProjectCache(projects);}}catch(e){this.setState({error:(e as Error).message});}}
+  if(canEdit(session)){try{projects=await hydrateProjects();if(session.user){const r=await request<{projects:unknown[];revisions?:Record<string,string>}>('/projects');if(currentUser()?.id!==session.user.id)return;reconcileProjectSaves(projects,r.projects,r.revisions);projects=loadProjects();const map=new Map(projects.map(p=>[p.id,p]));for(const raw of r.projects){const p=normalizeProject(raw),old=map.get(p.id);if(!old||old.modified<p.modified)map.set(p.id,p);}projects=[...map.values()].sort((a,b)=>b.modified-a.modified);try{replaceProjectCache(projects);}catch{}}}catch(e){this.setState({error:(e as Error).message});}}
   await new Promise<void>(done=>this.setState(s=>({session,checking:false,projects,project:changed?(projects[0]||null):(s.project||projects[0]||null),screen:changed&&s.screen!=='pricing'?'home':s.screen}),done));
  }
- private syncStatus=(event:Event)=>{const status=this.host?.querySelector('.pe-status');if(status)status.textContent=String((event as CustomEvent).detail||'');};
+ private syncStatus=(event:Event)=>{const d=(event as CustomEvent).detail;if(d?.account!==accountKey(this.state.session)||d.id!==this.editor?.project.id)return;const status=this.host?.querySelector('.pe-status');if(status)status.textContent=d.message||'';};
  private navigate=(screen:State['screen'])=>{history.pushState({},'',screen==='home'?'/':screen==='editor'?'/studio':screen==='projects'?'/projects':screen==='pricing'?'/ai':'/profile');this.setState({screen});window.scrollTo({top:0,behavior:'instant'});};
  private onPop=()=>{if(['/ai','/pricing'].includes(location.pathname.replace(/\/$/,'')))this.setState({screen:'pricing'});else if(location.pathname==='/studio')void this.authorize({kind:'resume'});else if(location.pathname==='/projects'){if(canEdit(this.state.session))this.setState({screen:'projects'});else void this.authorize({kind:'projects'});}else if(location.pathname==='/profile')this.openAccount();else this.setState({screen:'home'});};
- private recheck=()=>{if(this.refreshBusy||this.state.checking||this.disposed)return;this.refreshBusy=true;void getSession().then(s=>{if(!s.user&&this.state.session?.user)this.expired();else if(accountKey(s)!==accountKey(this.state.session)||s.accountsEnabled!==this.state.session?.accountsEnabled||s.guestEditingEnabled!==this.state.session?.guestEditingEnabled||s.legal?.version!==this.state.session?.legal?.version||s.legal?.ready!==this.state.session?.legal?.ready||s.legal?.registrationReady!==this.state.session?.legal?.registrationReady||s.mail?.enabled!==this.state.session?.mail?.enabled||s.user?.emailVerified!==this.state.session?.user?.emailVerified)void this.adopt(s);}).catch(()=>{}).finally(()=>{this.refreshBusy=false;});};
+ private recheck=()=>{if(this.refreshBusy||this.state.checking||this.disposed)return;this.refreshBusy=true;void getSession().then(s=>{if(!s.user&&this.state.session?.user)this.expired();else if(accountKey(s)!==accountKey(this.state.session)||s.accountsEnabled!==this.state.session?.accountsEnabled||s.guestEditingEnabled!==this.state.session?.guestEditingEnabled||s.legal?.version!==this.state.session?.legal?.version||s.legal?.ready!==this.state.session?.legal?.ready||s.legal?.registrationReady!==this.state.session?.legal?.registrationReady||s.mail?.enabled!==this.state.session?.mail?.enabled||s.user?.emailVerified!==this.state.session?.user?.emailVerified)void this.adopt(s);else retryProjectSaves();}).catch(()=>{}).finally(()=>{this.refreshBusy=false;});};
  private expired=()=>{if(this.disposed)return;if(this.state.session?.accountsEnabled===false){this.pending=[];this.intent=null;void getSession().then(s=>this.adopt(s)).then(()=>this.navigate('home')).catch(e=>this.setState({error:e.message}));return;}this.editor?.dispose();this.editor=null;this.revision++;acceptSession({user:null,csrf:'',providers:this.state.session?.providers||[]});this.intent={kind:'resume'};this.setState({session:null,screen:'home',project:null,projects:[],auth:true,authMode:'login',error:'Сеанс завершён. Войдите снова.'});void getSession().then(session=>{if(!this.disposed)this.setState({session});}).catch(()=>{});};
  private rememberIntent(){try{if(this.intent)sessionStorage.setItem('pokadrovo.auth.intent',JSON.stringify(this.intent));else sessionStorage.removeItem('pokadrovo.auth.intent');}catch{}}
  private authorize=async(intent:Intent)=>{

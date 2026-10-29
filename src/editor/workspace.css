@@ -77,3 +77,8 @@ body:has(.pe-tour-layer:not([hidden])) .au-editor-account{visibility:hidden}
 .pe .pe-view-expand{display:none}
 @media(max-width:900px){.pe .pe-view-expand{display:inline-flex;width:28px;height:28px;min-height:28px;padding:4px;border:0;background:transparent;color:var(--p-muted)}.pe .pe-player-options label{margin-left:auto}}
 @media(max-width:900px) and (max-height:540px){.pe{min-height:390px;gap:3px}.pe .pe-top{height:84px;min-height:84px;padding-block:4px}.pe .pe-mobile-nav{height:34px;min-height:34px}.pe .pe-mobile-nav button{min-height:32px}.pe:not([data-mobile=library]):not([data-mobile=inspector]) .pe-timeline{height:140px;min-height:130px}.pe .pe-layout{min-height:90px}.pe .pe-player{min-height:90px}.pe .pe-footer{height:20px;min-height:20px}}
+.pe .pe-save-state{flex:none;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--p-muted)}
+.pe .pe-save-state[data-state=error]{color:var(--p-danger,#bd3647)}
+.pe .pe-missing-sources{display:grid;gap:8px;margin:12px 0;padding:12px;border:1px solid var(--p-line);border-radius:8px;font-size:12px}
+.pe .pe-missing-sources button{min-height:44px;text-align:left;overflow-wrap:anywhere;white-space:normal}
+@media(max-width:900px){.pe .pe-save-state{max-width:68px;font-size:10px}}

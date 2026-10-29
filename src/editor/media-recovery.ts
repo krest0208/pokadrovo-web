@@ -4,7 +4,8 @@ import type { Asset, Project } from './model';
 /** Rebuild object URLs without changing the read-only properties of stored File objects. */
 export async function restoreProjectAssets(project:Project,assets:Map<string,Asset>,isCurrent=()=>true):Promise<string[]> {
  const missing:string[]=[];
- const sources=new Map([...project.clips,...project.audio].map(clip=>[clip.assetId,clip]));
+ const sources=new Map<string,{name:string;kind:Asset['kind']}>([...project.clips,...project.audio].map(clip=>[clip.assetId,clip]));
+ for(const source of project.sources||[])sources.set(source.id,source);
  for(const [id,clip] of sources){
   if(!isCurrent())break;
   if(assets.has(id))continue;

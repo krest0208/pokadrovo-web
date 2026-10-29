@@ -6,7 +6,7 @@ import {createRequire} from 'node:module';
 
 const compiled=await build({stdin:{contents:"export {Editor} from './src/editor/editor';export {History,normalizeProject,clone} from './src/editor/model';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',loader:{'.css':'empty'},plugins:[{name:'isolated-editor-storage',setup(b){
  b.onResolve({filter:/^\.\/assets$/},args=>args.importer.endsWith('/editor/editor.ts')?{path:'assets',namespace:'qa-storage'}:null);
- b.onLoad({filter:/.*/,namespace:'qa-storage'},()=>({contents:'export const download=()=>{};export const inspectFile=async()=>{};export const persistAsset=async()=>{};export function saveProject(p){globalThis.savedProjects.push(structuredClone(p));}'}));
+ b.onLoad({filter:/.*/,namespace:'qa-storage'},()=>({contents:'export const download=()=>{};export const inspectFile=async()=>{};export const persistAsset=async()=>{};export const localSavePending=()=>false;export const unsavedAssets=()=>0;export const retryAssetWrites=async()=>{};export const requestPersistentStorage=async()=>false;export function saveProject(p){globalThis.savedProjects.push(structuredClone(p));}'}));
  b.onResolve({filter:/^\.\.\/account\/api$/},args=>args.importer.endsWith('/editor/editor.ts')?{path:'scope',namespace:'qa-scope'}:null);
  b.onLoad({filter:/.*/,namespace:'qa-scope'},()=>({contents:"export const storageScope=()=> 'guest-local';"}));
 }}]});

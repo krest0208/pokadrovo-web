@@ -1,5 +1,6 @@
 import { Asset, Caption, Clip, History, Mode, Project, Ratio, Selection, clamp, clone, clock, currentClip, cutRange, dimensions, fromAsset, length, normalizeCaption, normalizeClip, normalizeProject, parseSrt, patchClip, positions, splitClip, totalLength, uid, videoLength, visibleClips } from './model';
-import { download, inspectFile, persistAsset, saveProject } from './assets';
+import { download, inspectFile, persistAsset, saveProject,localSavePending,unsavedAssets,retryAssetWrites,requestPersistentStorage } from './assets';
+import {downloadProjectBackup,importProjectBackup} from './project-backup';
 import { restoreProjectAssets } from './media-recovery';
 import { storageScope } from '../account/api';
 import { PlaybackEngine, exportFormats, exportProject } from './engine';
@@ -32,6 +33,7 @@ export class Editor {
  private inspectorGroups=new Map<string,boolean>();
  private engine:PlaybackEngine;private disposed=false;private loading=false;private exporting=false;private abort:AbortController|null=null;
  private overlayRows=1;private importLayer=0;
+ private backupBusy=false;private relinkId='';
  private zoom=1;private markIn=0;private markOut=0;private expanded='';private lastFocus:HTMLElement|null=null;private resize:ResizeObserver;
  private cleanups:(()=>void)[]=[];private statusTimer:ReturnType<typeof setTimeout>|null=null;private prep=0;private safe=false;private exportUrl='';
  private readonly account=storageScope();private autosaveTimer:ReturnType<typeof setTimeout>|null=null;private importing=false;private pendingName:string|null=null;
@@ -47,8 +49,8 @@ export class Editor {
    <section class="pe-panel pe-inspector" data-panel="inspector"><header>${t.settings}${button('expand-inspector',t.expand,'expand','square')}</header><div class="pe-inspector-body"></div></section>
   </div>
   <section class="pe-panel pe-timeline" data-panel="timeline"><header><strong>${t.timeline}</strong><div class="pe-tools">${button('undo',t.undo,'undo','square')}${button('redo',t.redo,'redo','square')}<i></i>${button('add-layer','Добавить слой','layers')}${button('split',t.split+' (S)','split')}${button('duplicate',t.duplicate,'copy','square')}${button('delete',t.remove,'trash','square')}</div><label class="pe-zoom" title="Колёсико над дорожками: масштаб. Shift + колёсико: прокрутка по времени. Над названиями дорожек: прокрутка вверх и вниз.">${t.zoom}<input type="range" min=".35" max="3" step=".0001" value="1" data-ui="zoom" aria-valuetext="100%" aria-label="${t.zoom}"/></label>${button('expand-timeline',t.expand,'expand','square')}</header><div class="pe-track-scroll"><div class="pe-track-grid"><div class="pe-track-labels"></div><div class="pe-track-content"></div></div></div><details class="pe-range-panel"><summary>Вырезать диапазон</summary><div class="pe-range">${button('mark-in',t.markIn)}<output id="pe-in">00:00.000</output>${button('mark-out',t.markOut)}<output id="pe-out">00:00.000</output>${button('cut',t.cut,'split')}<span>${t.selectionRange}</span></div></details></section>
-  <footer class="pe-footer"><span role="status" class="pe-status">${t.ready}</span><span>${t.shortcuts}</span></footer>
-  <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".json,application/json" hidden/>
+  <footer class="pe-footer"><span role="status" class="pe-status">${t.ready}</span><span class="pe-save-state" role="status" aria-live="polite">Автосохранение</span><span>${t.shortcuts}</span></footer>
+  <input class="pe-file-input" type="file" accept="video/*,image/*,audio/*" multiple hidden/><input class="pe-srt-input" type="file" accept=".srt,text/plain" hidden/><input class="pe-json-input" type="file" accept=".pokadrovo,.json,application/json,application/x-pokadrovo-project" hidden/><input class="pe-relink-input" type="file" accept="video/*,image/*,audio/*" hidden/>
   <div class="pe-panel-shade" hidden></div><div class="pe-modal" hidden></div>`;
   this.themeMotion=createThemeIconMotion(this.$('.pk-theme-icon'),opts.theme);this.cleanups.push(()=>this.themeMotion.dispose());
   this.engine=new PlaybackEngine(this.$('canvas'),opts.assets,(time,playing)=>this.updateCursor(time,playing),e=>this.fail(e));
@@ -71,7 +73,12 @@ export class Editor {
   this.listen(this.root,'pointerdown',e=>this.pointer(e as PointerEvent));this.listen(this.root,'dragstart',e=>this.dragStart(e as DragEvent));
   this.listen(this.root,'dragover',e=>{if((e.target as Element).closest('.pe-library,.pe-timeline'))e.preventDefault();});this.listen(this.root,'drop',e=>this.drop(e as DragEvent));
   this.listen(document,'keydown',e=>this.key(e as KeyboardEvent));
-  this.listen(window,'pagehide',()=>{if(this.autosaveTimer)this.save(false);});
+  this.listen(window,'pagehide',()=>this.save(false));
+  this.listen(window,'pokadrovo:before-account-change',()=>this.save(false));
+  this.listen(document,'visibilitychange',()=>{if(document.visibilityState==='hidden')this.save(false);});
+  this.listen(window,'beforeunload',e=>{if(storageScope()!==this.account)return;this.save(false);if(this.importing||this.backupBusy||unsavedAssets(this.account)||localSavePending(this.project.id)){e.preventDefault();(e as BeforeUnloadEvent).returnValue='';}});
+  for(const event of ['pokadrovo:project-storage','pokadrovo:sync-status'])this.listen(window,event,e=>{const d=(e as CustomEvent).detail;if(d?.account!==this.account||d.id!==this.project.id||this.disposed)return;const badge=this.$('.pe-save-state');badge.dataset.state=d.state;badge.textContent=d.state==='saving'?'Сохраняю…':d.state==='error'?'Не сохранено':d.state==='offline'?'На устройстве':unsavedAssets(this.account)?'Исходники не сохранены':'Сохранено';badge.title=d.message;if(d.state==='error'||d.state==='offline')this.status(d.message);});
+  this.listen(window,'pokadrovo:project-fork',e=>{const d=(e as CustomEvent).detail;if(d.account!==this.account||d.oldId!==this.project.id)return;this.history=new History(normalizeProject({...this.project,id:d.project.id,name:d.project.name}));this.save(false);this.render();this.status('Проект изменён в другом месте. Ваш монтаж сохранён отдельной копией.');});
   this.resize=new ResizeObserver(()=>this.fitCanvas());this.resize.observe(this.$('.pe-viewport'));
   this.render();void this.restore();
   this.tour=new EditorTour(this.root,this.account,panel=>this.showPanel(panel),()=>this.engine.pause());
@@ -89,21 +96,36 @@ export class Editor {
   try{missing=await restoreProjectAssets(this.project,this.opts.assets,()=>!this.disposed&&storageScope()===this.account);if(!missing.length)this.status(t.ready);}
   catch(e){this.fail(e);}finally{this.loading=false;if(!this.disposed){this.render();await this.prepare();if(missing.length)this.status('Не удалось восстановить файлы: '+missing.join(', ')+'. Остальные исходники загружены. Добавьте недостающие файлы повторно.');}}
  }
- async importFiles(files:FileList|File[]|null,layer=0,at=this.cursor){if(!files?.length||this.exporting||this.importing||this.disposed)return;this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
+ async importFiles(files:FileList|File[]|null,layer=0,at=this.cursor){if(!files?.length||this.exporting||this.importing||this.disposed)return;void requestPersistentStorage();this.engine.pause();this.loading=true;this.importing=true;let added=0;let storageFailed=false;const problems:string[]=[];
   for(const file of Array.from(files)){if(this.disposed)break;try{
    this.status(`${t.loading}: ${file.name}`);const a=await inspectFile(file);if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
    try{await persistAsset(a);}catch{storageFailed=true;}
    if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(a.url);break;}
    this.opts.assets.set(a.id,a);const next=clone(this.project);
+   next.sources.push({id:a.id,name:a.name,kind:a.kind,size:a.blob.size});
    const c=fromAsset(a);if(a.kind==='audio'){c.at=at;next.audio.push(c);this.selected={track:'audio',id:c.id};}else{if(layer>0){c.layer=layer;c.at=at;c.zoom=.4;c.x=25;c.y=20;}next.clips.push(c);this.selected={track:'video',id:c.id};}added++;
    this.history.commit(next);this.save(false);this.render();
   }catch(e){problems.push(file.name+': '+(e instanceof Error?e.message:String(e)));}}
   this.loading=false;this.importing=false;if(added&&!this.disposed){await this.prepare();if(layer>0){this.showPanel('timeline');this.$('.pe-track-scroll').scrollTop=0;}}
-  this.status(problems.length?problems.join('; '):storageFailed?t.storageError:`${t.files}: ${added} / ${t.ready}`);
+  if(storageFailed&&!this.disposed){const badge=this.root?.querySelector('.pe-save-state');if(badge){badge.textContent='Исходники не сохранены';(badge as HTMLElement).dataset.state='error';}}
+  this.status(problems.length?problems.join('; '):storageFailed?'Не удалось сохранить исходники. Нажмите «Сохранить» для повтора или скачайте полную копию перед выходом.':`${t.files}: ${added} / ${t.ready}`);
  }
  private async prepare(){const rev=++this.prep;this.loading=true;
   try{const [w,h]=dimensions(this.project.ratio);this.engine.canvas.width=w;this.engine.canvas.height=h;await this.engine.prepare(this.project);if(rev===this.prep&&!this.disposed)this.fitCanvas();}
   catch(e){if(!this.disposed&&rev===this.prep)this.fail(e);}finally{if(rev===this.prep){this.loading=false;this.tools?.sync();}}
+ }
+ private async relinkSource(file:File,id:string){
+  if(this.importing||this.backupBusy||this.loading)return;const source=this.project.sources.find(s=>s.id===id);if(!source)return;
+  this.importing=true;let asset:Asset|undefined;
+  try{
+   asset=await inspectFile(file,id);
+   const required=Math.max(0,...[...this.project.clips,...this.project.audio].filter(c=>c.assetId===id).map(c=>c.end));
+   if(asset.kind!==source.kind&&!(source.kind==='audio'&&asset.kind==='video')||asset.kind!=='image'&&asset.duration+.1<required||source.size>0&&file.size!==source.size)throw Error('Выбран другой исходник. Проверьте имя, размер и длительность файла.');
+   if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(asset.url);return;}
+   await persistAsset(asset);if(this.disposed||storageScope()!==this.account){URL.revokeObjectURL(asset.url);return;}
+   const old=this.opts.assets.get(id);if(old)URL.revokeObjectURL(old.url);this.opts.assets.set(id,asset);asset=undefined;
+   this.save(false);this.render();await this.prepare();this.status('Исходник восстановлен. Все склейки и настройки сохранены.');
+  }catch(e){if(asset)URL.revokeObjectURL(asset.url);this.fail(e);}finally{this.importing=false;}
  }
  private commit(p:Project,message=t.ready){if(typeof this.pendingName==='string'){p.name=this.pendingName;this.pendingName=null;}this.engine.pause();this.history.commit(p);this.cacheChange();this.cursor=Math.min(this.cursor,totalLength(this.project));this.render();void this.prepare();this.status(message);}
  private cacheChange(){
@@ -163,7 +185,9 @@ export class Editor {
    html+='<div class="pe-asset-grid">'+arr.map(a=>`<div class="pe-asset-card"><button type="button" class="pe-asset" draggable="true" data-asset="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}"><span>${a.thumbnail?`<img src="${a.thumbnail}" alt="" draggable="false"/>`:icon(a.kind==='audio'?'audio':'video',30)}<i>${clock(a.duration).slice(0,5)}</i></span><b>${escapeHtml(a.name)}</b><small>${a.kind==='audio'?'Аудио':a.kind==='image'?'Фото':'Видео'}</small></button>${a.kind!=='audio'?`<button type="button" class="pe-asset-overlay" data-overlay-asset="${escapeHtml(a.id)}" aria-label="${escapeHtml('Добавить '+a.name+' поверх видео')}">${icon('layers',12)}<span>Поверх видео</span></button>`:''}</div>`).join('')+'</div>';
    if(!arr.length)html+='<div class="pe-none"><h3>Пока нет файлов</h3><p>Добавьте материалы кнопкой выше.</p></div>';
   }else html+=this.project.texts.map(c=>`<button class="pe-caption-item" data-select="text:${c.id}">${icon('text')}<span>${escapeHtml(c.text||t.text)}</span></button>`).join('');
-  html+=`<details class="pe-project-tools"><summary>Файл проекта</summary>${button('json-export',t.downloadProject)}${button('json-import',t.importProject)}<p class="pe-note">${t.backupHint}</p></details>`;
+  const missing=this.project.sources.filter(s=>!this.opts.assets.has(s.id));
+  if(missing.length)html+=`<div class="pe-missing-sources" role="status"><strong>Нужно восстановить исходники</strong>${missing.map(s=>`<button type="button" data-relink="${escapeHtml(s.id)}">Найти файл: ${escapeHtml(s.name)}</button>`).join('')}</div>`;
+  html+=`<details class="pe-project-tools"><summary>Файл проекта</summary>${button('backup-export','Скачать полную копию')}${button('json-import','Открыть копию проекта')}${button('json-export','Скачать только монтаж (JSON)')}<p class="pe-note">Полная копия включает монтаж и все исходники. Её можно открыть на другом устройстве.</p></details>`;
   this.$('.pe-library-body').innerHTML=html;
  }
  private number(label:string,field:string,value:number,min:number,max:number,step=.1){return `<label class="pe-field">${label}<input data-field="${field}" aria-label="${label}" type="number" min="${min}" max="${max}" step="${step}" value="${Number(value.toFixed(3))}"/></label>`;}
@@ -244,6 +268,7 @@ export class Editor {
   const overlay=target.closest<HTMLElement>('[data-overlay-asset]');if(overlay){const a=this.opts.assets.get(overlay.dataset.overlayAsset!),layer=this.overlaySlot();if(a&&layer!==null)this.placeAsset(a,layer);return;}
   const asset=target.closest<HTMLElement>('[data-asset]');if(asset){const a=this.opts.assets.get(asset.dataset.asset!);if(a)this.placeAsset(a);return;}
   const speed=target.closest<HTMLElement>('[data-speed]');if(speed){this.changeSelected({speed:Number(speed.dataset.speed)});return;}
+  const relink=target.closest<HTMLElement>('[data-relink]');if(relink){this.relinkId=relink.dataset.relink!;this.$<HTMLInputElement>('.pe-relink-input').click();return;}
   const action=target.closest<HTMLElement>('[data-action]')?.dataset.action;if(!action)return;
   this.runAction(action);
  }
@@ -253,7 +278,7 @@ export class Editor {
   if(action==='home'){this.engine.pause();this.save(false);this.opts.onHome(clone(this.project));return;}
   if(action==='help'){if(!this.$('.pe-modal').hidden||this.expanded)return;this.tour.start();return;}
   if(action==='theme'){this.opts.onTheme();return;}
-  if(action==='save'){this.save();return;}
+  if(action==='save'){this.save();void retryAssetWrites(this.opts.assets).then(()=>this.save()).catch(()=>this.status('Не удалось сохранить исходники. Скачайте полную копию проекта перед выходом.'));return;}
   if(action.startsWith('mode-')){const p=clone(this.project);p.mode=action==='mode-reels'?'reels':'video';p.ratio=p.mode==='reels'?'9:16':'16:9';this.commit(p);return;}
   if(action.startsWith('tab-')){this.tab=action.slice(4) as typeof this.tab;this.showPanel('library');this.renderLibrary();for(const name of ['media','audio','text'])this.$(`[data-action="tab-${name}"]`).classList.toggle('active',this.tab===name);return;}
   if(action.startsWith('mobile-')){this.showPanel(action.slice(7));return;}
@@ -264,6 +289,7 @@ export class Editor {
   if(action==='import'){this.importLayer=0;const input=this.$<HTMLInputElement>('.pe-file-input');input.accept=this.tab==='audio'?'audio/*':'video/*,image/*,audio/*';input.click();return;}
   if(action==='srt'){this.$<HTMLInputElement>('.pe-srt-input').click();return;}
   if(action==='json-import'){this.$<HTMLInputElement>('.pe-json-input').click();return;}
+  if(action==='backup-export'){if(this.backupBusy||this.importing)return;this.save(false);this.backupBusy=true;void downloadProjectBackup([this.project],this.opts.assets,m=>this.status(m)).then(()=>this.status('Полная копия скачана. Сохраните её отдельно от браузера.')).catch(e=>this.fail(e)).finally(()=>{this.backupBusy=false;});return;}
   if(action==='json-export'){download(new Blob([JSON.stringify(this.project,null,2)],{type:'application/json'}),this.project.name+'.json');return;}
   if(action==='play'){if(this.loading)return;this.engine.playing?this.engine.pause():void this.engine.play().catch(e=>this.fail(e));return;}
   if(action==='back'||action==='forward'){void this.seek(this.cursor+(action==='back'?-1:1));return;}
@@ -294,7 +320,8 @@ export class Editor {
  private change(e:Event){if(this.exporting)return;const target=e.target as HTMLInputElement;
   if(target.matches('.pe-file-input')){const files=Array.from(target.files||[]);target.value='';const layer=this.importLayer;this.importLayer=0;void this.importFiles(files,layer);return;}
   if(target.matches('.pe-srt-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const captions=parseSrt(s);if(!captions.length)throw Error('No valid SRT cues');const p=clone(this.project);p.texts.push(...captions);this.commit(p);}).catch(e=>this.fail(e));return;}
-  if(target.matches('.pe-json-input')){const f=target.files?.[0];target.value='';if(f)void f.text().then(s=>{const parsed=JSON.parse(s);if(!parsed||!Array.isArray(parsed.clips))throw Error('Invalid project');this.engine.pause();this.history=new History(normalizeProject(parsed));this.selected=null;this.cursor=0;this.render();return this.restore();}).catch(e=>this.fail(e));return;}
+  if(target.matches('.pe-json-input')){const f=target.files?.[0];target.value='';if(f&&!this.backupBusy){this.save(false);this.backupBusy=true;void importProjectBackup(f,m=>this.status(m)).then(projects=>{if(this.disposed||storageScope()!==this.account)return;this.engine.pause();this.history=new History(projects[0]);this.selected=null;this.cursor=0;this.save(false);this.render();return this.restore();}).catch(e=>this.fail(e)).finally(()=>{this.backupBusy=false;});}return;}
+  if(target.matches('.pe-relink-input')){const f=target.files?.[0],id=this.relinkId;target.value='';this.relinkId='';if(f&&id)void this.relinkSource(f,id);return;}
   if(target.dataset.ui==='safe'){this.safe=target.checked;this.$('.pe-safe').hidden=!this.safe;return;}
   if(target.dataset.project){const p=clone(this.project);if(target.dataset.project==='name'){this.pendingName=null;if(target.value===p.name)return;p.name=target.value;}else if(target.dataset.project==='ratio')p.ratio=target.value as Ratio;else p.master=Number(target.value);this.commit(p);return;}
   if(target.dataset.field){const field=target.dataset.field;let value:unknown=target.type==='checkbox'?target.checked:['number','range'].includes(target.type)?Number(target.value):target.value;

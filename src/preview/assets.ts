@@ -1,11 +1,17 @@
 import { Asset, Project, normalizeProject } from '../editor/model';
 import { previewStorage, record } from './storage';
-export { inspectFile, mediaReady, download } from '../editor/assets';
+export { inspectFile, mediaReady, download } from '../editor/media-file';
 
 const blobs=new Map<string,Blob>();
 export function loadProjects():Project[]{try{const raw=JSON.parse(previewStorage.getItem('projects')||'[]');return Array.isArray(raw)?raw.map(normalizeProject):[];}catch{return [];}}
 export function replaceProjectCache(projects:Project[]){previewStorage.setItem('projects',JSON.stringify(projects));}
 export function saveProject(project:Project){replaceProjectCache([project,...loadProjects().filter(p=>p.id!==project.id)]);record('project_saved');window.dispatchEvent(new Event('pokadrovo:preview-saved'));}
+export const flushLocalProjects=()=>Promise.resolve();
+export const localSavePending=()=>false;
+export const unsavedAssets=()=>0;
+export const retryAssetWrites=async()=>{};
+export const requestPersistentStorage=async()=>false;
+export async function persistProjectBundle(projects:Project[],assets:Asset[],_account:string){for(const asset of assets)await persistAsset(asset);for(const project of projects)saveProject(project);}
 async function openDb():Promise<IDBDatabase>{return new Promise((ok,no)=>{
   try {const req=indexedDB.open('pokadrovo-chat-preview-media-v1',1);req.onupgradeneeded=()=>req.result.createObjectStore('files');req.onsuccess=()=>ok(req.result);req.onerror=()=>no(req.error);req.onblocked=()=>no(Error('Storage blocked'));}catch(e){no(e);}
 });}
