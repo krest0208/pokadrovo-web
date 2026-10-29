@@ -15,7 +15,10 @@
     for (const form of app.querySelectorAll('form')) form.reset();
     text($('totp-secret'), ''); $('totp-confirm').hidden = true; text($('ai-quota'), '');
   }
-  function armIdle() { clearTimeout(idleTimer); if (owner) idleTimer = setTimeout(() => { void request('/logout', { method: 'POST', data: {} }).catch(() => {}); locked('Сеанс завершён после 30 минут бездействия.'); }, 30 * 60000); }
+  // This page can be idle while the same owner is actively editing in another
+  // tab. Lock this view; the server independently enforces 30-minute inactivity
+  // and the absolute session expiry. Only an explicit logout revokes all tabs.
+  function armIdle() { clearTimeout(idleTimer); if (owner) idleTimer = setTimeout(() => { locked('Панель заблокирована после 30 минут бездействия. Войдите снова.'); }, 30 * 60000); }
   document.addEventListener('pointerdown', armIdle, { passive: true }); document.addEventListener('keydown', armIdle);
   async function request(path, options = {}) {
     const response = await fetch('/api/admin' + path, { method: options.method || 'GET', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) }, ...(options.data !== undefined ? { body: JSON.stringify(options.data) } : {}), signal: AbortSignal.timeout(15000) });
