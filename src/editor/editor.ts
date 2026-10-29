@@ -181,7 +181,8 @@ export class Editor {
   if(this.tab==='media')html=button('import',t.import,'upload','primary pe-import')+button('overlay-new','Добавить поверх','layers','pe-import pe-overlay-import')+`<p class="pe-note">${t.importHint}</p>`;
   if(this.tab==='text')html=button('add-text',t.addText,'plus','primary pe-import')+button('srt',t.srt,'upload','pe-import')+`<p class="pe-note">SRT / ${t.text}</p>`;
   if(this.tab!=='text'){
-   const arr=[...this.opts.assets.values()].filter(a=>this.tab==='audio'?a.kind==='audio':a.kind!=='audio');
+   const sourceIds=new Set(this.project.sources.map(s=>s.id));
+   const arr=[...this.opts.assets.values()].filter(a=>sourceIds.has(a.id)&&(this.tab==='audio'?a.kind==='audio':a.kind!=='audio'));
    html+='<div class="pe-asset-grid">'+arr.map(a=>`<div class="pe-asset-card"><button type="button" class="pe-asset" draggable="true" data-asset="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}"><span>${a.thumbnail?`<img src="${a.thumbnail}" alt="" draggable="false"/>`:icon(a.kind==='audio'?'audio':'video',30)}<i>${clock(a.duration).slice(0,5)}</i></span><b>${escapeHtml(a.name)}</b><small>${a.kind==='audio'?'Аудио':a.kind==='image'?'Фото':'Видео'}</small></button>${a.kind!=='audio'?`<button type="button" class="pe-asset-overlay" data-overlay-asset="${escapeHtml(a.id)}" aria-label="${escapeHtml('Добавить '+a.name+' поверх видео')}">${icon('layers',12)}<span>Поверх видео</span></button>`:''}</div>`).join('')+'</div>';
    if(!arr.length)html+='<div class="pe-none"><h3>Пока нет файлов</h3><p>Добавьте материалы кнопкой выше.</p></div>';
   }else html+=this.project.texts.map(c=>`<button class="pe-caption-item" data-select="text:${c.id}">${icon('text')}<span>${escapeHtml(c.text||t.text)}</span></button>`).join('');

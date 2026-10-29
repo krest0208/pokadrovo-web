@@ -79,3 +79,11 @@ test('editing is cached synchronously before navigation, and delayed saves canno
  e.save(false);assert.equal(b.values.has('pokadrovo-projects-v1:account:other-user'),false);
  assert.equal(e.autosaveTimer,null);
 });
+
+test('the project library keeps unused current sources without showing media from the previous project',async()=>{
+ const b=browser(),e=editorHarness(b),current=await b.api.inspectFile(new File(['current'],'current.mp4',{type:'video/mp4'}),'current'),previous=await b.api.inspectFile(new File(['previous'],'previous.mp4',{type:'video/mp4'}),'previous');
+ e.tab='media';e.opts.assets.set(current.id,current);e.opts.assets.set(previous.id,previous);
+ e.project.sources.push({id:current.id,name:current.name,kind:current.kind,size:current.blob.size});const host={innerHTML:''};e.root={querySelector:()=>host};
+ e.renderLibrary();assert.match(host.innerHTML,/current\.mp4/);assert.doesNotMatch(host.innerHTML,/previous\.mp4/);assert.equal(e.project.clips.length,0);
+ URL.revokeObjectURL(current.url);URL.revokeObjectURL(previous.url);
+});
